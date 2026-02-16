@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import * as CloudSync from '../sync';
 
 interface Record {
   id: string;
@@ -40,10 +41,37 @@ let searchQuery = '';
 let editingFolderId: string | null = null;
 let editingRecordId: string | null = null;
 let draggedFolderId: string | null = null;
+let syncState: CloudSync.SyncState | null = null;
+let containerElement: HTMLElement | null = null;
 
 export function renderRecordsPage(container: HTMLElement) {
-  loadRecords().then(() => {
+  containerElement = container;
+
+  // Load sync state and records
+  Promise.all([
+    CloudSync.getSyncState(),
+    loadRecords()
+  ]).then(([state]) => {
+    syncState = state;
+
+    // Start sync polling if logged in
+    if (syncState.jwt && syncState.user) {
+      CloudSync.startSyncPolling();
+    }
+
     renderPage(container);
+
+    // Listen for sync completion to refresh UI
+    window.addEventListener('sync-completed', handleSyncCompleted);
+  });
+}
+
+function handleSyncCompleted() {
+  // Reload data and re-render
+  loadRecords().then(() => {
+    if (containerElement) {
+      renderPage(containerElement);
+    }
   });
 }
 
@@ -81,9 +109,98 @@ function renderPage(container: HTMLElement) {
   attachEventListeners(container);
 }
 
+function createSyncSection(): HTMLElement {
+  const section = document.createElement('div');
+  section.className = 'sync-section';
+
+  if (!syncState || !syncState.user) {
+    // Not logged in - show login button
+    const loginBtn = document.createElement('button');
+    loginBtn.className = 'sync-login-btn';
+    loginBtn.textContent = 'Login with Google';
+    loginBtn.onclick = handleLogin;
+    section.appendChild(loginBtn);
+
+    const localModeText = document.createElement('p');
+    localModeText.className = 'sync-local-mode';
+    localModeText.textContent = '本機模式 (未同步)';
+    section.appendChild(localModeText);
+  } else {
+    // Logged in - show user info and status
+    const userInfo = document.createElement('div');
+    userInfo.className = 'sync-user-info';
+
+    const emailText = document.createElement('p');
+    emailText.className = 'sync-user-email';
+    emailText.textContent = syncState.user.email;
+    userInfo.appendChild(emailText);
+
+    const statusContainer = document.createElement('div');
+    statusContainer.className = 'sync-status-container';
+
+    const statusIndicator = document.createElement('span');
+    statusIndicator.className = `sync-status-indicator sync-status-${syncState.status}`;
+    statusIndicator.textContent = getSyncStatusText(syncState.status);
+    statusContainer.appendChild(statusIndicator);
+
+    userInfo.appendChild(statusContainer);
+    section.appendChild(userInfo);
+
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'sync-logout-btn';
+    logoutBtn.textContent = '登出';
+    logoutBtn.onclick = handleLogout;
+    section.appendChild(logoutBtn);
+  }
+
+  return section;
+}
+
+function getSyncStatusText(status: string): string {
+  switch (status) {
+    case 'synced':
+      return '已同步';
+    case 'syncing':
+      return '同步中...';
+    case 'error':
+      return '同步錯誤';
+    case 'offline':
+    default:
+      return '離線';
+  }
+}
+
+async function handleLogin() {
+  const result = await CloudSync.loginWithGoogle();
+
+  if (result.success) {
+    // Reload sync state and re-render
+    syncState = await CloudSync.getSyncState();
+    if (containerElement) {
+      renderPage(containerElement);
+    }
+  } else {
+    alert(result.error || '登入失敗');
+  }
+}
+
+async function handleLogout() {
+  if (confirm('確定要登出嗎？本機資料將保留，但不會再同步至雲端。')) {
+    await CloudSync.logout();
+    syncState = await CloudSync.getSyncState();
+    if (containerElement) {
+      renderPage(containerElement);
+    }
+  }
+}
+
 function createSidebar(): HTMLElement {
   const aside = document.createElement('aside');
   aside.className = 'folders-sidebar';
+
+  // Sync status section
+  const syncSection = createSyncSection();
+  aside.appendChild(syncSection);
 
   // Sidebar header
   const header = document.createElement('div');
@@ -445,6 +562,10 @@ function attachEventListeners(container: HTMLElement) {
       currentData.folders.push(folder);
       currentData.folder_order.push(folder.id);
       newFolderInput.value = '';
+
+      // Push to cloud if logged in
+      await CloudSync.pushFolder(folder);
+
       renderPage(container);
     } catch (error) {
       alert(`建立資料夾失敗: ${error}`);
@@ -505,6 +626,10 @@ function attachEventListeners(container: HTMLElement) {
           folder.name = newName;
           try {
             await invoke('update_folder', { folder });
+
+            // Push to cloud if logged in
+            await CloudSync.pushFolder(folder);
+
             editingFolderId = null;
             renderPage(container);
           } catch (error) {
@@ -537,6 +662,17 @@ function attachEventListeners(container: HTMLElement) {
       if (confirm(`確定要刪除資料夾「${folder.name}」嗎？其中的記錄將移至「未分類」。`)) {
         try {
           await invoke('delete_folder', { id: folderId });
+
+          // Push deletion to cloud if logged in
+          await CloudSync.deleteFolderRemote(folderId);
+
+          // Update records that were in this folder and push to cloud
+          const affectedRecords = currentData.records.filter(r => r.folder_id === folderId);
+          for (const record of affectedRecords) {
+            record.folder_id = null;
+            await CloudSync.pushRecord(record);
+          }
+
           currentData.folders = currentData.folders.filter(f => f.id !== folderId);
           currentData.folder_order = currentData.folder_order.filter(id => id !== folderId);
           currentData.records.forEach(r => {
@@ -595,6 +731,17 @@ function attachEventListeners(container: HTMLElement) {
 
         try {
           await invoke('reorder_folders', { folderOrder: currentData.folder_order });
+
+          // Push all affected folders to cloud if logged in
+          for (let i = 0; i < currentData.folder_order.length; i++) {
+            const folderId = currentData.folder_order[i];
+            const folder = currentData.folders.find(f => f.id === folderId);
+            if (folder) {
+              folder.sort_order = i;
+              await CloudSync.pushFolder(folder);
+            }
+          }
+
           renderPage(container);
         } catch (error) {
           alert(`重新排序資料夾失敗: ${error}`);
@@ -657,6 +804,10 @@ function attachEventListeners(container: HTMLElement) {
           record.topic = newTopic;
           try {
             await invoke('update_record', { record });
+
+            // Push to cloud if logged in
+            await CloudSync.pushRecord(record);
+
             editingRecordId = null;
             renderPage(container);
           } catch (error) {
@@ -688,6 +839,10 @@ function attachEventListeners(container: HTMLElement) {
       if (confirm(`確定要刪除記錄「${record.topic}」嗎？`)) {
         try {
           await invoke('delete_record', { id: recordId });
+
+          // Push deletion to cloud if logged in
+          await CloudSync.deleteRecordRemote(recordId);
+
           currentData.records = currentData.records.filter(r => r.id !== recordId);
           renderPage(container);
         } catch (error) {

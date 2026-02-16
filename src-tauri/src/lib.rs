@@ -122,6 +122,66 @@ pub struct RecordsData {
     pub folder_order: Vec<String>,
 }
 
+// Cloud Sync structures
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SyncState {
+    pub jwt: Option<String>,
+    pub user: Option<SyncUser>,
+    pub last_synced_at: String,
+    pub status: String, // "offline", "syncing", "synced", "error"
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SyncUser {
+    pub id: String,
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct APIRecord {
+    pub id: String,
+    pub user_id: String,
+    pub folder_id: Option<String>,
+    pub timestamp: String,
+    pub live_time: String,
+    pub title: String,
+    pub topic: String,
+    pub channel_url: String,
+    pub platform: String,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct APIFolder {
+    pub id: String,
+    pub user_id: String,
+    pub name: String,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SyncResponse {
+    pub records: Vec<APIRecord>,
+    pub folders: Vec<APIFolder>,
+    pub synced_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GoogleAuthRequest {
+    pub token: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct GoogleAuthResponse {
+    pub token: String,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -169,6 +229,19 @@ fn get_records_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
 
     Ok(tidemark_dir.join("records.json"))
+}
+
+fn get_sync_state_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let tidemark_dir = app_data_dir.join("tidemark");
+    fs::create_dir_all(&tidemark_dir)
+        .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
+
+    Ok(tidemark_dir.join("sync_state.json"))
 }
 
 #[tauri::command]
@@ -2773,6 +2846,287 @@ fn reorder_folders(app: AppHandle, folder_order: Vec<String>) -> Result<(), Stri
     Ok(())
 }
 
+// Cloud Sync commands
+#[tauri::command]
+fn get_sync_state(app: AppHandle) -> Result<SyncState, String> {
+    let sync_state_path = get_sync_state_path(&app)?;
+
+    if !sync_state_path.exists() {
+        // Return default state if file doesn't exist
+        return Ok(SyncState {
+            jwt: None,
+            user: None,
+            last_synced_at: "1970-01-01T00:00:00.000Z".to_string(),
+            status: "offline".to_string(),
+        });
+    }
+
+    let content = fs::read_to_string(&sync_state_path)
+        .map_err(|e| format!("Failed to read sync state file: {}", e))?;
+
+    let state: SyncState = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse sync state file: {}", e))?;
+
+    Ok(state)
+}
+
+#[tauri::command]
+fn save_sync_state(app: AppHandle, state: SyncState) -> Result<(), String> {
+    let sync_state_path = get_sync_state_path(&app)?;
+
+    let content = serde_json::to_string_pretty(&state)
+        .map_err(|e| format!("Failed to serialize sync state: {}", e))?;
+
+    fs::write(&sync_state_path, content)
+        .map_err(|e| format!("Failed to write sync state file: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn exchange_google_token(google_token: String) -> Result<GoogleAuthResponse, String> {
+    // Get API URL from environment or use default
+    // In production, this should be configured via .env file or app config
+    let api_url = std::env::var("CLOUD_SYNC_API_URL")
+        .unwrap_or_else(|_| "https://tidemark-sync.hydai.workers.dev".to_string());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/auth/google", api_url))
+        .json(&GoogleAuthRequest { token: google_token })
+        .send()
+        .await
+        .map_err(|e| format!("Failed to exchange Google token: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned error: {}", response.status()));
+    }
+
+    let auth_response: GoogleAuthResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    Ok(auth_response)
+}
+
+#[tauri::command]
+async fn sync_pull(app: AppHandle) -> Result<SyncResponse, String> {
+    let state = get_sync_state(app.clone())?;
+
+    if state.jwt.is_none() || state.user.is_none() {
+        return Err("Not logged in".to_string());
+    }
+
+    let jwt = state.jwt.unwrap();
+    let since = state.last_synced_at;
+
+    // Get API URL from environment or use default
+    // In production, this should be configured via .env file or app config
+    let api_url = std::env::var("CLOUD_SYNC_API_URL")
+        .unwrap_or_else(|_| "https://tidemark-sync.hydai.workers.dev".to_string());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(format!("{}/sync?since={}", api_url, urlencoding::encode(&since)))
+        .header("Authorization", format!("Bearer {}", jwt))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to pull sync data: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned error: {}", response.status()));
+    }
+
+    let sync_response: SyncResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse sync response: {}", e))?;
+
+    Ok(sync_response)
+}
+
+#[tauri::command]
+async fn sync_push_record(app: AppHandle, record: Record) -> Result<(), String> {
+    let state = get_sync_state(app.clone())?;
+
+    if state.jwt.is_none() || state.user.is_none() {
+        return Err("Not logged in".to_string());
+    }
+
+    let jwt = state.jwt.unwrap();
+    let user = state.user.unwrap();
+
+    let now = Utc::now().to_rfc3339();
+    let api_record = APIRecord {
+        id: record.id,
+        user_id: user.id,
+        folder_id: record.folder_id,
+        timestamp: record.timestamp.clone(),
+        live_time: record.live_time,
+        title: record.title,
+        topic: record.topic,
+        channel_url: record.channel_url,
+        platform: record.platform,
+        sort_order: record.sort_order,
+        created_at: record.timestamp,
+        updated_at: now,
+        deleted: 0,
+    };
+
+    // Get API URL from environment or use default
+    // In production, this should be configured via .env file or app config
+    let api_url = std::env::var("CLOUD_SYNC_API_URL")
+        .unwrap_or_else(|_| "https://tidemark-sync.hydai.workers.dev".to_string());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/records", api_url))
+        .header("Authorization", format!("Bearer {}", jwt))
+        .json(&api_record)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to push record: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned error: {}", response.status()));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn sync_delete_record(app: AppHandle, record_id: String) -> Result<(), String> {
+    let state = get_sync_state(app.clone())?;
+
+    if state.jwt.is_none() {
+        return Err("Not logged in".to_string());
+    }
+
+    let jwt = state.jwt.unwrap();
+
+    // Get API URL from environment or use default
+    // In production, this should be configured via .env file or app config
+    let api_url = std::env::var("CLOUD_SYNC_API_URL")
+        .unwrap_or_else(|_| "https://tidemark-sync.hydai.workers.dev".to_string());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .delete(format!("{}/records/{}", api_url, record_id))
+        .header("Authorization", format!("Bearer {}", jwt))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to delete record: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned error: {}", response.status()));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn sync_push_folder(app: AppHandle, folder: Folder) -> Result<(), String> {
+    let state = get_sync_state(app.clone())?;
+
+    if state.jwt.is_none() || state.user.is_none() {
+        return Err("Not logged in".to_string());
+    }
+
+    let jwt = state.jwt.unwrap();
+    let user = state.user.unwrap();
+
+    let now = Utc::now().to_rfc3339();
+    let api_folder = APIFolder {
+        id: folder.id,
+        user_id: user.id,
+        name: folder.name,
+        sort_order: folder.sort_order,
+        created_at: folder.created.clone(),
+        updated_at: now,
+        deleted: 0,
+    };
+
+    // Get API URL from environment or use default
+    // In production, this should be configured via .env file or app config
+    let api_url = std::env::var("CLOUD_SYNC_API_URL")
+        .unwrap_or_else(|_| "https://tidemark-sync.hydai.workers.dev".to_string());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/folders", api_url))
+        .header("Authorization", format!("Bearer {}", jwt))
+        .json(&api_folder)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to push folder: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned error: {}", response.status()));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn sync_delete_folder(app: AppHandle, folder_id: String) -> Result<(), String> {
+    let state = get_sync_state(app.clone())?;
+
+    if state.jwt.is_none() {
+        return Err("Not logged in".to_string());
+    }
+
+    let jwt = state.jwt.unwrap();
+
+    // Get API URL from environment or use default
+    // In production, this should be configured via .env file or app config
+    let api_url = std::env::var("CLOUD_SYNC_API_URL")
+        .unwrap_or_else(|_| "https://tidemark-sync.hydai.workers.dev".to_string());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .delete(format!("{}/folders/{}", api_url, folder_id))
+        .header("Authorization", format!("Bearer {}", jwt))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to delete folder: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned error: {}", response.status()));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(&["/C", "start", &url])
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to open URL: {}", e))?;
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let download_tasks: DownloadTasks = Arc::new(Mutex::new(HashMap::new()));
@@ -2830,7 +3184,16 @@ pub fn run() {
             update_record,
             delete_record,
             search_records,
-            reorder_folders
+            reorder_folders,
+            get_sync_state,
+            save_sync_state,
+            exchange_google_token,
+            sync_pull,
+            sync_push_record,
+            sync_delete_record,
+            sync_push_folder,
+            sync_delete_folder,
+            open_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

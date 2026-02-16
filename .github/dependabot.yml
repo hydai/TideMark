@@ -4,21 +4,51 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      tauri-deps:
+        patterns:
+          - "@tauri-apps/*"
+      dev-deps:
+        dependency-type: "development"
+        patterns:
+          - "*"
 
   - package-ecosystem: "npm"
     directory: "/extension"
     schedule:
       interval: "weekly"
+    groups:
+      types:
+        patterns:
+          - "@types/*"
 
   - package-ecosystem: "npm"
     directory: "/cloud-sync"
     schedule:
       interval: "weekly"
+    groups:
+      types:
+        patterns:
+          - "@types/*"
+          - "@cloudflare/*"
+      dev-deps:
+        dependency-type: "development"
+        patterns:
+          - "*"
 
   - package-ecosystem: "cargo"
     directory: "/src-tauri"
     schedule:
       interval: "weekly"
+    groups:
+      tauri-crates:
+        patterns:
+          - "tauri"
+          - "tauri-*"
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "pip"
     directory: "/scripts/asr"

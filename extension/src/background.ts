@@ -2,16 +2,40 @@
  * Background service worker for Tidemark extension
  */
 
+import { initSyncState, isLoggedIn, startSyncPolling, pullRemoteChanges } from './sync';
+
 // Listen for extension installation
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   console.log('Tidemark extension installed');
 
   // Initialize storage if needed
-  chrome.storage.local.get(['records'], (result) => {
+  chrome.storage.local.get(['records', 'folders'], (result) => {
     if (!result.records) {
       chrome.storage.local.set({ records: [] });
     }
+    if (!result.folders) {
+      chrome.storage.local.set({ folders: [] });
+    }
   });
+
+  // Initialize sync state
+  await initSyncState();
+});
+
+// Listen for extension startup (browser restart)
+chrome.runtime.onStartup.addListener(async () => {
+  console.log('Tidemark extension started');
+
+  // Initialize sync state
+  await initSyncState();
+
+  // Resume sync polling if user is logged in
+  const loggedIn = await isLoggedIn();
+  if (loggedIn) {
+    startSyncPolling();
+    // Initial pull
+    await pullRemoteChanges();
+  }
 });
 
 // Handle messages from content scripts or popup

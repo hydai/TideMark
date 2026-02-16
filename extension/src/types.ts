@@ -77,6 +77,72 @@ export interface ExportData {
 }
 
 /**
+ * Cloud Sync User Info
+ */
+export interface SyncUser {
+  id: string;
+  email: string;
+}
+
+/**
+ * Sync Status
+ */
+export type SyncStatus = 'offline' | 'synced' | 'syncing' | 'error';
+
+/**
+ * Sync Queue Item
+ */
+export interface SyncQueueItem {
+  id: string;
+  action: 'create_record' | 'update_record' | 'delete_record' | 'create_folder' | 'update_folder' | 'delete_folder';
+  data: any;
+  timestamp: string;
+}
+
+/**
+ * Sync State stored in Chrome Storage
+ */
+export interface SyncState {
+  jwt: string | null;
+  user: SyncUser | null;
+  lastSyncedAt: string;
+  queue: SyncQueueItem[];
+  status: SyncStatus;
+}
+
+/**
+ * API Record format (matches Cloud Sync API)
+ */
+export interface APIRecord {
+  id: string;
+  user_id: string;
+  folder_id: string | null;
+  timestamp: string;
+  live_time: string;
+  title: string;
+  topic: string;
+  channel_url: string;
+  platform: 'youtube' | 'twitch';
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted: number;
+}
+
+/**
+ * API Folder format (matches Cloud Sync API)
+ */
+export interface APIFolder {
+  id: string;
+  user_id: string;
+  name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted: number;
+}
+
+/**
  * Constants
  */
 export const MAX_RECORDS = 500;
@@ -84,3 +150,5 @@ export const DEFAULT_TOPIC = '無主題';
 export const UNCATEGORIZED_ID = 'uncategorized';
 export const UNCATEGORIZED_NAME = '未分類';
 export const EXPORT_VERSION = '1.0';
+export const CLOUD_SYNC_API_URL = 'http://localhost:8787'; // TODO: Make configurable
+export const SYNC_POLL_INTERVAL = 4000; // 4 seconds

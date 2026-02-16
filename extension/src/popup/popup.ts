@@ -1,5 +1,20 @@
-import type { Record, Folder, PlaybackInfo, Platform, StorageData, ContentMessage, RecordGroup, ExportData } from '../types';
+import type { Record, Folder, PlaybackInfo, Platform, StorageData, ContentMessage, RecordGroup, ExportData, SyncUser, SyncStatus } from '../types';
 import { MAX_RECORDS, DEFAULT_TOPIC, UNCATEGORIZED_ID, UNCATEGORIZED_NAME, EXPORT_VERSION } from '../types';
+import {
+  loginWithGoogle,
+  logout,
+  isLoggedIn,
+  getCurrentUser,
+  getSyncStatus,
+  pushRecord,
+  pushFolder,
+  deleteRecordRemote,
+  deleteFolderRemote,
+  initSyncState,
+  pullRemoteChanges,
+  startSyncPolling,
+  updateSyncState,
+} from '../sync';
 
 // DOM elements
 const errorMessage = document.getElementById('error-message') as HTMLDivElement;
@@ -29,6 +44,18 @@ const importMergeButton = document.getElementById('import-merge-button') as HTML
 const importOverwriteButton = document.getElementById('import-overwrite-button') as HTMLButtonElement;
 const importCancelButton = document.getElementById('import-cancel-button') as HTMLButtonElement;
 
+// Sync elements
+const loginButton = document.getElementById('login-button') as HTMLButtonElement;
+const logoutButton = document.getElementById('logout-button') as HTMLButtonElement;
+const syncLoggedOut = document.getElementById('sync-logged-out') as HTMLDivElement;
+const syncLoggedIn = document.getElementById('sync-logged-in') as HTMLDivElement;
+const userEmail = document.getElementById('user-email') as HTMLSpanElement;
+const syncStatusDisplay = document.getElementById('sync-status-display') as HTMLDivElement;
+const syncStatusIcon = document.getElementById('sync-status-icon') as HTMLSpanElement;
+const syncStatusText = document.getElementById('sync-status-text') as HTMLSpanElement;
+const testJwtInput = document.getElementById('test-jwt-input') as HTMLInputElement;
+const testJwtButton = document.getElementById('test-jwt-button') as HTMLButtonElement;
+
 // State
 let currentPlaybackInfo: PlaybackInfo | null = null;
 let currentPlatform: Platform = 'unknown';
@@ -47,6 +74,12 @@ let pendingImportData: ExportData | null = null;
  * Initialize popup
  */
 async function init() {
+  // Initialize sync state
+  await initSyncState();
+
+  // Update sync UI
+  await updateSyncUI();
+
   // Get current tab
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
@@ -76,6 +109,15 @@ async function init() {
 
   // Set up event listeners
   setupEventListeners();
+
+  // Start sync polling if logged in
+  const loggedIn = await isLoggedIn();
+  if (loggedIn) {
+    startSyncPolling();
+  }
+
+  // Poll sync status every 2 seconds to update UI
+  setInterval(updateSyncUI, 2000);
 }
 
 /**
@@ -199,6 +241,11 @@ function setupEventListeners() {
   importMergeButton.addEventListener('click', () => handleImportConfirm('merge'));
   importOverwriteButton.addEventListener('click', () => handleImportConfirm('overwrite'));
   importCancelButton.addEventListener('click', closeImportModal);
+
+  // Sync buttons
+  loginButton.addEventListener('click', handleLogin);
+  logoutButton.addEventListener('click', handleLogout);
+  testJwtButton.addEventListener('click', handleTestJwt);
 }
 
 /**
@@ -262,10 +309,12 @@ async function saveRecord(record: Record): Promise<void> {
       }
 
       // Save back to storage
-      chrome.storage.local.set({ records }, () => {
+      chrome.storage.local.set({ records }, async () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
+          // Push to cloud sync if logged in
+          await pushRecord(record);
           resolve();
         }
       });
@@ -592,10 +641,12 @@ async function deleteRecord(recordId: string): Promise<void> {
       const data = result as Partial<StorageData>;
       const records = (data.records || []).filter(r => r.id !== recordId);
 
-      chrome.storage.local.set({ records }, () => {
+      chrome.storage.local.set({ records }, async () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
+          // Delete from cloud sync if logged in
+          await deleteRecordRemote(recordId);
           resolve();
         }
       });
@@ -1143,12 +1194,21 @@ async function saveFolder(folder: Folder): Promise<void> {
       const data = result as Partial<StorageData>;
       const folders = data.folders || [];
 
-      folders.push(folder);
+      // Find index if updating existing folder
+      const existingIndex = folders.findIndex(f => f.id === folder.id);
+      if (existingIndex !== -1) {
+        folders[existingIndex] = folder;
+      } else {
+        folders.push(folder);
+      }
 
-      chrome.storage.local.set({ folders }, () => {
+      chrome.storage.local.set({ folders }, async () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
+          // Push to cloud sync if logged in
+          const sortOrder = existingIndex !== -1 ? existingIndex : folders.length - 1;
+          await pushFolder(folder, sortOrder);
           resolve();
         }
       });
@@ -1275,10 +1335,12 @@ async function deleteFolder(folderId: string): Promise<void> {
         }
       });
 
-      chrome.storage.local.set({ folders, records }, () => {
+      chrome.storage.local.set({ folders, records }, async () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
+          // Delete from cloud sync if logged in
+          await deleteFolderRemote(folderId);
           resolve();
         }
       });
@@ -1720,6 +1782,150 @@ function showSuccess(message: string) {
   setTimeout(() => {
     errorMessage.style.display = 'none';
   }, 3000);
+}
+
+/**
+ * Update sync UI based on current state
+ */
+async function updateSyncUI() {
+  const loggedIn = await isLoggedIn();
+  const user = await getCurrentUser();
+  const status = await getSyncStatus();
+
+  if (loggedIn && user) {
+    // Show logged in UI
+    syncLoggedOut.classList.add('hidden');
+    syncLoggedIn.classList.remove('hidden');
+    userEmail.textContent = user.email;
+  } else {
+    // Show logged out UI
+    syncLoggedOut.classList.remove('hidden');
+    syncLoggedIn.classList.add('hidden');
+  }
+
+  // Update status indicator
+  updateSyncStatusIndicator(status);
+}
+
+/**
+ * Update sync status indicator
+ */
+function updateSyncStatusIndicator(status: SyncStatus) {
+  // Remove all status classes
+  syncStatusDisplay.classList.remove('offline', 'synced', 'syncing', 'error');
+
+  // Add current status class
+  syncStatusDisplay.classList.add(status);
+
+  // Update icon and text
+  switch (status) {
+    case 'offline':
+      syncStatusIcon.textContent = '⚪';
+      syncStatusText.textContent = '未登入';
+      break;
+    case 'synced':
+      syncStatusIcon.textContent = '🟢';
+      syncStatusText.textContent = '已同步';
+      break;
+    case 'syncing':
+      syncStatusIcon.textContent = '🔵';
+      syncStatusText.textContent = '同步中...';
+      break;
+    case 'error':
+      syncStatusIcon.textContent = '🔴';
+      syncStatusText.textContent = '同步錯誤';
+      break;
+  }
+}
+
+/**
+ * Handle login button click
+ */
+async function handleLogin() {
+  try {
+    loginButton.disabled = true;
+    loginButton.textContent = '登入中...';
+
+    const result = await loginWithGoogle();
+
+    if (result.success) {
+      showSuccess('登入成功！');
+      await updateSyncUI();
+      // Pull initial data
+      await pullRemoteChanges();
+      // Reload UI
+      await loadFolders();
+      await loadRecords();
+    } else {
+      showError(result.error || '登入失敗');
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    showError('登入失敗，請稍後重試');
+  } finally {
+    loginButton.disabled = false;
+    loginButton.textContent = '🔐 使用 Google 登入';
+  }
+}
+
+/**
+ * Handle logout button click
+ */
+async function handleLogout() {
+  try {
+    logoutButton.disabled = true;
+    await logout();
+    showSuccess('已登出');
+    await updateSyncUI();
+  } catch (error) {
+    console.error('Logout error:', error);
+    showError('登出失敗');
+  } finally {
+    logoutButton.disabled = false;
+  }
+}
+
+/**
+ * Handle test JWT input (for development only)
+ */
+async function handleTestJwt() {
+  const jwt = testJwtInput.value.trim();
+  if (!jwt) {
+    showError('請輸入 JWT');
+    return;
+  }
+
+  try {
+    // Decode JWT to extract user info
+    const payload = JSON.parse(atob(jwt.split('.')[1]));
+    const user = {
+      id: payload.sub,
+      email: payload.email,
+    };
+
+    // Update sync state
+    await updateSyncState({
+      jwt,
+      user,
+      status: 'synced',
+      lastSyncedAt: new Date(0).toISOString(),
+    });
+
+    // Start sync polling
+    startSyncPolling();
+
+    // Pull initial data
+    await pullRemoteChanges();
+
+    showSuccess('測試 JWT 已設定');
+    testJwtInput.value = '';
+    await updateSyncUI();
+    await loadFolders();
+    await loadRecords();
+  } catch (error) {
+    console.error('Test JWT error:', error);
+    showError('無效的 JWT');
+  }
 }
 
 // Initialize on load

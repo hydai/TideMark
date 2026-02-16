@@ -888,3 +888,65 @@ button.tertiary:hover {
   color: #333;
   font-weight: 600;
 }
+
+/* ========================================
+   Cloud Sync Status
+   ======================================== */
+
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f9f9f9;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+#sync-status-icon {
+  font-size: 16px;
+}
+
+#sync-status-text {
+  color: #666;
+  font-weight: 500;
+}
+
+/* Sync status colors */
+.sync-status.offline #sync-status-icon {
+  color: #999;
+}
+
+.sync-status.synced #sync-status-icon {
+  color: #4caf50;
+}
+
+.sync-status.syncing #sync-status-icon {
+  color: #2196f3;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.sync-status.error #sync-status-icon {
+  color: #f44336;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+#user-email {
+  color: #667eea;
+}
+
+body.youtube #user-email {
+  color: #ff0000;
+}
+
+body.twitch #user-email {
+  color: #9146ff;
+}

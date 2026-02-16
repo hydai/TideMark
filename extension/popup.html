@@ -74,6 +74,50 @@
         ⚙️ 設定
       </button>
       <div id="settings-content" class="settings-content hidden">
+        <!-- Cloud Sync Settings -->
+        <div class="settings-group">
+          <h3>雲端同步</h3>
+
+          <div id="sync-status-display" class="settings-item">
+            <div class="sync-status">
+              <span id="sync-status-icon">⚪</span>
+              <span id="sync-status-text">未登入</span>
+            </div>
+          </div>
+
+          <div id="sync-logged-out" class="settings-item">
+            <button id="login-button" class="primary">
+              🔐 使用 Google 登入
+            </button>
+            <p class="settings-description">
+              登入後可在多個裝置間同步記錄與資料夾
+            </p>
+            <details class="test-mode">
+              <summary style="cursor: pointer; color: #999; font-size: 12px; margin-top: 8px;">開發測試模式</summary>
+              <div style="margin-top: 8px;">
+                <input
+                  type="text"
+                  id="test-jwt-input"
+                  placeholder="貼上測試 JWT"
+                  style="width: 100%; padding: 6px; font-size: 12px; font-family: monospace;"
+                />
+                <button id="test-jwt-button" class="secondary" style="margin-top: 4px; font-size: 12px;">
+                  設定測試 JWT
+                </button>
+              </div>
+            </details>
+          </div>
+
+          <div id="sync-logged-in" class="settings-item hidden">
+            <p class="settings-description">
+              已登入為: <strong id="user-email"></strong>
+            </p>
+            <button id="logout-button" class="secondary">
+              登出
+            </button>
+          </div>
+        </div>
+
         <div class="settings-group">
           <h3>資料備份與還原</h3>
 

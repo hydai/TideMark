@@ -1,4 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { open } from '@tauri-apps/plugin-dialog';
 
 interface VideoQuality {
   format_id: string;
@@ -21,7 +23,40 @@ interface VideoInfo {
   qualities: VideoQuality[];
 }
 
+interface DownloadConfig {
+  url: string;
+  video_info: VideoInfo;
+  format_id: string;
+  content_type: string;
+  video_codec: string | null;
+  audio_codec: string | null;
+  output_filename: string;
+  output_folder: string;
+  container_format: string;
+  time_range: TimeRange | null;
+}
+
+interface TimeRange {
+  start: string | null;
+  end: string | null;
+}
+
+interface DownloadProgress {
+  task_id: string;
+  status: string;
+  title: string;
+  percentage: number;
+  speed: string;
+  eta: string;
+  downloaded_bytes: number;
+  total_bytes: number;
+  output_path: string | null;
+  error_message: string | null;
+}
+
 let currentVideoInfo: VideoInfo | null = null;
+let currentUrl: string = '';
+let downloadTasks: Map<string, DownloadProgress> = new Map();
 
 export function renderDownloadPage(container: HTMLElement) {
   container.innerHTML = `
@@ -52,30 +87,80 @@ export function renderDownloadPage(container: HTMLElement) {
             <h2 id="video-title" class="video-title"></h2>
             <p id="video-channel" class="video-channel"></p>
             <p id="video-duration" class="video-duration"></p>
-
-            <div class="quality-section">
-              <label class="setting-label">可用畫質</label>
-              <select id="quality-select" class="quality-select">
-                <option value="">載入中...</option>
-              </select>
-            </div>
-
-            <div id="codec-section" class="codec-section">
-              <div class="codec-info">
-                <span class="codec-label">影片編碼：</span>
-                <span id="video-codec" class="codec-value">-</span>
-              </div>
-              <div class="codec-info">
-                <span class="codec-label">音訊編碼：</span>
-                <span id="audio-codec" class="codec-value">-</span>
-              </div>
-            </div>
-
-            <div id="live-record-section" class="live-record-section hidden">
-              <button class="primary-button">錄製直播</button>
-            </div>
           </div>
         </div>
+
+        <div class="download-config">
+          <h3 class="section-title">下載設定</h3>
+
+          <div class="config-row">
+            <label class="config-label">影片品質</label>
+            <select id="quality-select" class="config-select">
+              <option value="">載入中...</option>
+            </select>
+          </div>
+
+          <div class="config-row">
+            <label class="config-label">內容類型</label>
+            <select id="content-type-select" class="config-select">
+              <option value="video+audio">影片+音訊</option>
+              <option value="video_only">僅影片</option>
+              <option value="audio_only">僅音訊</option>
+            </select>
+          </div>
+
+          <div class="config-row" id="video-codec-row">
+            <label class="config-label">影片編解碼器</label>
+            <select id="video-codec-select" class="config-select">
+              <option value="h264">H.264</option>
+              <option value="vp9">VP9</option>
+              <option value="av1">AV1</option>
+            </select>
+          </div>
+
+          <div class="config-row" id="audio-codec-row">
+            <label class="config-label">音訊編解碼器</label>
+            <select id="audio-codec-select" class="config-select">
+              <option value="aac">AAC</option>
+              <option value="mp3">MP3</option>
+              <option value="opus">Opus</option>
+            </select>
+          </div>
+
+          <div class="config-row">
+            <label class="config-label">輸出檔名</label>
+            <input type="text" id="filename-input" class="config-input" value="{title}_{resolution}" />
+            <div class="filename-help">
+              可用變數: {type}, {id}, {title}, {channel}, {channel_name}, {date}, {resolution}, {duration}
+            </div>
+          </div>
+
+          <div class="config-row">
+            <label class="config-label">輸出資料夾</label>
+            <div class="folder-picker">
+              <input type="text" id="folder-input" class="config-input" value="~/Downloads" readonly />
+              <button id="folder-btn" class="secondary-button">選擇</button>
+            </div>
+          </div>
+
+          <div class="config-row">
+            <label class="config-label">輸出容器格式</label>
+            <select id="container-select" class="config-select">
+              <option value="auto">自動</option>
+              <option value="mp4">MP4</option>
+              <option value="mkv">MKV</option>
+            </select>
+          </div>
+
+          <div class="config-row">
+            <button id="start-download-btn" class="primary-button large-button">開始下載</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="downloads-section" class="downloads-section">
+        <h3 class="section-title">下載進度</h3>
+        <div id="downloads-list" class="downloads-list"></div>
       </div>
     </div>
   `;
@@ -86,6 +171,15 @@ export function renderDownloadPage(container: HTMLElement) {
   const errorMessage = container.querySelector('#error-message') as HTMLElement;
   const videoInfoSection = container.querySelector('#video-info-section') as HTMLElement;
   const qualitySelect = container.querySelector('#quality-select') as HTMLSelectElement;
+  const contentTypeSelect = container.querySelector('#content-type-select') as HTMLSelectElement;
+  const videoCodecRow = container.querySelector('#video-codec-row') as HTMLElement;
+  const audioCodecRow = container.querySelector('#audio-codec-row') as HTMLElement;
+  const filenameInput = container.querySelector('#filename-input') as HTMLInputElement;
+  const folderInput = container.querySelector('#folder-input') as HTMLInputElement;
+  const folderBtn = container.querySelector('#folder-btn') as HTMLButtonElement;
+  const containerSelect = container.querySelector('#container-select') as HTMLSelectElement;
+  const startDownloadBtn = container.querySelector('#start-download-btn') as HTMLButtonElement;
+  const downloadsList = container.querySelector('#downloads-list') as HTMLElement;
 
   fetchBtn.addEventListener('click', async () => {
     const url = urlInput.value.trim();
@@ -102,6 +196,7 @@ export function renderDownloadPage(container: HTMLElement) {
     try {
       const videoInfo = await invoke<VideoInfo>('fetch_video_info', { url });
       currentVideoInfo = videoInfo;
+      currentUrl = url;
       displayVideoInfo(videoInfo);
     } catch (error) {
       showError(String(error));
@@ -111,17 +206,64 @@ export function renderDownloadPage(container: HTMLElement) {
     }
   });
 
-  // Allow Enter key to trigger fetch
   urlInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
       fetchBtn.click();
     }
   });
 
-  // Update codec info when quality changes
   qualitySelect.addEventListener('change', () => {
-    updateCodecInfo();
+    updateCodecVisibility();
   });
+
+  contentTypeSelect.addEventListener('change', () => {
+    updateCodecVisibility();
+  });
+
+  folderBtn.addEventListener('click', async () => {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+    });
+
+    if (selected) {
+      folderInput.value = selected as string;
+    }
+  });
+
+  startDownloadBtn.addEventListener('click', async () => {
+    if (!currentVideoInfo) return;
+
+    const config: DownloadConfig = {
+      url: currentUrl,
+      video_info: currentVideoInfo,
+      format_id: qualitySelect.value,
+      content_type: contentTypeSelect.value,
+      video_codec: contentTypeSelect.value !== 'audio_only' ? (container.querySelector('#video-codec-select') as HTMLSelectElement).value : null,
+      audio_codec: contentTypeSelect.value !== 'video_only' ? (container.querySelector('#audio-codec-select') as HTMLSelectElement).value : null,
+      output_filename: filenameInput.value,
+      output_folder: folderInput.value,
+      container_format: containerSelect.value,
+      time_range: null,
+    };
+
+    try {
+      const taskId = await invoke<string>('start_download', { config });
+      console.log('Download started:', taskId);
+    } catch (error) {
+      showError(String(error));
+    }
+  });
+
+  // Listen for download progress updates
+  listen<DownloadProgress>('download-progress', (event) => {
+    const progress = event.payload;
+    downloadTasks.set(progress.task_id, progress);
+    renderDownloadTasks(downloadsList);
+  });
+
+  // Load existing tasks
+  loadDownloadTasks(downloadsList);
 
   function showError(message: string) {
     errorMessage.textContent = message;
@@ -137,7 +279,6 @@ export function renderDownloadPage(container: HTMLElement) {
   }
 
   function displayVideoInfo(info: VideoInfo) {
-    // Set thumbnail
     const thumbnail = container.querySelector('#video-thumbnail') as HTMLImageElement;
     if (info.thumbnail) {
       thumbnail.src = info.thumbnail;
@@ -145,14 +286,12 @@ export function renderDownloadPage(container: HTMLElement) {
       thumbnail.src = 'https://via.placeholder.com/320x180?text=No+Thumbnail';
     }
 
-    // Set title and channel
     const title = container.querySelector('#video-title') as HTMLElement;
     title.textContent = info.title;
 
     const channel = container.querySelector('#video-channel') as HTMLElement;
     channel.textContent = info.channel;
 
-    // Set duration
     const duration = container.querySelector('#video-duration') as HTMLElement;
     if (info.duration && !info.is_live) {
       duration.textContent = formatDuration(info.duration);
@@ -162,7 +301,6 @@ export function renderDownloadPage(container: HTMLElement) {
       duration.textContent = '時長未知';
     }
 
-    // Show/hide live badge
     const liveBadge = container.querySelector('#live-badge') as HTMLElement;
     if (info.is_live) {
       liveBadge.classList.remove('hidden');
@@ -170,18 +308,9 @@ export function renderDownloadPage(container: HTMLElement) {
       liveBadge.classList.add('hidden');
     }
 
-    // Show/hide live record section
-    const liveRecordSection = container.querySelector('#live-record-section') as HTMLElement;
-    if (info.is_live) {
-      liveRecordSection.classList.remove('hidden');
-    } else {
-      liveRecordSection.classList.add('hidden');
-    }
-
-    // Populate quality options
     populateQualities(info.qualities);
+    updateCodecVisibility();
 
-    // Show video info
     videoInfoSection.classList.remove('hidden');
   }
 
@@ -196,7 +325,6 @@ export function renderDownloadPage(container: HTMLElement) {
       return;
     }
 
-    // Group by quality and filter duplicates
     const uniqueQualities = new Map<string, VideoQuality>();
     for (const quality of qualities) {
       if (!uniqueQualities.has(quality.quality)) {
@@ -204,7 +332,6 @@ export function renderDownloadPage(container: HTMLElement) {
       }
     }
 
-    // Sort by quality (descending)
     const sortedQualities = Array.from(uniqueQualities.values()).sort((a, b) => {
       const getResolution = (q: string) => {
         if (q === 'audio only') return 0;
@@ -221,28 +348,23 @@ export function renderDownloadPage(container: HTMLElement) {
       qualitySelect.appendChild(option);
     }
 
-    // Auto-select first option
     if (sortedQualities.length > 0) {
       qualitySelect.value = sortedQualities[0].format_id;
-      updateCodecInfo();
     }
   }
 
-  function updateCodecInfo() {
-    if (!currentVideoInfo) return;
+  function updateCodecVisibility() {
+    const contentType = contentTypeSelect.value;
 
-    const selectedFormatId = qualitySelect.value;
-    const quality = currentVideoInfo.qualities.find(q => q.format_id === selectedFormatId);
-
-    const videoCodec = container.querySelector('#video-codec') as HTMLElement;
-    const audioCodec = container.querySelector('#audio-codec') as HTMLElement;
-
-    if (quality) {
-      videoCodec.textContent = quality.vcodec || '-';
-      audioCodec.textContent = quality.acodec || '-';
+    if (contentType === 'audio_only') {
+      videoCodecRow.style.display = 'none';
+      audioCodecRow.style.display = 'flex';
+    } else if (contentType === 'video_only') {
+      videoCodecRow.style.display = 'flex';
+      audioCodecRow.style.display = 'none';
     } else {
-      videoCodec.textContent = '-';
-      audioCodec.textContent = '-';
+      videoCodecRow.style.display = 'flex';
+      audioCodecRow.style.display = 'flex';
     }
   }
 
@@ -257,4 +379,160 @@ export function renderDownloadPage(container: HTMLElement) {
       return `${minutes}:${String(secs).padStart(2, '0')}`;
     }
   }
+}
+
+async function loadDownloadTasks(container: HTMLElement) {
+  try {
+    const tasks = await invoke<DownloadProgress[]>('get_download_tasks');
+    tasks.forEach(task => {
+      downloadTasks.set(task.task_id, task);
+    });
+    renderDownloadTasks(container);
+  } catch (error) {
+    console.error('Failed to load download tasks:', error);
+  }
+}
+
+function renderDownloadTasks(container: HTMLElement) {
+  if (downloadTasks.size === 0) {
+    container.innerHTML = '<p class="empty-message">目前沒有下載任務</p>';
+    return;
+  }
+
+  container.innerHTML = '';
+
+  downloadTasks.forEach((progress, taskId) => {
+    const taskCard = createTaskCard(progress);
+    container.appendChild(taskCard);
+  });
+}
+
+function createTaskCard(progress: DownloadProgress): HTMLElement {
+  const card = document.createElement('div');
+  card.className = `download-task-card status-${progress.status}`;
+  card.innerHTML = `
+    <div class="task-header">
+      <h4 class="task-title">${progress.title}</h4>
+      <span class="task-status">${getStatusText(progress.status)}</span>
+    </div>
+
+    <div class="task-progress">
+      <div class="progress-bar-container">
+        <div class="progress-bar" style="width: ${progress.percentage}%"></div>
+      </div>
+      <div class="progress-info">
+        <span class="progress-percentage">${progress.percentage.toFixed(1)}%</span>
+        <span class="progress-speed">${progress.speed}</span>
+        <span class="progress-eta">剩餘 ${progress.eta}</span>
+      </div>
+    </div>
+
+    <div class="task-actions">
+      ${progress.status === 'downloading' ? `
+        <button class="action-btn pause-btn" data-task-id="${progress.task_id}">暫停</button>
+        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">取消</button>
+      ` : ''}
+      ${progress.status === 'paused' ? `
+        <button class="action-btn resume-btn" data-task-id="${progress.task_id}">恢復</button>
+        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">取消</button>
+      ` : ''}
+      ${progress.status === 'completed' && progress.output_path ? `
+        <button class="action-btn open-btn" data-path="${progress.output_path}">開啟檔案</button>
+        <button class="action-btn folder-btn" data-path="${progress.output_path}">顯示資料夾</button>
+        <button class="action-btn transcribe-btn" data-path="${progress.output_path}">送往轉錄</button>
+      ` : ''}
+      ${progress.status === 'failed' && progress.error_message ? `
+        <p class="error-text">${progress.error_message}</p>
+      ` : ''}
+    </div>
+  `;
+
+  // Attach event listeners
+  card.querySelectorAll('.pause-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const taskId = (e.target as HTMLElement).dataset.taskId;
+      if (taskId) {
+        try {
+          await invoke('pause_download', { taskId });
+        } catch (error) {
+          console.error('Failed to pause download:', error);
+        }
+      }
+    });
+  });
+
+  card.querySelectorAll('.resume-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const taskId = (e.target as HTMLElement).dataset.taskId;
+      if (taskId) {
+        try {
+          await invoke('resume_download', { taskId });
+        } catch (error) {
+          console.error('Failed to resume download:', error);
+        }
+      }
+    });
+  });
+
+  card.querySelectorAll('.cancel-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const taskId = (e.target as HTMLElement).dataset.taskId;
+      if (taskId) {
+        try {
+          await invoke('cancel_download', { taskId });
+        } catch (error) {
+          console.error('Failed to cancel download:', error);
+        }
+      }
+    });
+  });
+
+  card.querySelectorAll('.open-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const path = (e.target as HTMLElement).dataset.path;
+      if (path) {
+        try {
+          await invoke('open_file', { path });
+        } catch (error) {
+          console.error('Failed to open file:', error);
+        }
+      }
+    });
+  });
+
+  card.querySelectorAll('.folder-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const path = (e.target as HTMLElement).dataset.path;
+      if (path) {
+        try {
+          await invoke('show_in_folder', { path });
+        } catch (error) {
+          console.error('Failed to show in folder:', error);
+        }
+      }
+    });
+  });
+
+  card.querySelectorAll('.transcribe-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      // TODO: Navigate to transcription page with this file
+      const path = (e.target as HTMLElement).dataset.path;
+      console.log('Send to transcription:', path);
+    });
+  });
+
+  return card;
+}
+
+function getStatusText(status: string): string {
+  const statusMap: Record<string, string> = {
+    'queued': '排隊中',
+    'downloading': '下載中',
+    'processing': '處理中',
+    'completed': '已完成',
+    'failed': '失敗',
+    'cancelled': '已取消',
+    'paused': '已暫停',
+  };
+  return statusMap[status] || status;
 }

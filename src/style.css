@@ -438,3 +438,261 @@ body {
 .live-record-section.hidden {
   display: none;
 }
+
+/* Download Configuration Styles */
+.download-config {
+  margin-top: var(--spacing-xl);
+  padding: var(--spacing-lg);
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-lg);
+}
+
+.config-row {
+  margin-bottom: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.config-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.config-select, .config-input {
+  width: 100%;
+  padding: var(--spacing-md);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 15px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.config-select:focus, .config-input:focus {
+  border-color: var(--accent-color);
+}
+
+.config-select {
+  cursor: pointer;
+}
+
+.filename-help {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin-top: var(--spacing-xs);
+}
+
+.folder-picker {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.secondary-button {
+  padding: var(--spacing-md) var(--spacing-lg);
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.secondary-button:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--accent-color);
+}
+
+.large-button {
+  width: 100%;
+  padding: var(--spacing-lg);
+  font-size: 16px;
+}
+
+/* Download Progress Styles */
+.downloads-section {
+  margin-top: var(--spacing-xl);
+}
+
+.downloads-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.empty-message {
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 14px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+}
+
+.download-task-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: var(--spacing-lg);
+  transition: all 0.2s;
+}
+
+.download-task-card:hover {
+  border-color: var(--accent-color);
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-md);
+}
+
+.task-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  flex: 1;
+}
+
+.task-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.status-queued .task-status {
+  background-color: #888888;
+  color: #ffffff;
+}
+
+.status-downloading .task-status {
+  background-color: #4a9eff;
+  color: #ffffff;
+}
+
+.status-processing .task-status {
+  background-color: #ff9800;
+  color: #ffffff;
+}
+
+.status-completed .task-status {
+  background-color: #4caf50;
+  color: #ffffff;
+}
+
+.status-failed .task-status {
+  background-color: #ff4444;
+  color: #ffffff;
+}
+
+.status-cancelled .task-status {
+  background-color: #999999;
+  color: #ffffff;
+}
+
+.status-paused .task-status {
+  background-color: #ff9800;
+  color: #ffffff;
+}
+
+.task-progress {
+  margin-bottom: var(--spacing-md);
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background-color: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: var(--spacing-sm);
+}
+
+.progress-bar {
+  height: 100%;
+  background-color: var(--accent-color);
+  transition: width 0.3s ease;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.progress-percentage {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.task-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.action-btn {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background-color: var(--bg-primary);
+  border-color: var(--accent-color);
+}
+
+.pause-btn:hover {
+  background-color: #ff9800;
+  border-color: #ff9800;
+  color: #ffffff;
+}
+
+.cancel-btn:hover {
+  background-color: #ff4444;
+  border-color: #ff4444;
+  color: #ffffff;
+}
+
+.resume-btn:hover {
+  background-color: #4caf50;
+  border-color: #4caf50;
+  color: #ffffff;
+}
+
+.error-text {
+  width: 100%;
+  padding: var(--spacing-md);
+  background-color: rgba(255, 68, 68, 0.1);
+  border: 1px solid #ff4444;
+  border-radius: 6px;
+  color: #ff4444;
+  font-size: 13px;
+  margin: 0;
+}

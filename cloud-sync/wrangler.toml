@@ -1,0 +1,12 @@
+name = "tidemark-cloud-sync"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "tidemark"
+database_id = "61ef1f5f-a3b6-4f63-aecc-98d95682727c"
+
+# Environment variables (secrets set via wrangler secret put)
+# JWT_SECRET - set via: wrangler secret put JWT_SECRET

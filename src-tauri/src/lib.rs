@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, Child};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -926,19 +926,21 @@ async fn execute_download(app: AppHandle, tasks: DownloadTasks, task_id: String)
     }
 
     // Add time range if specified
-    let mut download_sections = String::new();
-    if let Some(ref time_range) = config.time_range {
-        if let (Some(ref start), Some(ref end)) = (&time_range.start, &time_range.end) {
-            // Normalize time to HH:MM:SS format for yt-dlp
-            let start_seconds = parse_time_to_seconds(start).unwrap_or(0);
-            let end_seconds = parse_time_to_seconds(end).unwrap_or(0);
-            let start_normalized = normalize_time_to_hhmmss(start_seconds);
-            let end_normalized = normalize_time_to_hhmmss(end_seconds);
-
-            download_sections = format!("*{}-{}", start_normalized, end_normalized);
-            args.push("--download-sections");
-            args.push(&download_sections);
+    let download_sections = config.time_range.as_ref().and_then(|time_range| {
+        match (&time_range.start, &time_range.end) {
+            (Some(start), Some(end)) => {
+                let start_seconds = parse_time_to_seconds(start).unwrap_or(0);
+                let end_seconds = parse_time_to_seconds(end).unwrap_or(0);
+                let start_normalized = normalize_time_to_hhmmss(start_seconds);
+                let end_normalized = normalize_time_to_hhmmss(end_seconds);
+                Some(format!("*{}-{}", start_normalized, end_normalized))
+            }
+            _ => None,
         }
+    });
+    if let Some(ref sections) = download_sections {
+        args.push("--download-sections");
+        args.push(sections);
     }
 
     // Add container format
@@ -1236,7 +1238,7 @@ async fn execute_recording(app: AppHandle, tasks: DownloadTasks, task_id: String
     }
 }
 
-async fn post_process_recording(input_path: &PathBuf) -> Option<String> {
+async fn post_process_recording(input_path: &Path) -> Option<String> {
     // Run FFmpeg remux to ensure the file is properly formatted
     // For MVP, we'll just verify the file exists
     if input_path.exists() {
@@ -1898,23 +1900,13 @@ async fn test_elevenlabs_api_key(api_key: String) -> Result<ApiKeyTestResult, St
         Ok(response) => {
             if response.status().is_success() {
                 // Try to parse quota info if available
-                let quota_info = if let Ok(user_info) = response.json::<serde_json::Value>().await {
-                    if let Some(subscription) = user_info.get("subscription") {
-                        if let Some(character_count) = subscription.get("character_count") {
-                            if let Some(character_limit) = subscription.get("character_limit") {
-                                Some(format!("已用 {} / {}", character_count, character_limit))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+                let quota_info = response.json::<serde_json::Value>().await.ok()
+                    .and_then(|user_info| user_info.get("subscription").cloned())
+                    .and_then(|subscription| {
+                        let count = subscription.get("character_count")?;
+                        let limit = subscription.get("character_limit")?;
+                        Some(format!("已用 {} / {}", count, limit))
+                    });
 
                 Ok(ApiKeyTestResult {
                     success: true,
@@ -2125,7 +2117,7 @@ async fn check_asr_environment() -> Result<AsrEnvironmentStatus, String> {
     let whisper_cache = home_path.join(".cache/whisper");
 
     // Define available models
-    let model_specs = vec![
+    let model_specs = [
         ("whisper", "tiny", "Whisper Tiny", "75 MB"),
         ("whisper", "base", "Whisper Base", "145 MB"),
         ("whisper", "small", "Whisper Small", "466 MB"),
@@ -2180,7 +2172,7 @@ async fn install_asr_environment() -> Result<(), String> {
         .ok_or("Failed to get executable parent directory")?;
 
     // Try multiple possible locations for the scripts directory
-    let possible_paths = vec![
+    let possible_paths = [
         exe_parent.join("../scripts/asr"),
         exe_parent.join("../../scripts/asr"),
         exe_parent.join("../../../scripts/asr"),
@@ -2239,7 +2231,7 @@ async fn download_asr_model(engine: String, model: String) -> Result<(), String>
     let exe_parent = exe_dir.parent()
         .ok_or("Failed to get executable parent directory")?;
 
-    let possible_paths = vec![
+    let possible_paths = [
         exe_parent.join("../scripts/asr"),
         exe_parent.join("../../scripts/asr"),
         exe_parent.join("../../../scripts/asr"),
@@ -2335,7 +2327,7 @@ async fn delete_asr_model(engine: String, model: String) -> Result<(), String> {
 async fn get_file_duration(path: String) -> Result<f64, String> {
     // Use ffprobe to get file duration
     let output = Command::new("ffprobe")
-        .args(&[
+        .args([
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
@@ -2397,7 +2389,7 @@ async fn split_audio_for_cloud(input_path: &str, max_size_mb: u64) -> Result<Vec
 
     // Get file duration
     let duration_output = Command::new("ffprobe")
-        .args(&[
+        .args([
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
@@ -2419,7 +2411,7 @@ async fn split_audio_for_cloud(input_path: &str, max_size_mb: u64) -> Result<Vec
         let segment_path = parent_dir.join(format!("{}_segment_{:03}.mp3", file_stem, i));
 
         let output = Command::new("ffmpeg")
-            .args(&[
+            .args([
                 "-i", input_path,
                 "-ss", &format!("{:.2}", start_time),
                 "-t", &format!("{:.2}", segment_duration),
@@ -2804,7 +2796,7 @@ async fn start_cloud_transcription(config: TranscriptionConfig, app: AppHandle) 
 
         // Get segment duration for offset calculation
         let duration_output = Command::new("ffprobe")
-            .args(&[
+            .args([
                 "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
@@ -2932,7 +2924,7 @@ async fn start_transcription(
     let exe_parent = exe_dir.parent()
         .ok_or("Failed to get executable parent directory")?;
 
-    let possible_paths = vec![
+    let possible_paths = [
         exe_parent.join("../scripts/asr"),
         exe_parent.join("../../scripts/asr"),
         exe_parent.join("../../../scripts/asr"),

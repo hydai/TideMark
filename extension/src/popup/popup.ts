@@ -1,5 +1,5 @@
-import type { Record, PlaybackInfo, Platform, StorageData, ContentMessage } from '../types';
-import { MAX_RECORDS, DEFAULT_TOPIC } from '../types';
+import type { Record, Folder, PlaybackInfo, Platform, StorageData, ContentMessage } from '../types';
+import { MAX_RECORDS, DEFAULT_TOPIC, UNCATEGORIZED_ID, UNCATEGORIZED_NAME } from '../types';
 
 // DOM elements
 const errorMessage = document.getElementById('error-message') as HTMLDivElement;
@@ -13,12 +13,18 @@ const noRecords = document.getElementById('no-records') as HTMLDivElement;
 const recordCount = document.getElementById('record-count') as HTMLDivElement;
 const header = document.getElementById('header') as HTMLDivElement;
 const platformIndicator = document.getElementById('platform-indicator') as HTMLDivElement;
+const foldersList = document.getElementById('folders-list') as HTMLDivElement;
+const folderInput = document.getElementById('folder-input') as HTMLInputElement;
+const folderAddButton = document.getElementById('folder-add-button') as HTMLButtonElement;
 
 // State
 let currentPlaybackInfo: PlaybackInfo | null = null;
 let currentPlatform: Platform = 'unknown';
 let retryCount = 0;
 const MAX_RETRIES = 3;
+let selectedFolderId: string = UNCATEGORIZED_ID;
+let folders: Folder[] = [];
+let draggedFolderElement: HTMLElement | null = null;
 
 /**
  * Initialize popup
@@ -47,7 +53,8 @@ async function init() {
   // Get playback info from content script
   await getPlaybackInfo(tab.id);
 
-  // Load existing records
+  // Load existing folders and records
+  await loadFolders();
   await loadRecords();
 
   // Set up event listeners
@@ -146,6 +153,16 @@ function setupEventListeners() {
       handleRecord();
     }
   });
+
+  // Folder add button click
+  folderAddButton.addEventListener('click', handleCreateFolder);
+
+  // Enter key in folder input
+  folderInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      handleCreateFolder();
+    }
+  });
 }
 
 /**
@@ -165,7 +182,7 @@ async function handleRecord() {
     liveTime: currentPlaybackInfo.liveTime!,
     title: currentPlaybackInfo.title!,
     topic,
-    folderId: null, // Uncategorized for now
+    folderId: selectedFolderId === UNCATEGORIZED_ID ? null : selectedFolderId,
     channelUrl: currentPlaybackInfo.channelUrl!,
     platform: currentPlaybackInfo.platform
   };
@@ -197,7 +214,7 @@ async function handleRecord() {
 async function saveRecord(record: Record): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(['records'], (result) => {
-      const data = result as StorageData;
+      const data = result as Partial<StorageData>;
       let records = data.records || [];
 
       // Add new record at the beginning
@@ -226,10 +243,18 @@ async function saveRecord(record: Record): Promise<void> {
 async function loadRecords(): Promise<void> {
   return new Promise((resolve) => {
     chrome.storage.local.get(['records'], (result) => {
-      const data = result as StorageData;
+      const data = result as Partial<StorageData>;
       const records = data.records || [];
 
-      renderRecords(records);
+      // Filter records by selected folder
+      const filteredRecords = records.filter(r => {
+        if (selectedFolderId === UNCATEGORIZED_ID) {
+          return r.folderId === null;
+        }
+        return r.folderId === selectedFolderId;
+      });
+
+      renderRecords(filteredRecords);
       resolve();
     });
   });
@@ -375,7 +400,7 @@ async function handleDelete(event: Event) {
 async function deleteRecord(recordId: string): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(['records'], (result) => {
-      const data = result as StorageData;
+      const data = result as Partial<StorageData>;
       const records = (data.records || []).filter(r => r.id !== recordId);
 
       chrome.storage.local.set({ records }, () => {
@@ -407,6 +432,424 @@ function formatTimestamp(isoString: string): string {
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
+  });
+}
+
+// ==================== Folder Management ====================
+
+/**
+ * Load folders from Chrome Storage
+ */
+async function loadFolders(): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['folders'], (result) => {
+      const data = result as Partial<StorageData>;
+      folders = data.folders || [];
+      renderFolders();
+      resolve();
+    });
+  });
+}
+
+/**
+ * Render folders list
+ */
+function renderFolders() {
+  foldersList.textContent = '';
+
+  // Always show "Uncategorized" first
+  const uncategorizedItem = createFolderElement({
+    id: UNCATEGORIZED_ID,
+    name: UNCATEGORIZED_NAME,
+    created: new Date().toISOString()
+  }, true);
+  foldersList.appendChild(uncategorizedItem);
+
+  // Render user-created folders
+  folders.forEach(folder => {
+    const folderItem = createFolderElement(folder, false);
+    foldersList.appendChild(folderItem);
+  });
+}
+
+/**
+ * Create a folder element
+ */
+function createFolderElement(folder: Folder, isUncategorized: boolean): HTMLElement {
+  const div = document.createElement('div');
+  div.className = 'folder-item';
+  div.dataset.id = folder.id;
+
+  if (isUncategorized) {
+    div.classList.add('uncategorized');
+  }
+
+  if (folder.id === selectedFolderId) {
+    div.classList.add('active');
+  }
+
+  // Make draggable (except uncategorized)
+  if (!isUncategorized) {
+    div.draggable = true;
+    div.addEventListener('dragstart', handleFolderDragStart);
+    div.addEventListener('dragover', handleFolderDragOver);
+    div.addEventListener('drop', handleFolderDrop);
+    div.addEventListener('dragend', handleFolderDragEnd);
+    div.addEventListener('dragleave', handleFolderDragLeave);
+  }
+
+  // Folder name
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'folder-name';
+  nameSpan.textContent = folder.name;
+
+  // Double-click to rename (except uncategorized)
+  if (!isUncategorized) {
+    nameSpan.addEventListener('dblclick', () => handleRenameFolder(folder.id));
+  }
+
+  // Click to select folder
+  div.addEventListener('click', (e) => {
+    if ((e.target as HTMLElement).classList.contains('folder-delete')) {
+      return;
+    }
+    selectFolder(folder.id);
+  });
+
+  div.appendChild(nameSpan);
+
+  // Delete button (except uncategorized)
+  if (!isUncategorized) {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'folder-delete';
+    deleteBtn.textContent = '×';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDeleteFolder(folder.id);
+    });
+    div.appendChild(deleteBtn);
+  }
+
+  return div;
+}
+
+/**
+ * Select a folder
+ */
+function selectFolder(folderId: string) {
+  selectedFolderId = folderId;
+  renderFolders();
+  loadRecords();
+}
+
+/**
+ * Handle create folder
+ */
+async function handleCreateFolder() {
+  const name = folderInput.value.trim();
+
+  // E1.2a: Blank folder name - silently reject
+  if (!name) {
+    return;
+  }
+
+  const folder: Folder = {
+    id: `folder-${Date.now()}`,
+    name,
+    created: new Date().toISOString()
+  };
+
+  try {
+    await saveFolder(folder);
+    folderInput.value = '';
+    await loadFolders();
+  } catch (error) {
+    // E1.2b: Storage write failure
+    showError('操作失敗');
+    console.error('Save folder error:', error);
+  }
+}
+
+/**
+ * Save folder to Chrome Storage
+ */
+async function saveFolder(folder: Folder): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(['folders'], (result) => {
+      const data = result as Partial<StorageData>;
+      const folders = data.folders || [];
+
+      folders.push(folder);
+
+      chrome.storage.local.set({ folders }, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+/**
+ * Handle rename folder
+ */
+function handleRenameFolder(folderId: string) {
+  const folderItem = document.querySelector(`.folder-item[data-id="${folderId}"]`) as HTMLElement;
+  if (!folderItem) return;
+
+  const nameSpan = folderItem.querySelector('.folder-name') as HTMLElement;
+  const currentName = nameSpan.textContent || '';
+
+  // Create input field
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'folder-name-input';
+  input.value = currentName;
+
+  // Replace name span with input
+  nameSpan.replaceWith(input);
+  input.focus();
+  input.select();
+
+  // Handle rename completion
+  const completeRename = async () => {
+    const newName = input.value.trim();
+
+    // Restore name span
+    const newNameSpan = document.createElement('span');
+    newNameSpan.className = 'folder-name';
+    newNameSpan.textContent = newName || currentName;
+    newNameSpan.addEventListener('dblclick', () => handleRenameFolder(folderId));
+    input.replaceWith(newNameSpan);
+
+    // Save if name changed and not blank
+    if (newName && newName !== currentName) {
+      try {
+        await updateFolderName(folderId, newName);
+        await loadFolders();
+      } catch (error) {
+        showError('操作失敗');
+        console.error('Rename folder error:', error);
+      }
+    }
+  };
+
+  input.addEventListener('blur', completeRename);
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      completeRename();
+    }
+  });
+}
+
+/**
+ * Update folder name in storage
+ */
+async function updateFolderName(folderId: string, newName: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(['folders'], (result) => {
+      const data = result as Partial<StorageData>;
+      const folders = data.folders || [];
+
+      const folder = folders.find(f => f.id === folderId);
+      if (folder) {
+        folder.name = newName;
+      }
+
+      chrome.storage.local.set({ folders }, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+/**
+ * Handle delete folder
+ */
+async function handleDeleteFolder(folderId: string) {
+  // Confirmation dialog
+  if (!confirm('確定要刪除此資料夾嗎？資料夾內的記錄將移至「未分類」')) {
+    return;
+  }
+
+  try {
+    await deleteFolder(folderId);
+
+    // If deleted folder was selected, switch to uncategorized
+    if (selectedFolderId === folderId) {
+      selectedFolderId = UNCATEGORIZED_ID;
+    }
+
+    await loadFolders();
+    await loadRecords();
+  } catch (error) {
+    showError('操作失敗');
+    console.error('Delete folder error:', error);
+  }
+}
+
+/**
+ * Delete folder from storage and move records to uncategorized
+ */
+async function deleteFolder(folderId: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(['folders', 'records'], (result) => {
+      const data = result as Partial<StorageData>;
+      const folders = (data.folders || []).filter(f => f.id !== folderId);
+      const records = data.records || [];
+
+      // Move all records in this folder to uncategorized
+      records.forEach(record => {
+        if (record.folderId === folderId) {
+          record.folderId = null;
+        }
+      });
+
+      chrome.storage.local.set({ folders, records }, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+/**
+ * Handle folder drag start
+ */
+function handleFolderDragStart(event: DragEvent) {
+  const target = event.target as HTMLElement;
+  draggedFolderElement = target;
+  target.classList.add('dragging');
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', target.dataset.id || '');
+  }
+}
+
+/**
+ * Handle folder drag over
+ */
+function handleFolderDragOver(event: DragEvent) {
+  event.preventDefault();
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  const target = event.currentTarget as HTMLElement;
+
+  // Don't allow dropping on uncategorized
+  if (target.classList.contains('uncategorized')) {
+    return;
+  }
+
+  // Don't allow dropping on self
+  if (target === draggedFolderElement) {
+    return;
+  }
+
+  target.classList.add('drag-over');
+}
+
+/**
+ * Handle folder drag leave
+ */
+function handleFolderDragLeave(event: DragEvent) {
+  const target = event.currentTarget as HTMLElement;
+  target.classList.remove('drag-over');
+}
+
+/**
+ * Handle folder drop
+ */
+function handleFolderDrop(event: DragEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const target = event.currentTarget as HTMLElement;
+  target.classList.remove('drag-over');
+
+  // Don't allow dropping on uncategorized
+  if (target.classList.contains('uncategorized')) {
+    return;
+  }
+
+  // Don't allow dropping on self
+  if (target === draggedFolderElement || !draggedFolderElement) {
+    return;
+  }
+
+  // Reorder folders
+  const draggedId = draggedFolderElement.dataset.id;
+  const targetId = target.dataset.id;
+
+  if (draggedId && targetId) {
+    reorderFolders(draggedId, targetId);
+  }
+}
+
+/**
+ * Handle folder drag end
+ */
+function handleFolderDragEnd(event: DragEvent) {
+  const target = event.target as HTMLElement;
+  target.classList.remove('dragging');
+  draggedFolderElement = null;
+
+  // Clean up all drag-over classes
+  document.querySelectorAll('.folder-item').forEach(item => {
+    item.classList.remove('drag-over');
+  });
+}
+
+/**
+ * Reorder folders array
+ */
+async function reorderFolders(draggedId: string, targetId: string) {
+  const draggedIndex = folders.findIndex(f => f.id === draggedId);
+  const targetIndex = folders.findIndex(f => f.id === targetId);
+
+  if (draggedIndex === -1 || targetIndex === -1) {
+    return;
+  }
+
+  // Remove dragged folder
+  const [draggedFolder] = folders.splice(draggedIndex, 1);
+
+  // Insert before target
+  folders.splice(targetIndex, 0, draggedFolder);
+
+  try {
+    await saveFoldersOrder(folders);
+    await loadFolders();
+  } catch (error) {
+    showError('操作失敗');
+    console.error('Reorder folders error:', error);
+  }
+}
+
+/**
+ * Save folders order to storage
+ */
+async function saveFoldersOrder(folders: Folder[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set({ folders }, () => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+      } else {
+        resolve();
+      }
+    });
   });
 }
 

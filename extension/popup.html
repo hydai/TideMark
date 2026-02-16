@@ -36,15 +36,35 @@
       </button>
     </div>
 
-    <!-- Records list -->
-    <div id="records-section">
-      <div id="records-header">
-        <h2>記錄列表</h2>
-        <div id="record-count"></div>
+    <!-- Two-panel layout: Folders + Records -->
+    <div id="main-container">
+      <!-- Left sidebar: Folders -->
+      <div id="folders-sidebar">
+        <div id="folders-header">
+          <h2>資料夾</h2>
+        </div>
+        <div id="folder-create">
+          <input
+            type="text"
+            id="folder-input"
+            placeholder="新增資料夾..."
+            maxlength="50"
+          />
+          <button id="folder-add-button" title="新增資料夾">+</button>
+        </div>
+        <div id="folders-list"></div>
       </div>
-      <div id="records-list"></div>
-      <div id="no-records" class="empty-state hidden">
-        尚無記錄
+
+      <!-- Right panel: Records -->
+      <div id="records-section">
+        <div id="records-header">
+          <h2>記錄列表</h2>
+          <div id="record-count"></div>
+        </div>
+        <div id="records-list"></div>
+        <div id="no-records" class="empty-state hidden">
+          尚無記錄
+        </div>
       </div>
     </div>
   </div>

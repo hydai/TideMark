@@ -13,6 +13,15 @@ export interface Record {
 }
 
 /**
+ * Folder data model stored in Chrome Storage
+ */
+export interface Folder {
+  id: string;       // "folder-{timestamp}" format
+  name: string;     // Folder name
+  created: string;  // ISO 8601 creation time
+}
+
+/**
  * Platform type
  */
 export type Platform = 'youtube' | 'twitch' | 'unknown';
@@ -43,6 +52,7 @@ export interface PlaybackInfo {
  */
 export interface StorageData {
   records: Record[];
+  folders: Folder[];
 }
 
 /**
@@ -50,3 +60,5 @@ export interface StorageData {
  */
 export const MAX_RECORDS = 500;
 export const DEFAULT_TOPIC = '無主題';
+export const UNCATEGORIZED_ID = 'uncategorized';
+export const UNCATEGORIZED_NAME = '未分類';

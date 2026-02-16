@@ -1474,6 +1474,212 @@ async fn get_auth_config(app: AppHandle) -> Result<AuthConfig, String> {
         .map_err(|e| format!("Failed to parse auth config: {}", e))
 }
 
+// ASR-related structures
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AsrModel {
+    pub engine: String,
+    pub model_id: String,
+    pub display_name: String,
+    pub size: String,
+    pub installed: bool,
+    pub downloading: bool,
+    pub download_progress: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AsrEnvironmentStatus {
+    pub python_installed: bool,
+    pub python_version: Option<String>,
+    pub gpu_available: bool,
+    pub gpu_name: Option<String>,
+    pub installed_models: Vec<AsrModel>,
+    pub environment_ready: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TranscriptionConfig {
+    pub input_file: String,
+    pub engine: String,
+    pub language: String,
+    pub model: String,
+    pub output_format: String,
+    pub hardware_mode: String,
+    pub vad_enabled: bool,
+    pub demucs_enabled: bool,
+    pub enable_punctuation: bool,
+    pub max_seconds: i32,
+    pub max_chars: i32,
+    pub traditional_chinese: bool,
+    pub auto_segment: bool,
+}
+
+#[tauri::command]
+async fn check_asr_environment() -> Result<AsrEnvironmentStatus, String> {
+    // Check Python installation
+    let python_check = Command::new("python3")
+        .arg("--version")
+        .output();
+
+    let (python_installed, python_version) = match python_check {
+        Ok(output) => {
+            let version_str = String::from_utf8_lossy(&output.stdout);
+            let version = version_str.trim().replace("Python ", "");
+            (true, Some(version))
+        }
+        Err(_) => (false, None),
+    };
+
+    // Check GPU availability (stub - would need actual GPU detection)
+    let gpu_available = false;
+    let gpu_name = None;
+
+    // Mock installed models for now
+    let installed_models = vec![
+        AsrModel {
+            engine: "whisper".to_string(),
+            model_id: "tiny".to_string(),
+            display_name: "Whisper Tiny".to_string(),
+            size: "75 MB".to_string(),
+            installed: false,
+            downloading: false,
+            download_progress: 0.0,
+        },
+        AsrModel {
+            engine: "whisper".to_string(),
+            model_id: "base".to_string(),
+            display_name: "Whisper Base".to_string(),
+            size: "145 MB".to_string(),
+            installed: false,
+            downloading: false,
+            download_progress: 0.0,
+        },
+        AsrModel {
+            engine: "whisper".to_string(),
+            model_id: "small".to_string(),
+            display_name: "Whisper Small".to_string(),
+            size: "466 MB".to_string(),
+            installed: false,
+            downloading: false,
+            download_progress: 0.0,
+        },
+        AsrModel {
+            engine: "whisper".to_string(),
+            model_id: "medium".to_string(),
+            display_name: "Whisper Medium".to_string(),
+            size: "1.5 GB".to_string(),
+            installed: false,
+            downloading: false,
+            download_progress: 0.0,
+        },
+        AsrModel {
+            engine: "whisper".to_string(),
+            model_id: "large".to_string(),
+            display_name: "Whisper Large".to_string(),
+            size: "3.1 GB".to_string(),
+            installed: false,
+            downloading: false,
+            download_progress: 0.0,
+        },
+        AsrModel {
+            engine: "qwen".to_string(),
+            model_id: "qwen3-asr-base".to_string(),
+            display_name: "Qwen3-ASR-Base".to_string(),
+            size: "500 MB".to_string(),
+            installed: false,
+            downloading: false,
+            download_progress: 0.0,
+        },
+        AsrModel {
+            engine: "qwen".to_string(),
+            model_id: "qwen3-asr-large".to_string(),
+            display_name: "Qwen3-ASR-Large".to_string(),
+            size: "1.2 GB".to_string(),
+            installed: false,
+            downloading: false,
+            download_progress: 0.0,
+        },
+    ];
+
+    Ok(AsrEnvironmentStatus {
+        python_installed,
+        python_version,
+        gpu_available,
+        gpu_name,
+        installed_models,
+        environment_ready: python_installed,
+    })
+}
+
+#[tauri::command]
+async fn install_asr_environment() -> Result<(), String> {
+    // This would install Python environment, dependencies, etc.
+    // For now, return error as it's not implemented
+    Err("ASR environment installation not yet implemented".to_string())
+}
+
+#[tauri::command]
+async fn list_asr_models() -> Result<Vec<AsrModel>, String> {
+    // Return available models
+    check_asr_environment()
+        .await
+        .map(|status| status.installed_models)
+}
+
+#[tauri::command]
+async fn download_asr_model(engine: String, model: String) -> Result<(), String> {
+    // This would download the specified model
+    // For now, return error as it's not implemented
+    Err(format!("Model download not yet implemented: {}/{}", engine, model))
+}
+
+#[tauri::command]
+async fn delete_asr_model(engine: String, model: String) -> Result<(), String> {
+    // This would delete the specified model
+    // For now, return error as it's not implemented
+    Err(format!("Model deletion not yet implemented: {}/{}", engine, model))
+}
+
+#[tauri::command]
+async fn get_file_duration(path: String) -> Result<f64, String> {
+    // Use ffprobe to get file duration
+    let output = Command::new("ffprobe")
+        .args(&[
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            &path
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+
+    if !output.status.success() {
+        return Err("Failed to get file duration".to_string());
+    }
+
+    let duration_str = String::from_utf8_lossy(&output.stdout);
+    let duration: f64 = duration_str
+        .trim()
+        .parse()
+        .map_err(|e| format!("Failed to parse duration: {}", e))?;
+
+    Ok(duration)
+}
+
+#[tauri::command]
+async fn get_file_size(path: String) -> Result<u64, String> {
+    let metadata = fs::metadata(&path)
+        .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+
+    Ok(metadata.len())
+}
+
+#[tauri::command]
+async fn start_transcription(_config: TranscriptionConfig) -> Result<(), String> {
+    // This would start the transcription process
+    // For now, return error as it's not implemented
+    Err("Transcription not yet implemented".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let download_tasks: DownloadTasks = Arc::new(Mutex::new(HashMap::new()));
@@ -1512,7 +1718,15 @@ pub fn run() {
             validate_twitch_token,
             import_youtube_cookies,
             save_auth_config,
-            get_auth_config
+            get_auth_config,
+            check_asr_environment,
+            install_asr_environment,
+            list_asr_models,
+            download_asr_model,
+            delete_asr_model,
+            get_file_duration,
+            get_file_size,
+            start_transcription
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

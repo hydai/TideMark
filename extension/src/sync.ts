@@ -37,7 +37,7 @@ export async function initSyncState(): Promise<void> {
  * Get current sync state
  */
 export async function getSyncState(): Promise<SyncState> {
-  const result = await chrome.storage.local.get(['syncState']);
+  const result = await chrome.storage.local.get(['syncState']) as { syncState?: SyncState };
   return result.syncState || {
     jwt: null,
     user: null,
@@ -63,11 +63,11 @@ export async function loginWithGoogle(): Promise<{ success: boolean; error?: str
   try {
     // Get Google OAuth token using Chrome Identity API
     const token = await new Promise<string>((resolve, reject) => {
-      chrome.identity.getAuthToken({ interactive: true }, (token) => {
+      chrome.identity.getAuthToken({ interactive: true }, (result) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
-          resolve(token || '');
+          resolve(typeof result === 'string' ? result : result?.token || '');
         }
       });
     });
@@ -134,8 +134,8 @@ export async function logout(): Promise<void> {
   // Revoke Google OAuth token
   try {
     const token = await new Promise<string>((resolve) => {
-      chrome.identity.getAuthToken({ interactive: false }, (token) => {
-        resolve(token || '');
+      chrome.identity.getAuthToken({ interactive: false }, (result) => {
+        resolve(typeof result === 'string' ? result : result?.token || '');
       });
     });
 
@@ -469,7 +469,7 @@ export async function pullRemoteChanges(): Promise<void> {
     const remoteFolders: APIFolder[] = data.folders || [];
 
     // Get local data
-    const localStorage = await chrome.storage.local.get(['records', 'folders']);
+    const localStorage = await chrome.storage.local.get(['records', 'folders']) as { records?: Record[]; folders?: Folder[] };
     const localRecords: Record[] = localStorage.records || [];
     const localFolders: Folder[] = localStorage.folders || [];
 

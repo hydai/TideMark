@@ -1,4 +1,4 @@
-import type { Record, Folder, PlaybackInfo, Platform, StorageData, ContentMessage } from '../types';
+import type { Record, Folder, PlaybackInfo, Platform, StorageData, ContentMessage, RecordGroup } from '../types';
 import { MAX_RECORDS, DEFAULT_TOPIC, UNCATEGORIZED_ID, UNCATEGORIZED_NAME } from '../types';
 
 // DOM elements
@@ -25,6 +25,10 @@ const MAX_RETRIES = 3;
 let selectedFolderId: string = UNCATEGORIZED_ID;
 let folders: Folder[] = [];
 let draggedFolderElement: HTMLElement | null = null;
+let draggedRecordElement: HTMLElement | null = null;
+let draggedGroupElement: HTMLElement | null = null;
+let recordGroups: RecordGroup[] = [];
+let groupCollapsedState: Map<string, boolean> = new Map();
 
 /**
  * Initialize popup
@@ -261,7 +265,7 @@ async function loadRecords(): Promise<void> {
 }
 
 /**
- * Render records list using safe DOM methods
+ * Render records list grouped by stream title
  */
 function renderRecords(records: Record[]) {
   // Clear existing content
@@ -276,20 +280,143 @@ function renderRecords(records: Record[]) {
   noRecords.classList.add('hidden');
   recordCount.textContent = `共 ${records.length} 筆`;
 
-  // Create record items using DOM methods
-  records.forEach(record => {
-    const recordItem = createRecordElement(record);
-    recordsList.appendChild(recordItem);
+  // Group records by title
+  recordGroups = groupRecordsByTitle(records);
+
+  // Render each group
+  recordGroups.forEach(group => {
+    const groupElement = createGroupElement(group);
+    recordsList.appendChild(groupElement);
   });
+}
+
+/**
+ * Group records by stream title
+ */
+function groupRecordsByTitle(records: Record[]): RecordGroup[] {
+  const groupMap = new Map<string, Record[]>();
+
+  // Group by title
+  records.forEach(record => {
+    const title = record.title;
+    if (!groupMap.has(title)) {
+      groupMap.set(title, []);
+    }
+    groupMap.get(title)!.push(record);
+  });
+
+  // Convert to array of groups
+  const groups: RecordGroup[] = [];
+  groupMap.forEach((records, title) => {
+    // Sort records within group by sortOrder or timestamp
+    records.sort((a, b) => {
+      if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+        return a.sortOrder - b.sortOrder;
+      }
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+
+    groups.push({
+      title,
+      records,
+      collapsed: groupCollapsedState.get(title) || false,
+      sortOrder: records[0].sortOrder
+    });
+  });
+
+  // Sort groups by sortOrder or most recent record
+  groups.sort((a, b) => {
+    if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+      return a.sortOrder - b.sortOrder;
+    }
+    const aTime = new Date(a.records[0].timestamp).getTime();
+    const bTime = new Date(b.records[0].timestamp).getTime();
+    return bTime - aTime;
+  });
+
+  return groups;
+}
+
+/**
+ * Create a group element
+ */
+function createGroupElement(group: RecordGroup): HTMLElement {
+  const div = document.createElement('div');
+  div.className = 'record-group';
+  div.dataset.title = group.title;
+
+  // Group header
+  const header = document.createElement('div');
+  header.className = 'record-group-header';
+  header.draggable = true;
+
+  // Collapse icon
+  const collapseIcon = document.createElement('span');
+  collapseIcon.className = 'group-collapse-icon';
+  collapseIcon.textContent = group.collapsed ? '▶' : '▼';
+
+  // Title
+  const titleSpan = document.createElement('span');
+  titleSpan.className = 'group-title';
+  titleSpan.textContent = group.title;
+
+  // Record count
+  const countSpan = document.createElement('span');
+  countSpan.className = 'group-count';
+  countSpan.textContent = `${group.records.length}`;
+
+  header.appendChild(collapseIcon);
+  header.appendChild(titleSpan);
+  header.appendChild(countSpan);
+
+  // Click to toggle collapse
+  header.addEventListener('click', () => {
+    group.collapsed = !group.collapsed;
+    groupCollapsedState.set(group.title, group.collapsed);
+    loadRecords();
+  });
+
+  // Drag group
+  header.addEventListener('dragstart', handleGroupDragStart);
+  header.addEventListener('dragover', handleGroupDragOver);
+  header.addEventListener('drop', handleGroupDrop);
+  header.addEventListener('dragend', handleGroupDragEnd);
+  header.addEventListener('dragleave', handleGroupDragLeave);
+
+  div.appendChild(header);
+
+  // Group content (records)
+  if (!group.collapsed) {
+    const content = document.createElement('div');
+    content.className = 'record-group-content';
+
+    group.records.forEach(record => {
+      const recordItem = createRecordElement(record, group);
+      content.appendChild(recordItem);
+    });
+
+    div.appendChild(content);
+  }
+
+  return div;
 }
 
 /**
  * Create a record element using safe DOM methods
  */
-function createRecordElement(record: Record): HTMLElement {
+function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
   const div = document.createElement('div');
   div.className = 'record-item';
   div.dataset.id = record.id;
+  div.dataset.title = record.title;
+  div.draggable = true;
+
+  // Drag and drop for records
+  div.addEventListener('dragstart', handleRecordDragStart);
+  div.addEventListener('dragover', handleRecordDragOver);
+  div.addEventListener('drop', handleRecordDrop);
+  div.addEventListener('dragend', handleRecordDragEnd);
+  div.addEventListener('dragleave', handleRecordDragLeave);
 
   // Header
   const header = document.createElement('div');
@@ -298,6 +425,9 @@ function createRecordElement(record: Record): HTMLElement {
   const topic = document.createElement('div');
   topic.className = 'record-topic';
   topic.textContent = record.topic;
+
+  // Double-click to edit topic
+  topic.addEventListener('dblclick', () => handleEditTopic(record.id));
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'record-delete';
@@ -312,23 +442,26 @@ function createRecordElement(record: Record): HTMLElement {
   const info = document.createElement('div');
   info.className = 'record-info';
 
-  // Time
+  // Time with copy button
   const timeLabel = document.createElement('span');
   timeLabel.className = 'record-label';
   timeLabel.textContent = '時間:';
+
+  const timeContainer = document.createElement('span');
+  timeContainer.className = 'record-value-container';
 
   const timeValue = document.createElement('span');
   timeValue.className = 'record-value record-time';
   timeValue.textContent = record.liveTime;
 
-  // Title
-  const titleLabel = document.createElement('span');
-  titleLabel.className = 'record-label';
-  titleLabel.textContent = '標題:';
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'record-copy-btn';
+  copyBtn.textContent = '📋';
+  copyBtn.title = '複製時間';
+  copyBtn.addEventListener('click', () => handleCopyTime(record.liveTime, copyBtn));
 
-  const titleValue = document.createElement('span');
-  titleValue.className = 'record-value';
-  titleValue.textContent = record.title;
+  timeContainer.appendChild(timeValue);
+  timeContainer.appendChild(copyBtn);
 
   // Created timestamp
   const createdLabel = document.createElement('span');
@@ -349,26 +482,50 @@ function createRecordElement(record: Record): HTMLElement {
   platformValue.textContent = record.platform;
 
   info.appendChild(timeLabel);
-  info.appendChild(timeValue);
-  info.appendChild(titleLabel);
-  info.appendChild(titleValue);
+  info.appendChild(timeContainer);
   info.appendChild(createdLabel);
   info.appendChild(createdValue);
   info.appendChild(platformLabel);
   info.appendChild(platformValue);
 
-  // Link
+  // Actions
+  const actions = document.createElement('div');
+  actions.className = 'record-actions';
+
+  // Go to VOD link
   const link = document.createElement('a');
-  link.href = record.channelUrl;
+  link.href = buildVODUrl(record);
   link.target = '_blank';
   link.className = 'record-link';
   link.textContent = '前往 VOD →';
 
+  actions.appendChild(link);
+
   div.appendChild(header);
   div.appendChild(info);
-  div.appendChild(link);
+  div.appendChild(actions);
 
   return div;
+}
+
+/**
+ * Build VOD URL with fallback for Twitch
+ */
+function buildVODUrl(record: Record): string {
+  // E1.3a: If Twitch VOD hasn't been generated, point to channel videos page
+  if (record.platform === 'twitch' && record.channelUrl.includes('/videos/')) {
+    // Already has VOD URL, use it
+    return record.channelUrl;
+  } else if (record.platform === 'twitch' && !record.channelUrl.includes('/videos/')) {
+    // No VOD yet, extract channel name and point to videos page
+    const channelMatch = record.channelUrl.match(/twitch\.tv\/([^/?]+)/);
+    if (channelMatch) {
+      return `https://www.twitch.tv/${channelMatch[1]}/videos`;
+    }
+  }
+
+  // YouTube or valid Twitch VOD
+  return record.channelUrl;
 }
 
 /**
@@ -435,6 +592,379 @@ function formatTimestamp(isoString: string): string {
   });
 }
 
+/**
+ * Handle edit topic inline
+ */
+function handleEditTopic(recordId: string) {
+  const recordItem = document.querySelector(`.record-item[data-id="${recordId}"]`) as HTMLElement;
+  if (!recordItem) return;
+
+  const topicDiv = recordItem.querySelector('.record-topic') as HTMLElement;
+  const currentTopic = topicDiv.textContent || '';
+
+  // Create input field
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'record-topic-input';
+  input.value = currentTopic;
+
+  // Replace topic div with input
+  topicDiv.replaceWith(input);
+  input.focus();
+  input.select();
+
+  // Handle edit completion
+  const completeEdit = async () => {
+    const newTopic = input.value.trim() || DEFAULT_TOPIC;
+
+    // Restore topic div
+    const newTopicDiv = document.createElement('div');
+    newTopicDiv.className = 'record-topic';
+    newTopicDiv.textContent = newTopic;
+    newTopicDiv.addEventListener('dblclick', () => handleEditTopic(recordId));
+    input.replaceWith(newTopicDiv);
+
+    // Save if topic changed
+    if (newTopic !== currentTopic) {
+      try {
+        await updateRecordTopic(recordId, newTopic);
+        await loadRecords();
+      } catch (error) {
+        showError('更新失敗');
+        console.error('Update topic error:', error);
+      }
+    }
+  };
+
+  input.addEventListener('blur', completeEdit);
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      completeEdit();
+    }
+  });
+}
+
+/**
+ * Update record topic in storage
+ */
+async function updateRecordTopic(recordId: string, newTopic: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(['records'], (result) => {
+      const data = result as Partial<StorageData>;
+      const records = data.records || [];
+
+      const record = records.find(r => r.id === recordId);
+      if (record) {
+        record.topic = newTopic;
+      }
+
+      chrome.storage.local.set({ records }, () => {
+        if (chrome.runtime.lastError) {
+          reject(chrome.runtime.lastError);
+        } else {
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+/**
+ * Handle copy time to clipboard
+ */
+async function handleCopyTime(liveTime: string, button: HTMLButtonElement) {
+  try {
+    await navigator.clipboard.writeText(liveTime);
+
+    // Visual feedback
+    const originalText = button.textContent;
+    button.textContent = '✓';
+    button.style.color = '#4caf50';
+
+    setTimeout(() => {
+      button.textContent = originalText;
+      button.style.color = '';
+    }, 1500);
+  } catch (error) {
+    console.error('Copy to clipboard failed:', error);
+    showError('複製失敗');
+  }
+}
+
+// ==================== Record Drag and Drop ====================
+
+/**
+ * Handle record drag start
+ */
+function handleRecordDragStart(event: DragEvent) {
+  const target = event.target as HTMLElement;
+  draggedRecordElement = target;
+  target.classList.add('dragging');
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', target.dataset.id || '');
+  }
+}
+
+/**
+ * Handle record drag over
+ */
+function handleRecordDragOver(event: DragEvent) {
+  event.preventDefault();
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  const target = event.currentTarget as HTMLElement;
+
+  // Don't allow dropping on self
+  if (target === draggedRecordElement) {
+    return;
+  }
+
+  // Only allow dropping within same group
+  if (draggedRecordElement && target.dataset.title === draggedRecordElement.dataset.title) {
+    target.classList.add('drag-over');
+  }
+}
+
+/**
+ * Handle record drag leave
+ */
+function handleRecordDragLeave(event: DragEvent) {
+  const target = event.currentTarget as HTMLElement;
+  target.classList.remove('drag-over');
+}
+
+/**
+ * Handle record drop
+ */
+function handleRecordDrop(event: DragEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const target = event.currentTarget as HTMLElement;
+  target.classList.remove('drag-over');
+
+  // Don't allow dropping on self
+  if (target === draggedRecordElement || !draggedRecordElement) {
+    return;
+  }
+
+  // Only allow dropping within same group
+  if (target.dataset.title !== draggedRecordElement.dataset.title) {
+    return;
+  }
+
+  // Reorder records
+  const draggedId = draggedRecordElement.dataset.id;
+  const targetId = target.dataset.id;
+
+  if (draggedId && targetId) {
+    reorderRecordsInGroup(draggedId, targetId);
+  }
+}
+
+/**
+ * Handle record drag end
+ */
+function handleRecordDragEnd(event: DragEvent) {
+  const target = event.target as HTMLElement;
+  target.classList.remove('dragging');
+  draggedRecordElement = null;
+
+  // Clean up all drag-over classes
+  document.querySelectorAll('.record-item').forEach(item => {
+    item.classList.remove('drag-over');
+  });
+}
+
+/**
+ * Reorder records within the same group
+ */
+async function reorderRecordsInGroup(draggedId: string, targetId: string) {
+  try {
+    const result = await chrome.storage.local.get(['records']) as Partial<StorageData>;
+    let records = result.records || [];
+
+    const draggedIndex = records.findIndex(r => r.id === draggedId);
+    const targetIndex = records.findIndex(r => r.id === targetId);
+
+    if (draggedIndex === -1 || targetIndex === -1) {
+      return;
+    }
+
+    // Only reorder within same title group
+    if (records[draggedIndex].title !== records[targetIndex].title) {
+      return;
+    }
+
+    // Remove dragged record
+    const [draggedRecord] = records.splice(draggedIndex, 1);
+
+    // Find new target index after removal
+    const newTargetIndex = records.findIndex(r => r.id === targetId);
+
+    // Insert before target
+    records.splice(newTargetIndex, 0, draggedRecord);
+
+    // Update sortOrder for all records in the group
+    const title = draggedRecord.title;
+    const groupRecords = records.filter(r => r.title === title);
+    groupRecords.forEach((record, index) => {
+      record.sortOrder = index;
+    });
+
+    await chrome.storage.local.set({ records });
+    await loadRecords();
+  } catch (error) {
+    showError('操作失敗');
+    console.error('Reorder records error:', error);
+  }
+}
+
+// ==================== Group Drag and Drop ====================
+
+/**
+ * Handle group drag start
+ */
+function handleGroupDragStart(event: DragEvent) {
+  const target = event.target as HTMLElement;
+  const groupElement = target.closest('.record-group') as HTMLElement;
+  draggedGroupElement = groupElement;
+  groupElement.classList.add('dragging');
+
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', groupElement.dataset.title || '');
+  }
+}
+
+/**
+ * Handle group drag over
+ */
+function handleGroupDragOver(event: DragEvent) {
+  event.preventDefault();
+
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  const target = event.currentTarget as HTMLElement;
+  const groupElement = target.closest('.record-group') as HTMLElement;
+
+  // Don't allow dropping on self
+  if (groupElement === draggedGroupElement) {
+    return;
+  }
+
+  groupElement.classList.add('drag-over');
+}
+
+/**
+ * Handle group drag leave
+ */
+function handleGroupDragLeave(event: DragEvent) {
+  const target = event.currentTarget as HTMLElement;
+  const groupElement = target.closest('.record-group') as HTMLElement;
+  groupElement.classList.remove('drag-over');
+}
+
+/**
+ * Handle group drop
+ */
+function handleGroupDrop(event: DragEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  const target = event.currentTarget as HTMLElement;
+  const groupElement = target.closest('.record-group') as HTMLElement;
+  groupElement.classList.remove('drag-over');
+
+  // Don't allow dropping on self
+  if (groupElement === draggedGroupElement || !draggedGroupElement) {
+    return;
+  }
+
+  // Reorder groups
+  const draggedTitle = draggedGroupElement.dataset.title;
+  const targetTitle = groupElement.dataset.title;
+
+  if (draggedTitle && targetTitle) {
+    reorderGroups(draggedTitle, targetTitle);
+  }
+}
+
+/**
+ * Handle group drag end
+ */
+function handleGroupDragEnd(event: DragEvent) {
+  if (draggedGroupElement) {
+    draggedGroupElement.classList.remove('dragging');
+  }
+  draggedGroupElement = null;
+
+  // Clean up all drag-over classes
+  document.querySelectorAll('.record-group').forEach(item => {
+    item.classList.remove('drag-over');
+  });
+}
+
+/**
+ * Reorder groups
+ */
+async function reorderGroups(draggedTitle: string, targetTitle: string) {
+  const draggedIndex = recordGroups.findIndex(g => g.title === draggedTitle);
+  const targetIndex = recordGroups.findIndex(g => g.title === targetTitle);
+
+  if (draggedIndex === -1 || targetIndex === -1) {
+    return;
+  }
+
+  // Remove dragged group
+  const [draggedGroup] = recordGroups.splice(draggedIndex, 1);
+
+  // Insert before target
+  recordGroups.splice(targetIndex, 0, draggedGroup);
+
+  // Update sortOrder for all groups
+  recordGroups.forEach((group, index) => {
+    group.sortOrder = index;
+    group.records.forEach(record => {
+      record.sortOrder = index;
+    });
+  });
+
+  try {
+    // Save updated records with new sortOrder
+    const result = await chrome.storage.local.get(['records']) as Partial<StorageData>;
+    const records = result.records || [];
+
+    // Update sortOrder for each record based on group order
+    recordGroups.forEach((group, groupIndex) => {
+      group.records.forEach(record => {
+        const foundRecord = records.find(r => r.id === record.id);
+        if (foundRecord) {
+          foundRecord.sortOrder = groupIndex;
+        }
+      });
+    });
+
+    await chrome.storage.local.set({ records });
+    await loadRecords();
+  } catch (error) {
+    showError('操作失敗');
+    console.error('Reorder groups error:', error);
+  }
+}
+
+// ==================== Drag Record to Folder ====================
+
+// Add drop zone for folders - we need to modify folder elements to accept record drops
+// This will be handled by modifying the folder drag handlers
+
 // ==================== Folder Management ====================
 
 /**
@@ -492,11 +1022,13 @@ function createFolderElement(folder: Folder, isUncategorized: boolean): HTMLElem
   if (!isUncategorized) {
     div.draggable = true;
     div.addEventListener('dragstart', handleFolderDragStart);
-    div.addEventListener('dragover', handleFolderDragOver);
-    div.addEventListener('drop', handleFolderDrop);
-    div.addEventListener('dragend', handleFolderDragEnd);
-    div.addEventListener('dragleave', handleFolderDragLeave);
   }
+
+  // Always accept drops (for both folder reordering and record moving)
+  div.addEventListener('dragover', handleFolderDragOver);
+  div.addEventListener('drop', handleFolderDrop);
+  div.addEventListener('dragend', handleFolderDragEnd);
+  div.addEventListener('dragleave', handleFolderDragLeave);
 
   // Folder name
   const nameSpan = document.createElement('span');
@@ -748,17 +1280,19 @@ function handleFolderDragOver(event: DragEvent) {
 
   const target = event.currentTarget as HTMLElement;
 
-  // Don't allow dropping on uncategorized
-  if (target.classList.contains('uncategorized')) {
+  // If dragging a record, allow drop on any folder
+  if (draggedRecordElement) {
+    target.classList.add('drag-over-record');
     return;
   }
 
-  // Don't allow dropping on self
-  if (target === draggedFolderElement) {
-    return;
+  // If dragging a folder, don't allow dropping on uncategorized or self
+  if (draggedFolderElement) {
+    if (target.classList.contains('uncategorized') || target === draggedFolderElement) {
+      return;
+    }
+    target.classList.add('drag-over');
   }
-
-  target.classList.add('drag-over');
 }
 
 /**
@@ -767,6 +1301,7 @@ function handleFolderDragOver(event: DragEvent) {
 function handleFolderDragLeave(event: DragEvent) {
   const target = event.currentTarget as HTMLElement;
   target.classList.remove('drag-over');
+  target.classList.remove('drag-over-record');
 }
 
 /**
@@ -778,23 +1313,37 @@ function handleFolderDrop(event: DragEvent) {
 
   const target = event.currentTarget as HTMLElement;
   target.classList.remove('drag-over');
+  target.classList.remove('drag-over-record');
 
-  // Don't allow dropping on uncategorized
-  if (target.classList.contains('uncategorized')) {
+  // If dropping a record onto a folder, move the record
+  if (draggedRecordElement) {
+    const recordId = draggedRecordElement.dataset.id;
+    const targetFolderId = target.dataset.id;
+
+    if (recordId && targetFolderId) {
+      moveRecordToFolder(recordId, targetFolderId);
+    }
     return;
   }
 
-  // Don't allow dropping on self
-  if (target === draggedFolderElement || !draggedFolderElement) {
-    return;
-  }
+  // If dropping a folder, reorder folders
+  if (draggedFolderElement) {
+    // Don't allow dropping on uncategorized
+    if (target.classList.contains('uncategorized')) {
+      return;
+    }
 
-  // Reorder folders
-  const draggedId = draggedFolderElement.dataset.id;
-  const targetId = target.dataset.id;
+    // Don't allow dropping on self
+    if (target === draggedFolderElement) {
+      return;
+    }
 
-  if (draggedId && targetId) {
-    reorderFolders(draggedId, targetId);
+    const draggedId = draggedFolderElement.dataset.id;
+    const targetId = target.dataset.id;
+
+    if (draggedId && targetId) {
+      reorderFolders(draggedId, targetId);
+    }
   }
 }
 
@@ -809,7 +1358,32 @@ function handleFolderDragEnd(event: DragEvent) {
   // Clean up all drag-over classes
   document.querySelectorAll('.folder-item').forEach(item => {
     item.classList.remove('drag-over');
+    item.classList.remove('drag-over-record');
   });
+}
+
+/**
+ * Move record to a different folder
+ */
+async function moveRecordToFolder(recordId: string, targetFolderId: string): Promise<void> {
+  try {
+    const result = await chrome.storage.local.get(['records']) as Partial<StorageData>;
+    const records = result.records || [];
+
+    const record = records.find(r => r.id === recordId);
+    if (record) {
+      // Update folderId (null for uncategorized)
+      record.folderId = targetFolderId === UNCATEGORIZED_ID ? null : targetFolderId;
+    }
+
+    await chrome.storage.local.set({ records });
+
+    // If moving from current folder, refresh the view
+    await loadRecords();
+  } catch (error) {
+    showError('操作失敗');
+    console.error('Move record error:', error);
+  }
 }
 
 /**

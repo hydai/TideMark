@@ -10,6 +10,7 @@ export interface Record {
   folderId: string | null; // folder ID or null for uncategorized
   channelUrl: string;   // VOD link with ?t= or youtu.be short link
   platform: string;     // "youtube" or "twitch"
+  sortOrder?: number;   // sort order within group (optional for backward compatibility)
 }
 
 /**
@@ -53,6 +54,16 @@ export interface PlaybackInfo {
 export interface StorageData {
   records: Record[];
   folders: Folder[];
+}
+
+/**
+ * Grouped records by stream title
+ */
+export interface RecordGroup {
+  title: string;
+  records: Record[];
+  collapsed: boolean;
+  sortOrder?: number; // order of group within folder
 }
 
 /**

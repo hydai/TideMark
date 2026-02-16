@@ -532,3 +532,175 @@ body.twitch .record-link:hover {
 #folders-list::-webkit-scrollbar-thumb:hover {
   background: #999;
 }
+
+/* Record Groups */
+.record-group {
+  margin-bottom: 12px;
+}
+
+.record-group-header {
+  background: white;
+  padding: 10px 12px;
+  border-radius: 6px 6px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: background 0.2s;
+}
+
+.record-group-header:hover {
+  background: #f9f9f9;
+}
+
+.record-group-header.dragging {
+  opacity: 0.5;
+}
+
+.record-group.drag-over .record-group-header {
+  border-top: 3px solid #667eea;
+  padding-top: 7px;
+}
+
+body.youtube .record-group.drag-over .record-group-header {
+  border-top-color: #ff0000;
+}
+
+body.twitch .record-group.drag-over .record-group-header {
+  border-top-color: #9146ff;
+}
+
+.group-collapse-icon {
+  font-size: 10px;
+  color: #999;
+  width: 12px;
+  text-align: center;
+}
+
+.group-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.group-count {
+  background: #e0e0e0;
+  color: #666;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+
+.record-group-content {
+  padding: 0 4px 4px 4px;
+}
+
+.record-group-content .record-item {
+  margin-bottom: 6px;
+}
+
+/* Record item updates */
+.record-item {
+  cursor: move;
+  position: relative;
+}
+
+.record-item.dragging {
+  opacity: 0.5;
+}
+
+.record-item.drag-over {
+  border-top: 2px solid #667eea;
+  padding-top: 10px;
+}
+
+body.youtube .record-item.drag-over {
+  border-top-color: #ff0000;
+}
+
+body.twitch .record-item.drag-over {
+  border-top-color: #9146ff;
+}
+
+/* Topic editing */
+.record-topic {
+  cursor: text;
+}
+
+.record-topic-input {
+  width: 100%;
+  padding: 2px 4px;
+  border: 1px solid #667eea;
+  border-radius: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+  background: #fff;
+}
+
+body.youtube .record-topic-input {
+  border-color: #ff0000;
+}
+
+body.twitch .record-topic-input {
+  border-color: #9146ff;
+}
+
+/* Value container for time + copy button */
+.record-value-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.record-copy-btn {
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  background: #f5f5f5;
+  color: #666;
+  transition: all 0.2s;
+  cursor: pointer;
+  border: none;
+  line-height: 1;
+}
+
+.record-copy-btn:hover {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.record-copy-btn:active {
+  transform: scale(0.95);
+}
+
+/* Record actions */
+.record-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+}
+
+/* Folder drag-over for record drop */
+.folder-item.drag-over-record {
+  background: #f0f0ff;
+  border-left: 3px solid #667eea;
+  padding-left: 9px;
+}
+
+body.youtube .folder-item.drag-over-record {
+  background: #fff5f5;
+  border-left-color: #ff0000;
+}
+
+body.twitch .folder-item.drag-over-record {
+  background: #f9f5ff;
+  border-left-color: #9146ff;
+}

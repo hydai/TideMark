@@ -82,6 +82,12 @@ struct AppConfig {
     max_concurrent_downloads: usize,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct AuthConfig {
+    pub twitch_token: Option<String>,
+    pub youtube_cookies_path: Option<String>,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -103,6 +109,19 @@ fn get_config_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to create app data dir: {}", e))?;
 
     Ok(app_data_dir.join("config.json"))
+}
+
+fn get_auth_config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let tidemark_dir = app_data_dir.join("tidemark");
+    fs::create_dir_all(&tidemark_dir)
+        .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
+
+    Ok(tidemark_dir.join("auth_config.json"))
 }
 
 #[tauri::command]
@@ -607,6 +626,9 @@ async fn execute_download(app: AppHandle, tasks: DownloadTasks, task_id: String)
         }
     };
 
+    // Load auth config
+    let auth_config = get_auth_config(app.clone()).await.ok();
+
     // Update status to downloading
     {
         let mut tasks_guard = tasks.lock().unwrap();
@@ -626,6 +648,23 @@ async fn execute_download(app: AppHandle, tasks: DownloadTasks, task_id: String)
         "-f", &config.format_id,
         "-o", output_template,
     ];
+
+    // Add authentication arguments
+    let cookies_path_storage;
+    if let Some(ref auth) = auth_config {
+        // YouTube cookies
+        if config.video_info.platform == "youtube" {
+            if let Some(ref cookies_path) = auth.youtube_cookies_path {
+                cookies_path_storage = cookies_path.clone();
+                args.push("--cookies");
+                args.push(&cookies_path_storage);
+            }
+        }
+
+        // Twitch token (would be used if yt-dlp supports it via config)
+        // For now, yt-dlp handles Twitch auth differently
+        // We may need to set environment variables or use streamlink instead
+    }
 
     // Add time range if specified
     let mut download_sections = String::new();
@@ -751,6 +790,9 @@ async fn execute_recording(app: AppHandle, tasks: DownloadTasks, task_id: String
         }
     };
 
+    // Load auth config
+    let auth_config = get_auth_config(app.clone()).await.ok();
+
     // Build output path
     let output_path = PathBuf::from(&config.output_folder).join(&config.output_filename);
     let output_template = output_path.to_str().unwrap();
@@ -763,6 +805,19 @@ async fn execute_recording(app: AppHandle, tasks: DownloadTasks, task_id: String
         "-o", output_template,
         "--live-from-start",  // Try to record from the start of the stream
     ];
+
+    // Add authentication arguments
+    let cookies_path_storage;
+    if let Some(ref auth) = auth_config {
+        // YouTube cookies
+        if config.video_info.platform == "youtube" {
+            if let Some(ref cookies_path) = auth.youtube_cookies_path {
+                cookies_path_storage = cookies_path.clone();
+                args.push("--cookies");
+                args.push(&cookies_path_storage);
+            }
+        }
+    }
 
     // Add container format
     if config.container_format != "auto" {
@@ -1317,6 +1372,108 @@ async fn get_download_tasks(tasks: tauri::State<'_, DownloadTasks>) -> Result<Ve
     Ok(progress_list)
 }
 
+// Authentication commands
+
+#[tauri::command]
+async fn validate_twitch_token(token: String) -> Result<bool, String> {
+    // Validate Twitch OAuth token by making a test API call
+    let client = reqwest::Client::new();
+
+    let response = client
+        .get("https://api.twitch.tv/helix/users")
+        .header("Authorization", format!("Bearer {}", token))
+        .header("Client-Id", "kimne78kx3ncx6brgo4mv6wki5h1ko") // Public Twitch client ID
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+        Err(_) => Ok(false),
+    }
+}
+
+#[tauri::command]
+async fn import_youtube_cookies(path: String) -> Result<bool, String> {
+    // Validate cookies.txt format (Netscape format)
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("無法讀取檔案: {}", e))?;
+
+    // Check for Netscape cookies.txt format
+    // Should start with "# Netscape HTTP Cookie File" or have tab-separated cookie lines
+    let lines: Vec<&str> = content.lines().collect();
+
+    if lines.is_empty() {
+        return Ok(false);
+    }
+
+    // Look for Netscape header or valid cookie lines
+    let has_netscape_header = lines.iter().any(|line|
+        line.starts_with("# Netscape HTTP Cookie File") ||
+        line.starts_with("# HTTP Cookie File")
+    );
+
+    // Check if at least one line looks like a cookie (7 tab-separated fields)
+    let has_cookie_lines = lines.iter().any(|line| {
+        if line.starts_with('#') || line.trim().is_empty() {
+            return false;
+        }
+        let parts: Vec<&str> = line.split('\t').collect();
+        parts.len() >= 6 // Netscape format has at least 6-7 fields
+    });
+
+    if has_netscape_header || has_cookie_lines {
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+#[tauri::command]
+async fn save_auth_config(
+    app: AppHandle,
+    twitch_token: Option<String>,
+    youtube_cookies_path: Option<String>,
+) -> Result<(), String> {
+    let auth_config_path = get_auth_config_path(&app)?;
+
+    let config = AuthConfig {
+        twitch_token,
+        youtube_cookies_path,
+    };
+
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize auth config: {}", e))?;
+
+    fs::write(&auth_config_path, content)
+        .map_err(|e| format!("Failed to write auth config: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_auth_config(app: AppHandle) -> Result<AuthConfig, String> {
+    let auth_config_path = get_auth_config_path(&app)?;
+
+    if !auth_config_path.exists() {
+        return Ok(AuthConfig {
+            twitch_token: None,
+            youtube_cookies_path: None,
+        });
+    }
+
+    let content = fs::read_to_string(&auth_config_path)
+        .map_err(|e| format!("Failed to read auth config: {}", e))?;
+
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse auth config: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let download_tasks: DownloadTasks = Arc::new(Mutex::new(HashMap::new()));
@@ -1351,7 +1508,11 @@ pub fn run() {
             get_download_history,
             delete_history_entry,
             clear_all_history,
-            check_file_exists
+            check_file_exists,
+            validate_twitch_token,
+            import_youtube_cookies,
+            save_auth_config,
+            get_auth_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

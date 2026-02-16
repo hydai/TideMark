@@ -2,6 +2,7 @@ import { ConfigManager } from './config';
 import { ThemeManager } from './theme';
 import { renderDownloadPage } from './pages/download';
 import { renderHistoryPage } from './pages/history';
+import { renderSettingsPage as renderSettingsPageNew } from './pages/settings';
 
 type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings';
 
@@ -88,7 +89,7 @@ function switchTab(tabId: TabId) {
       renderRecordsPage(container);
       break;
     case 'settings':
-      renderSettingsPage(container);
+      renderSettingsPageNew(container);
       break;
   }
 }

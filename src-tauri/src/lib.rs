@@ -1770,6 +1770,214 @@ async fn get_auth_config(app: AppHandle) -> Result<AuthConfig, String> {
         .map_err(|e| format!("Failed to parse auth config: {}", e))
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ApiKeyTestResult {
+    pub success: bool,
+    pub message: String,
+    pub quota_info: Option<String>,
+}
+
+#[tauri::command]
+async fn test_api_key(
+    provider: String,
+    api_key: String,
+) -> Result<ApiKeyTestResult, String> {
+    match provider.as_str() {
+        "openai" => test_openai_api_key(api_key).await,
+        "groq" => test_groq_api_key(api_key).await,
+        "elevenlabs" => test_elevenlabs_api_key(api_key).await,
+        _ => Err(format!("Unknown provider: {}", provider)),
+    }
+}
+
+async fn test_openai_api_key(api_key: String) -> Result<ApiKeyTestResult, String> {
+    let client = reqwest::Client::new();
+
+    match client
+        .get("https://api.openai.com/v1/models")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+    {
+        Ok(response) => {
+            if response.status().is_success() {
+                Ok(ApiKeyTestResult {
+                    success: true,
+                    message: "連線成功".to_string(),
+                    quota_info: None,
+                })
+            } else {
+                Ok(ApiKeyTestResult {
+                    success: false,
+                    message: "API Key 無效".to_string(),
+                    quota_info: None,
+                })
+            }
+        }
+        Err(e) => Ok(ApiKeyTestResult {
+            success: false,
+            message: format!("連線失敗: {}", e),
+            quota_info: None,
+        }),
+    }
+}
+
+async fn test_groq_api_key(api_key: String) -> Result<ApiKeyTestResult, String> {
+    let client = reqwest::Client::new();
+
+    match client
+        .get("https://api.groq.com/openai/v1/models")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .send()
+        .await
+    {
+        Ok(response) => {
+            if response.status().is_success() {
+                Ok(ApiKeyTestResult {
+                    success: true,
+                    message: "連線成功".to_string(),
+                    quota_info: None,
+                })
+            } else {
+                Ok(ApiKeyTestResult {
+                    success: false,
+                    message: "API Key 無效".to_string(),
+                    quota_info: None,
+                })
+            }
+        }
+        Err(e) => Ok(ApiKeyTestResult {
+            success: false,
+            message: format!("連線失敗: {}", e),
+            quota_info: None,
+        }),
+    }
+}
+
+async fn test_elevenlabs_api_key(api_key: String) -> Result<ApiKeyTestResult, String> {
+    let client = reqwest::Client::new();
+
+    match client
+        .get("https://api.elevenlabs.io/v1/user")
+        .header("xi-api-key", api_key)
+        .send()
+        .await
+    {
+        Ok(response) => {
+            if response.status().is_success() {
+                // Try to parse quota info if available
+                let quota_info = if let Ok(user_info) = response.json::<serde_json::Value>().await {
+                    if let Some(subscription) = user_info.get("subscription") {
+                        if let Some(character_count) = subscription.get("character_count") {
+                            if let Some(character_limit) = subscription.get("character_limit") {
+                                Some(format!("已用 {} / {}", character_count, character_limit))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                Ok(ApiKeyTestResult {
+                    success: true,
+                    message: "連線成功".to_string(),
+                    quota_info,
+                })
+            } else {
+                Ok(ApiKeyTestResult {
+                    success: false,
+                    message: "API Key 無效".to_string(),
+                    quota_info: None,
+                })
+            }
+        }
+        Err(e) => Ok(ApiKeyTestResult {
+            success: false,
+            message: format!("連線失敗: {}", e),
+            quota_info: None,
+        }),
+    }
+}
+
+#[tauri::command]
+async fn save_api_key(
+    app: AppHandle,
+    provider: String,
+    api_key: String,
+) -> Result<(), String> {
+    let auth_config_path = get_auth_config_path(&app)?;
+
+    // Load existing config
+    let mut config = if auth_config_path.exists() {
+        let content = fs::read_to_string(&auth_config_path)
+            .map_err(|e| format!("Failed to read auth config: {}", e))?;
+        serde_json::from_str::<AuthConfig>(&content)
+            .unwrap_or(AuthConfig {
+                twitch_token: None,
+                youtube_cookies_path: None,
+                openai_api_key: None,
+                groq_api_key: None,
+                elevenlabs_api_key: None,
+            })
+    } else {
+        AuthConfig {
+            twitch_token: None,
+            youtube_cookies_path: None,
+            openai_api_key: None,
+            groq_api_key: None,
+            elevenlabs_api_key: None,
+        }
+    };
+
+    // Update the specific API key
+    let key_value = if api_key.is_empty() { None } else { Some(api_key) };
+    match provider.as_str() {
+        "openai" => config.openai_api_key = key_value,
+        "groq" => config.groq_api_key = key_value,
+        "elevenlabs" => config.elevenlabs_api_key = key_value,
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    }
+
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize auth config: {}", e))?;
+
+    fs::write(&auth_config_path, content)
+        .map_err(|e| format!("Failed to write auth config: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_api_key(
+    app: AppHandle,
+    provider: String,
+) -> Result<Option<String>, String> {
+    let config = get_auth_config(app).await?;
+
+    let key = match provider.as_str() {
+        "openai" => config.openai_api_key,
+        "groq" => config.groq_api_key,
+        "elevenlabs" => config.elevenlabs_api_key,
+        _ => return Err(format!("Unknown provider: {}", provider)),
+    };
+
+    Ok(key)
+}
+
+#[tauri::command]
+async fn delete_api_key(
+    app: AppHandle,
+    provider: String,
+) -> Result<(), String> {
+    save_api_key(app, provider, String::new()).await
+}
+
 // ASR-related structures
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AsrModel {
@@ -3274,6 +3482,10 @@ pub fn run() {
             save_auth_config,
             save_api_keys,
             get_auth_config,
+            test_api_key,
+            save_api_key,
+            get_api_key,
+            delete_api_key,
             check_asr_environment,
             install_asr_environment,
             list_asr_models,

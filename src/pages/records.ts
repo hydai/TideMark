@@ -216,10 +216,20 @@ function createSidebar(): HTMLElement {
   const folderList = document.createElement('div');
   folderList.className = 'folder-list';
 
-  const folders: Array<{ id: string; name: string; isVirtual?: boolean; isSystem?: boolean }> = [
-    { id: ALL_RECORDS_ID, name: '所有記錄', isVirtual: true },
-    { id: UNCATEGORIZED_ID, name: '未分類', isSystem: true },
-  ];
+  // Get config to check folder visibility settings
+  const config = ConfigManager.get();
+  const showAllRecords = config.show_all_records_folder !== false;
+  const showUncategorized = config.show_uncategorized_folder !== false;
+
+  const folders: Array<{ id: string; name: string; isVirtual?: boolean; isSystem?: boolean }> = [];
+
+  // Add virtual folders based on config
+  if (showAllRecords) {
+    folders.push({ id: ALL_RECORDS_ID, name: '所有記錄', isVirtual: true });
+  }
+  if (showUncategorized) {
+    folders.push({ id: UNCATEGORIZED_ID, name: '未分類', isSystem: true });
+  }
 
   // Add user folders in order
   const orderedFolders = currentData.folder_order
@@ -227,6 +237,13 @@ function createSidebar(): HTMLElement {
     .filter(f => f !== undefined) as Folder[];
 
   folders.push(...orderedFolders);
+
+  // Check if current folder is still visible
+  const currentFolderVisible = folders.some(f => f.id === currentFolderId);
+  if (!currentFolderVisible) {
+    // Select first available folder
+    currentFolderId = folders.length > 0 ? folders[0].id : null;
+  }
 
   folders.forEach(folder => {
     const folderItem = createFolderItem(folder);

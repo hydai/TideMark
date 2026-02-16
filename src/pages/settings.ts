@@ -60,6 +60,10 @@ function renderSettingsUI(container: HTMLElement) {
   const recordsSection = createRecordsSection();
   page.appendChild(recordsSection);
 
+  // ASR API Keys section
+  const asrSection = createAsrApiKeysSection();
+  page.appendChild(asrSection);
+
   // Platform authentication section
   const authSection = createAuthSection();
   page.appendChild(authSection);
@@ -71,6 +75,7 @@ function renderSettingsUI(container: HTMLElement) {
   attachDownloadEventListeners(container);
   attachAppearanceEventListeners(container);
   attachRecordsEventListeners(container);
+  attachAsrApiKeysEventListeners(container);
   attachAuthEventListeners(container);
 }
 
@@ -352,6 +357,99 @@ function createRecordsSection(): HTMLElement {
   section.appendChild(afterOffsetGroup);
 
   return section;
+}
+
+function createAsrApiKeysSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'settings-section';
+
+  const sectionTitle = document.createElement('h2');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = 'ASR API Keys (BYOK)';
+  section.appendChild(sectionTitle);
+
+  const description = document.createElement('p');
+  description.className = 'setting-description';
+  description.textContent = '用於雲端 ASR 轉錄服務。API Key 將安全儲存於本機。';
+  section.appendChild(description);
+
+  // OpenAI API Key
+  const openaiGroup = createApiKeyGroup('openai', 'OpenAI API Key', 'OpenAI Whisper API');
+  section.appendChild(openaiGroup);
+
+  // Groq API Key
+  const groqGroup = createApiKeyGroup('groq', 'Groq API Key', 'Groq Whisper API (極快速度)');
+  section.appendChild(groqGroup);
+
+  // ElevenLabs API Key
+  const elevenlabsGroup = createApiKeyGroup('elevenlabs', 'ElevenLabs API Key', 'ElevenLabs Scribe API');
+  section.appendChild(elevenlabsGroup);
+
+  return section;
+}
+
+function createApiKeyGroup(provider: string, label: string, description: string): HTMLElement {
+  const group = document.createElement('div');
+  group.className = 'setting-group api-key-group';
+
+  const groupTitle = document.createElement('h3');
+  groupTitle.className = 'setting-group-title';
+  groupTitle.textContent = label;
+  group.appendChild(groupTitle);
+
+  const desc = document.createElement('p');
+  desc.className = 'setting-description';
+  desc.textContent = description;
+  group.appendChild(desc);
+
+  const inputGroup = document.createElement('div');
+  inputGroup.className = 'auth-input-group';
+
+  const input = document.createElement('input');
+  input.type = 'password';
+  input.id = `${provider}-api-key-input`;
+  input.className = 'auth-input';
+  input.placeholder = '請輸入 API Key';
+  inputGroup.appendChild(input);
+
+  const toggleVisibilityBtn = document.createElement('button');
+  toggleVisibilityBtn.id = `${provider}-toggle-visibility-btn`;
+  toggleVisibilityBtn.className = 'btn btn-secondary';
+  toggleVisibilityBtn.textContent = '顯示';
+  inputGroup.appendChild(toggleVisibilityBtn);
+
+  const testBtn = document.createElement('button');
+  testBtn.id = `${provider}-test-btn`;
+  testBtn.className = 'btn btn-primary';
+  testBtn.textContent = '測試連線';
+  inputGroup.appendChild(testBtn);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.id = `${provider}-save-btn`;
+  saveBtn.className = 'btn btn-primary';
+  saveBtn.textContent = '儲存';
+  inputGroup.appendChild(saveBtn);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.id = `${provider}-delete-btn`;
+  deleteBtn.className = 'btn btn-secondary';
+  deleteBtn.textContent = '移除';
+  inputGroup.appendChild(deleteBtn);
+
+  group.appendChild(inputGroup);
+
+  const statusDiv = document.createElement('div');
+  statusDiv.id = `${provider}-status`;
+  statusDiv.className = 'auth-status';
+
+  const statusSpan = document.createElement('span');
+  statusSpan.className = 'status-unverified';
+  statusSpan.textContent = '載入中...';
+  statusDiv.appendChild(statusSpan);
+
+  group.appendChild(statusDiv);
+
+  return group;
 }
 
 function createAuthSection(): HTMLElement {
@@ -765,6 +863,111 @@ function attachNumberInputListener(container: HTMLElement, elementId: string, co
     if (!isNaN(value)) {
       await ConfigManager.update({ [configKey]: value });
     }
+  });
+}
+
+function attachAsrApiKeysEventListeners(container: HTMLElement) {
+  const providers = ['openai', 'groq', 'elevenlabs'];
+
+  providers.forEach(provider => {
+    const input = container.querySelector(`#${provider}-api-key-input`) as HTMLInputElement;
+    const toggleBtn = container.querySelector(`#${provider}-toggle-visibility-btn`);
+    const testBtn = container.querySelector(`#${provider}-test-btn`);
+    const saveBtn = container.querySelector(`#${provider}-save-btn`);
+    const deleteBtn = container.querySelector(`#${provider}-delete-btn`);
+    const statusDiv = container.querySelector(`#${provider}-status`);
+
+    // Load existing API key
+    invoke<string | null>('get_api_key', { provider })
+      .then(apiKey => {
+        if (apiKey) {
+          input.value = apiKey;
+          updateStatusElement(statusDiv, 'verified', '✓ 已設定');
+        } else {
+          updateStatusElement(statusDiv, 'unverified', '未設定');
+        }
+      })
+      .catch(error => {
+        console.error(`Failed to load ${provider} API key:`, error);
+        updateStatusElement(statusDiv, 'error', '載入失敗');
+      });
+
+    // Toggle visibility
+    toggleBtn?.addEventListener('click', () => {
+      if (input.type === 'password') {
+        input.type = 'text';
+        toggleBtn.textContent = '隱藏';
+      } else {
+        input.type = 'password';
+        toggleBtn.textContent = '顯示';
+      }
+    });
+
+    // Test connection
+    testBtn?.addEventListener('click', async () => {
+      const apiKey = input.value.trim();
+
+      if (!apiKey) {
+        updateStatusElement(statusDiv, 'error', '請輸入 API Key');
+        return;
+      }
+
+      updateStatusElement(statusDiv, 'validating', '測試中...');
+
+      try {
+        const result = await invoke<{ success: boolean; message: string; quota_info: string | null }>('test_api_key', {
+          provider,
+          apiKey
+        });
+
+        if (result.success) {
+          let message = result.message;
+          if (result.quota_info) {
+            message += ` (${result.quota_info})`;
+          }
+          updateStatusElement(statusDiv, 'verified', `✓ ${message}`);
+        } else {
+          updateStatusElement(statusDiv, 'error', result.message);
+        }
+      } catch (error) {
+        console.error(`${provider} API key test error:`, error);
+        updateStatusElement(statusDiv, 'error', '測試失敗，請稍後重試');
+      }
+    });
+
+    // Save API key
+    saveBtn?.addEventListener('click', async () => {
+      const apiKey = input.value.trim();
+
+      if (!apiKey) {
+        updateStatusElement(statusDiv, 'error', '請輸入 API Key');
+        return;
+      }
+
+      try {
+        await invoke('save_api_key', { provider, apiKey });
+        updateStatusElement(statusDiv, 'verified', '✓ 已儲存');
+      } catch (error) {
+        console.error(`Failed to save ${provider} API key:`, error);
+        updateStatusElement(statusDiv, 'error', '儲存失敗');
+      }
+    });
+
+    // Delete API key
+    deleteBtn?.addEventListener('click', async () => {
+      if (!confirm(`確定要移除 ${provider.toUpperCase()} API Key 嗎？`)) {
+        return;
+      }
+
+      try {
+        await invoke('delete_api_key', { provider });
+        input.value = '';
+        updateStatusElement(statusDiv, 'unverified', '已移除');
+      } catch (error) {
+        console.error(`Failed to delete ${provider} API key:`, error);
+        updateStatusElement(statusDiv, 'error', '移除失敗');
+      }
+    });
   });
 }
 

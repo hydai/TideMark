@@ -125,6 +125,14 @@ struct AppConfig {
     download_clip_before_offset: u32,
     #[serde(default = "default_clip_offset")]
     download_clip_after_offset: u32,
+
+    // GPU acceleration settings
+    #[serde(default)]
+    enable_hardware_encoding: bool,
+    #[serde(default = "default_hardware_encoder")]
+    hardware_encoder: String,
+    #[serde(default = "default_true")]
+    enable_frontend_acceleration: bool,
 }
 
 // Default value functions for serde
@@ -172,6 +180,10 @@ fn default_clip_offset() -> u32 {
     10
 }
 
+fn default_hardware_encoder() -> String {
+    "auto".to_string()
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct AuthConfig {
     pub twitch_token: Option<String>,
@@ -203,6 +215,23 @@ pub struct Folder {
     pub created: String,
     #[serde(default)]
     pub sort_order: i32,
+}
+
+// Version and update structures
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolVersions {
+    pub yt_dlp_version: Option<String>,
+    pub ffmpeg_version: Option<String>,
+    pub ffprobe_version: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UpdateStatus {
+    pub has_update: bool,
+    pub current_version: String,
+    pub latest_version: Option<String>,
+    pub release_notes: Option<String>,
+    pub download_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -296,6 +325,9 @@ impl Default for AppConfig {
             show_uncategorized_folder: true,
             download_clip_before_offset: default_clip_offset(),
             download_clip_after_offset: default_clip_offset(),
+            enable_hardware_encoding: false,
+            hardware_encoder: default_hardware_encoder(),
+            enable_frontend_acceleration: true,
         }
     }
 }
@@ -3442,6 +3474,187 @@ fn open_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn get_app_version() -> Result<String, String> {
+    // Get version from Cargo.toml
+    Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
+#[tauri::command]
+async fn get_tool_versions() -> Result<ToolVersions, String> {
+    let mut versions = ToolVersions {
+        yt_dlp_version: None,
+        ffmpeg_version: None,
+        ffprobe_version: None,
+    };
+
+    // Get yt-dlp version
+    if let Ok(output) = Command::new("yt-dlp")
+        .arg("--version")
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(version) = String::from_utf8(output.stdout) {
+                versions.yt_dlp_version = Some(version.trim().to_string());
+            }
+        }
+    }
+
+    // Get FFmpeg version
+    if let Ok(output) = Command::new("ffmpeg")
+        .arg("-version")
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(version_output) = String::from_utf8(output.stdout) {
+                // Extract version from first line (e.g., "ffmpeg version 5.1.2")
+                if let Some(first_line) = version_output.lines().next() {
+                    if let Some(version_str) = first_line.split_whitespace().nth(2) {
+                        versions.ffmpeg_version = Some(version_str.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    // Get FFprobe version
+    if let Ok(output) = Command::new("ffprobe")
+        .arg("-version")
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(version_output) = String::from_utf8(output.stdout) {
+                // Extract version from first line
+                if let Some(first_line) = version_output.lines().next() {
+                    if let Some(version_str) = first_line.split_whitespace().nth(2) {
+                        versions.ffprobe_version = Some(version_str.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(versions)
+}
+
+#[tauri::command]
+async fn check_for_updates() -> Result<UpdateStatus, String> {
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+
+    // For now, we'll implement a simple GitHub API check
+    // In production, this should check GitHub releases API
+    let client = reqwest::Client::new();
+
+    // Try to fetch latest release from GitHub
+    // Note: Replace with actual repository URL when available
+    let github_api_url = "https://api.github.com/repos/tidemark/tidemark/releases/latest";
+
+    match client
+        .get(github_api_url)
+        .header("User-Agent", "Tidemark")
+        .send()
+        .await
+    {
+        Ok(response) => {
+            if response.status().is_success() {
+                if let Ok(json) = response.json::<serde_json::Value>().await {
+                    let latest_version = json["tag_name"]
+                        .as_str()
+                        .unwrap_or(&current_version)
+                        .trim_start_matches('v')
+                        .to_string();
+
+                    let release_notes = json["body"]
+                        .as_str()
+                        .map(|s| s.to_string());
+
+                    let download_url = json["html_url"]
+                        .as_str()
+                        .map(|s| s.to_string());
+
+                    let has_update = latest_version != current_version;
+
+                    return Ok(UpdateStatus {
+                        has_update,
+                        current_version,
+                        latest_version: Some(latest_version),
+                        release_notes,
+                        download_url,
+                    });
+                }
+            }
+
+            // If GitHub check fails, return no update available
+            Ok(UpdateStatus {
+                has_update: false,
+                current_version: current_version.clone(),
+                latest_version: Some(current_version),
+                release_notes: None,
+                download_url: None,
+            })
+        }
+        Err(_) => {
+            // If network error, return current version only
+            Ok(UpdateStatus {
+                has_update: false,
+                current_version: current_version.clone(),
+                latest_version: None,
+                release_notes: None,
+                download_url: None,
+            })
+        }
+    }
+}
+
+#[tauri::command]
+fn get_available_hardware_encoders() -> Result<Vec<String>, String> {
+    // Check for available hardware encoders via ffmpeg
+    let mut encoders = vec!["auto".to_string()];
+
+    if let Ok(output) = Command::new("ffmpeg")
+        .arg("-encoders")
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(encoders_output) = String::from_utf8(output.stdout) {
+                // Check for NVIDIA encoders
+                if encoders_output.contains("h264_nvenc") {
+                    encoders.push("h264_nvenc".to_string());
+                }
+                if encoders_output.contains("hevc_nvenc") {
+                    encoders.push("hevc_nvenc".to_string());
+                }
+
+                // Check for AMD encoders
+                if encoders_output.contains("h264_amf") {
+                    encoders.push("h264_amf".to_string());
+                }
+                if encoders_output.contains("hevc_amf") {
+                    encoders.push("hevc_amf".to_string());
+                }
+
+                // Check for Intel Quick Sync
+                if encoders_output.contains("h264_qsv") {
+                    encoders.push("h264_qsv".to_string());
+                }
+                if encoders_output.contains("hevc_qsv") {
+                    encoders.push("hevc_qsv".to_string());
+                }
+
+                // Check for Apple VideoToolbox
+                if encoders_output.contains("h264_videotoolbox") {
+                    encoders.push("h264_videotoolbox".to_string());
+                }
+                if encoders_output.contains("hevc_videotoolbox") {
+                    encoders.push("hevc_videotoolbox".to_string());
+                }
+            }
+        }
+    }
+
+    Ok(encoders)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let download_tasks: DownloadTasks = Arc::new(Mutex::new(HashMap::new()));
@@ -3512,7 +3725,11 @@ pub fn run() {
             sync_delete_record,
             sync_push_folder,
             sync_delete_folder,
-            open_url
+            open_url,
+            get_app_version,
+            get_tool_versions,
+            check_for_updates,
+            get_available_hardware_encoders
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

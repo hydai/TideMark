@@ -64,9 +64,17 @@ function renderSettingsUI(container: HTMLElement) {
   const asrSection = createAsrApiKeysSection();
   page.appendChild(asrSection);
 
+  // GPU acceleration section
+  const gpuSection = createGpuSection();
+  page.appendChild(gpuSection);
+
   // Platform authentication section
   const authSection = createAuthSection();
   page.appendChild(authSection);
+
+  // About section
+  const aboutSection = createAboutSection();
+  page.appendChild(aboutSection);
 
   container.appendChild(page);
 
@@ -76,7 +84,9 @@ function renderSettingsUI(container: HTMLElement) {
   attachAppearanceEventListeners(container);
   attachRecordsEventListeners(container);
   attachAsrApiKeysEventListeners(container);
+  attachGpuEventListeners(container);
   attachAuthEventListeners(container);
+  attachAboutEventListeners(container);
 }
 
 function createGeneralSection(): HTMLElement {
@@ -452,6 +462,93 @@ function createApiKeyGroup(provider: string, label: string, description: string)
   return group;
 }
 
+function createGpuSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'settings-section';
+
+  const sectionTitle = document.createElement('h2');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = 'GPU 加速設定';
+  section.appendChild(sectionTitle);
+
+  // Enable hardware encoding
+  const hardwareEncodingGroup = createToggleGroup(
+    'enable-hardware-encoding',
+    '下載硬體編碼',
+    '啟用 GPU 硬體編碼加速下載',
+    currentConfig?.enable_hardware_encoding || false
+  );
+  section.appendChild(hardwareEncodingGroup);
+
+  // Hardware encoder selection
+  const encoderGroup = document.createElement('div');
+  encoderGroup.className = 'setting-item';
+  encoderGroup.id = 'hardware-encoder-group';
+
+  const encoderLabelDiv = document.createElement('div');
+  encoderLabelDiv.className = 'setting-label-group';
+
+  const encoderLabel = document.createElement('label');
+  encoderLabel.className = 'setting-label';
+  encoderLabel.textContent = '硬體編碼器';
+  encoderLabelDiv.appendChild(encoderLabel);
+
+  const encoderDesc = document.createElement('p');
+  encoderDesc.className = 'setting-description-inline';
+  encoderDesc.textContent = '選擇硬體編碼器（自動偵測或手動選擇）';
+  encoderLabelDiv.appendChild(encoderDesc);
+
+  encoderGroup.appendChild(encoderLabelDiv);
+
+  const encoderSelect = document.createElement('select');
+  encoderSelect.id = 'hardware-encoder';
+  encoderSelect.className = 'setting-select';
+
+  // Add default "auto" option
+  const autoOption = document.createElement('option');
+  autoOption.value = 'auto';
+  autoOption.textContent = '自動';
+  encoderSelect.appendChild(autoOption);
+
+  encoderGroup.appendChild(encoderSelect);
+  section.appendChild(encoderGroup);
+
+  // Frontend rendering acceleration
+  const frontendAccelGroup = createToggleGroup(
+    'enable-frontend-acceleration',
+    '前端渲染加速',
+    'Tauri WebView 硬體加速（變更後需重啟）',
+    currentConfig?.enable_frontend_acceleration !== false
+  );
+  section.appendChild(frontendAccelGroup);
+
+  // Load available hardware encoders
+  invoke<string[]>('get_available_hardware_encoders')
+    .then(encoders => {
+      // Clear existing options except "auto"
+      encoderSelect.innerHTML = '';
+
+      encoders.forEach(encoder => {
+        const option = document.createElement('option');
+        option.value = encoder;
+        if (encoder === 'auto') {
+          option.textContent = '自動';
+        } else {
+          option.textContent = encoder;
+        }
+        if (encoder === (currentConfig?.hardware_encoder || 'auto')) {
+          option.selected = true;
+        }
+        encoderSelect.appendChild(option);
+      });
+    })
+    .catch(error => {
+      console.error('Failed to load hardware encoders:', error);
+    });
+
+  return section;
+}
+
 function createAuthSection(): HTMLElement {
   const section = document.createElement('section');
   section.className = 'settings-section';
@@ -480,6 +577,85 @@ function createAuthSection(): HTMLElement {
   clearGroup.appendChild(clearBtn);
 
   section.appendChild(clearGroup);
+
+  return section;
+}
+
+function createAboutSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'settings-section';
+
+  const sectionTitle = document.createElement('h2');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = '關於 Tidemark';
+  section.appendChild(sectionTitle);
+
+  // App version
+  const versionGroup = document.createElement('div');
+  versionGroup.className = 'setting-group';
+
+  const versionLabel = document.createElement('h3');
+  versionLabel.className = 'setting-group-title';
+  versionLabel.textContent = '版本資訊';
+  versionGroup.appendChild(versionLabel);
+
+  const versionInfo = document.createElement('p');
+  versionInfo.className = 'setting-description';
+  versionInfo.id = 'app-version-info';
+  versionInfo.textContent = '載入中...';
+  versionGroup.appendChild(versionInfo);
+
+  const checkUpdateBtn = document.createElement('button');
+  checkUpdateBtn.id = 'check-update-btn';
+  checkUpdateBtn.className = 'btn btn-primary';
+  checkUpdateBtn.textContent = '檢查更新';
+  versionGroup.appendChild(checkUpdateBtn);
+
+  const updateStatus = document.createElement('div');
+  updateStatus.id = 'update-status';
+  updateStatus.className = 'auth-status';
+  versionGroup.appendChild(updateStatus);
+
+  section.appendChild(versionGroup);
+
+  // Tool versions
+  const toolVersionsGroup = document.createElement('div');
+  toolVersionsGroup.className = 'setting-group';
+
+  const toolVersionsLabel = document.createElement('h3');
+  toolVersionsLabel.className = 'setting-group-title';
+  toolVersionsLabel.textContent = '核心工具版本';
+  toolVersionsGroup.appendChild(toolVersionsLabel);
+
+  const toolVersionsInfo = document.createElement('div');
+  toolVersionsInfo.id = 'tool-versions-info';
+  toolVersionsInfo.className = 'setting-description';
+  toolVersionsInfo.textContent = '載入中...';
+  toolVersionsGroup.appendChild(toolVersionsInfo);
+
+  section.appendChild(toolVersionsGroup);
+
+  // License information
+  const licenseGroup = document.createElement('div');
+  licenseGroup.className = 'setting-group';
+
+  const licenseLabel = document.createElement('h3');
+  licenseLabel.className = 'setting-group-title';
+  licenseLabel.textContent = '開源授權';
+  licenseGroup.appendChild(licenseLabel);
+
+  const licenseDesc = document.createElement('p');
+  licenseDesc.className = 'setting-description';
+  licenseDesc.textContent = 'Tidemark 是開源軟體，遵循 MIT License。';
+  licenseGroup.appendChild(licenseDesc);
+
+  const licenseLinkBtn = document.createElement('button');
+  licenseLinkBtn.id = 'license-link-btn';
+  licenseLinkBtn.className = 'btn btn-secondary';
+  licenseLinkBtn.textContent = '查看授權資訊';
+  licenseGroup.appendChild(licenseLinkBtn);
+
+  section.appendChild(licenseGroup);
 
   return section;
 }
@@ -866,6 +1042,37 @@ function attachNumberInputListener(container: HTMLElement, elementId: string, co
   });
 }
 
+function attachGpuEventListeners(container: HTMLElement) {
+  // Enable hardware encoding
+  attachToggleListener(container, 'enable-hardware-encoding', 'enable_hardware_encoding');
+
+  // Hardware encoder selection
+  attachDropdownListener(container, 'hardware-encoder', 'hardware_encoder');
+
+  // Frontend acceleration
+  const frontendAccelToggle = container.querySelector('#enable-frontend-acceleration');
+  frontendAccelToggle?.addEventListener('click', async () => {
+    const toggleLabel = frontendAccelToggle.querySelector('.toggle-label');
+    const currentValue = frontendAccelToggle.getAttribute('data-value') === 'true';
+    const newValue = !currentValue;
+
+    if (toggleLabel) {
+      toggleLabel.textContent = newValue ? '開啟' : '關閉';
+    }
+    frontendAccelToggle.classList.toggle('active');
+    frontendAccelToggle.setAttribute('data-value', newValue ? 'true' : 'false');
+
+    await ConfigManager.update({ enable_frontend_acceleration: newValue });
+
+    // Show restart notice
+    if (confirm('前端渲染加速設定變更後需要重啟應用程式才能生效。是否現在重啟？')) {
+      // In a real app, we would trigger a restart here
+      // For now, just show a message
+      alert('請手動重啟應用程式以套用變更。');
+    }
+  });
+}
+
 function attachAsrApiKeysEventListeners(container: HTMLElement) {
   const providers = ['openai', 'groq', 'elevenlabs'];
 
@@ -1079,6 +1286,97 @@ function attachAuthEventListeners(container: HTMLElement) {
     } catch (error) {
       console.error('Failed to clear auth config:', error);
       alert('清除失敗');
+    }
+  });
+}
+
+function attachAboutEventListeners(container: HTMLElement) {
+  const versionInfo = container.querySelector('#app-version-info');
+  const checkUpdateBtn = container.querySelector('#check-update-btn');
+  const updateStatus = container.querySelector('#update-status');
+  const toolVersionsInfo = container.querySelector('#tool-versions-info');
+  const licenseLinkBtn = container.querySelector('#license-link-btn');
+
+  // Load app version
+  invoke<string>('get_app_version')
+    .then(version => {
+      if (versionInfo) {
+        versionInfo.textContent = `版本：${version}`;
+      }
+    })
+    .catch(error => {
+      console.error('Failed to get app version:', error);
+      if (versionInfo) {
+        versionInfo.textContent = '版本：未知';
+      }
+    });
+
+  // Load tool versions
+  invoke<{ yt_dlp_version: string | null; ffmpeg_version: string | null; ffprobe_version: string | null }>('get_tool_versions')
+    .then(versions => {
+      if (toolVersionsInfo) {
+        const lines = [];
+        if (versions.yt_dlp_version) {
+          lines.push(`yt-dlp: ${versions.yt_dlp_version}`);
+        } else {
+          lines.push('yt-dlp: 未安裝');
+        }
+        if (versions.ffmpeg_version) {
+          lines.push(`FFmpeg: ${versions.ffmpeg_version}`);
+        } else {
+          lines.push('FFmpeg: 未安裝');
+        }
+        if (versions.ffprobe_version) {
+          lines.push(`FFprobe: ${versions.ffprobe_version}`);
+        }
+        toolVersionsInfo.textContent = lines.join('\n');
+      }
+    })
+    .catch(error => {
+      console.error('Failed to get tool versions:', error);
+      if (toolVersionsInfo) {
+        toolVersionsInfo.textContent = '無法取得工具版本資訊';
+      }
+    });
+
+  // Check for updates
+  checkUpdateBtn?.addEventListener('click', async () => {
+    updateStatusElement(updateStatus, 'validating', '檢查中...');
+
+    try {
+      const result = await invoke<{
+        has_update: boolean;
+        current_version: string;
+        latest_version: string | null;
+        release_notes: string | null;
+        download_url: string | null;
+      }>('check_for_updates');
+
+      if (result.has_update && result.latest_version) {
+        let message = `有新版本可用：${result.latest_version}`;
+        updateStatusElement(updateStatus, 'verified', message);
+
+        if (result.download_url && confirm(`${message}\n\n是否前往下載頁面？`)) {
+          await invoke('open_url', { url: result.download_url });
+        }
+      } else {
+        updateStatusElement(updateStatus, 'verified', '✓ 目前已是最新版本');
+      }
+    } catch (error) {
+      console.error('Failed to check for updates:', error);
+      updateStatusElement(updateStatus, 'error', '檢查更新失敗');
+    }
+  });
+
+  // License link
+  licenseLinkBtn?.addEventListener('click', async () => {
+    // Open GitHub repository license page
+    const licenseUrl = 'https://github.com/tidemark/tidemark/blob/main/LICENSE';
+    try {
+      await invoke('open_url', { url: licenseUrl });
+    } catch (error) {
+      console.error('Failed to open license URL:', error);
+      alert('無法開啟授權資訊頁面');
     }
   });
 }

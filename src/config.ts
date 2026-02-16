@@ -29,6 +29,11 @@ export interface AppConfig {
   show_uncategorized_folder: boolean;
   download_clip_before_offset: number;
   download_clip_after_offset: number;
+
+  // GPU acceleration settings
+  enable_hardware_encoding: boolean;
+  hardware_encoder: string; // 'auto', 'h264_nvenc', 'hevc_nvenc', 'h264_amf', 'hevc_amf', etc.
+  enable_frontend_acceleration: boolean;
 }
 
 const defaultConfig: AppConfig = {
@@ -53,6 +58,9 @@ const defaultConfig: AppConfig = {
   show_uncategorized_folder: true,
   download_clip_before_offset: 10,
   download_clip_after_offset: 10,
+  enable_hardware_encoding: false,
+  hardware_encoder: 'auto',
+  enable_frontend_acceleration: true,
 };
 
 export class ConfigManager {

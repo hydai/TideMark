@@ -153,6 +153,19 @@ export function renderDownloadPage(container: HTMLElement) {
           </div>
 
           <div class="config-row">
+            <label class="config-label">時間範圍（選填）</label>
+            <div class="time-range-inputs">
+              <input type="text" id="start-time-input" class="time-input" placeholder="開始時間 (HH:MM:SS)" />
+              <span class="time-separator">至</span>
+              <input type="text" id="end-time-input" class="time-input" placeholder="結束時間 (HH:MM:SS)" />
+            </div>
+            <div class="time-range-help">
+              支援格式: HH:MM:SS (例: 01:30:45)、MM:SS (例: 90:45)、純秒數 (例: 5445)
+            </div>
+            <div id="time-range-error" class="time-range-error hidden"></div>
+          </div>
+
+          <div class="config-row">
             <button id="start-download-btn" class="primary-button large-button">開始下載</button>
           </div>
         </div>
@@ -178,6 +191,9 @@ export function renderDownloadPage(container: HTMLElement) {
   const folderInput = container.querySelector('#folder-input') as HTMLInputElement;
   const folderBtn = container.querySelector('#folder-btn') as HTMLButtonElement;
   const containerSelect = container.querySelector('#container-select') as HTMLSelectElement;
+  const startTimeInput = container.querySelector('#start-time-input') as HTMLInputElement;
+  const endTimeInput = container.querySelector('#end-time-input') as HTMLInputElement;
+  const timeRangeError = container.querySelector('#time-range-error') as HTMLElement;
   const startDownloadBtn = container.querySelector('#start-download-btn') as HTMLButtonElement;
   const downloadsList = container.querySelector('#downloads-list') as HTMLElement;
 
@@ -234,6 +250,54 @@ export function renderDownloadPage(container: HTMLElement) {
   startDownloadBtn.addEventListener('click', async () => {
     if (!currentVideoInfo) return;
 
+    hideTimeRangeError();
+
+    // Validate time range if provided
+    const startTime = startTimeInput.value.trim();
+    const endTime = endTimeInput.value.trim();
+
+    let timeRange: TimeRange | null = null;
+
+    if (startTime || endTime) {
+      // Validate time format
+      if (startTime && !isValidTimeFormat(startTime)) {
+        showTimeRangeError('請輸入有效時間格式');
+        return;
+      }
+      if (endTime && !isValidTimeFormat(endTime)) {
+        showTimeRangeError('請輸入有效時間格式');
+        return;
+      }
+
+      // Validate time range logic
+      if (startTime && endTime) {
+        const startSeconds = parseTimeToSeconds(startTime);
+        const endSeconds = parseTimeToSeconds(endTime);
+
+        if (startSeconds >= endSeconds) {
+          showTimeRangeError('結束時間必須晚於開始時間');
+          return;
+        }
+
+        // Validate against video duration
+        if (currentVideoInfo.duration) {
+          if (startSeconds > currentVideoInfo.duration) {
+            showTimeRangeError('時間超出影片長度');
+            return;
+          }
+          if (endSeconds > currentVideoInfo.duration) {
+            showTimeRangeError('時間超出影片長度');
+            return;
+          }
+        }
+      }
+
+      timeRange = {
+        start: startTime || null,
+        end: endTime || null,
+      };
+    }
+
     const config: DownloadConfig = {
       url: currentUrl,
       video_info: currentVideoInfo,
@@ -244,7 +308,7 @@ export function renderDownloadPage(container: HTMLElement) {
       output_filename: filenameInput.value,
       output_folder: folderInput.value,
       container_format: containerSelect.value,
-      time_range: null,
+      time_range: timeRange,
     };
 
     try {
@@ -276,6 +340,15 @@ export function renderDownloadPage(container: HTMLElement) {
 
   function hideVideoInfo() {
     videoInfoSection.classList.add('hidden');
+  }
+
+  function showTimeRangeError(message: string) {
+    timeRangeError.textContent = message;
+    timeRangeError.classList.remove('hidden');
+  }
+
+  function hideTimeRangeError() {
+    timeRangeError.classList.add('hidden');
   }
 
   function displayVideoInfo(info: VideoInfo) {
@@ -535,4 +608,34 @@ function getStatusText(status: string): string {
     'paused': '已暫停',
   };
   return statusMap[status] || status;
+}
+
+// Time format validation and parsing functions
+function isValidTimeFormat(time: string): boolean {
+  // Match HH:MM:SS, MM:SS, or pure seconds
+  const hhmmss = /^\d{1,2}:\d{2}:\d{2}$/;
+  const mmss = /^\d{1,}:\d{2}$/;
+  const seconds = /^\d+$/;
+
+  return hhmmss.test(time) || mmss.test(time) || seconds.test(time);
+}
+
+function parseTimeToSeconds(time: string): number {
+  // Parse pure seconds
+  if (/^\d+$/.test(time)) {
+    return parseInt(time, 10);
+  }
+
+  // Parse HH:MM:SS or MM:SS
+  const parts = time.split(':').map(p => parseInt(p, 10));
+
+  if (parts.length === 3) {
+    // HH:MM:SS
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  } else if (parts.length === 2) {
+    // MM:SS
+    return parts[0] * 60 + parts[1];
+  }
+
+  return 0;
 }

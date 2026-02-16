@@ -413,6 +413,78 @@ async fn fetch_video_info(url: String) -> Result<VideoInfo, String> {
     }
 }
 
+// Time range validation functions
+fn parse_time_to_seconds(time: &str) -> Result<i64, String> {
+    let time = time.trim();
+
+    // Pure seconds
+    if let Ok(seconds) = time.parse::<i64>() {
+        return Ok(seconds);
+    }
+
+    // HH:MM:SS or MM:SS
+    let parts: Vec<&str> = time.split(':').collect();
+
+    match parts.len() {
+        2 => {
+            // MM:SS
+            let minutes = parts[0].parse::<i64>().map_err(|_| "無效的時間格式".to_string())?;
+            let seconds = parts[1].parse::<i64>().map_err(|_| "無效的時間格式".to_string())?;
+            Ok(minutes * 60 + seconds)
+        }
+        3 => {
+            // HH:MM:SS
+            let hours = parts[0].parse::<i64>().map_err(|_| "無效的時間格式".to_string())?;
+            let minutes = parts[1].parse::<i64>().map_err(|_| "無效的時間格式".to_string())?;
+            let seconds = parts[2].parse::<i64>().map_err(|_| "無效的時間格式".to_string())?;
+            Ok(hours * 3600 + minutes * 60 + seconds)
+        }
+        _ => Err("請輸入有效時間格式".to_string()),
+    }
+}
+
+fn normalize_time_to_hhmmss(seconds: i64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let secs = seconds % 60;
+    format!("{:02}:{:02}:{:02}", hours, minutes, secs)
+}
+
+fn validate_time_range(config: &DownloadConfig) -> Result<(), String> {
+    if let Some(ref time_range) = config.time_range {
+        let start_seconds = if let Some(ref start) = time_range.start {
+            Some(parse_time_to_seconds(start)?)
+        } else {
+            None
+        };
+
+        let end_seconds = if let Some(ref end) = time_range.end {
+            Some(parse_time_to_seconds(end)?)
+        } else {
+            None
+        };
+
+        // Validate end > start
+        if let (Some(start), Some(end)) = (start_seconds, end_seconds) {
+            if end <= start {
+                return Err("結束時間必須晚於開始時間".to_string());
+            }
+
+            // Validate against video duration if available
+            if let Some(duration) = config.video_info.duration {
+                if start > duration {
+                    return Err("時間超出影片長度".to_string());
+                }
+                if end > duration {
+                    return Err("時間超出影片長度".to_string());
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // Download management commands
 #[tauri::command]
 async fn start_download(
@@ -420,6 +492,8 @@ async fn start_download(
     config: DownloadConfig,
     tasks: tauri::State<'_, DownloadTasks>,
 ) -> Result<String, String> {
+    // Validate time range
+    validate_time_range(&config)?;
     let task_id = Uuid::new_v4().to_string();
 
     let progress = DownloadProgress {
@@ -495,7 +569,13 @@ async fn execute_download(app: AppHandle, tasks: DownloadTasks, task_id: String)
     let mut download_sections = String::new();
     if let Some(ref time_range) = config.time_range {
         if let (Some(ref start), Some(ref end)) = (&time_range.start, &time_range.end) {
-            download_sections = format!("*{}-{}", start, end);
+            // Normalize time to HH:MM:SS format for yt-dlp
+            let start_seconds = parse_time_to_seconds(start).unwrap_or(0);
+            let end_seconds = parse_time_to_seconds(end).unwrap_or(0);
+            let start_normalized = normalize_time_to_hhmmss(start_seconds);
+            let end_normalized = normalize_time_to_hhmmss(end_seconds);
+
+            download_sections = format!("*{}-{}", start_normalized, end_normalized);
             args.push("--download-sections");
             args.push(&download_sections);
         }

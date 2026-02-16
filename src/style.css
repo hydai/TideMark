@@ -2188,3 +2188,119 @@ body {
   background-color: #ff4444;
   border-color: #ff4444;
 }
+
+/* Additional Settings Styles */
+.folder-input-group {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.folder-input {
+  flex: 1;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.folder-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+}
+
+.setting-label-group {
+  flex: 1;
+}
+
+.setting-description-inline {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+.setting-select {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  min-width: 150px;
+  cursor: pointer;
+}
+
+.setting-select:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+}
+
+.setting-number-input {
+  padding: var(--spacing-sm) var(--spacing-md);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 14px;
+  width: 120px;
+}
+
+.setting-number-input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(74, 158, 255, 0.1);
+}
+
+.toggle-button {
+  position: relative;
+  width: 60px;
+  height: 32px;
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  padding: 0 6px;
+}
+
+.toggle-button::before {
+  content: '';
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  background-color: white;
+  border-radius: 50%;
+  transition: all 0.3s;
+  left: 5px;
+}
+
+.toggle-button.active {
+  background-color: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.toggle-button.active::before {
+  left: calc(100% - 27px);
+}
+
+.toggle-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  position: absolute;
+  right: 8px;
+  transition: opacity 0.3s;
+}
+
+.toggle-button.active .toggle-label {
+  right: auto;
+  left: 8px;
+  color: white;
+}

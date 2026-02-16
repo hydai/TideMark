@@ -76,12 +76,100 @@ type DownloadTasks = Arc<Mutex<HashMap<String, DownloadTask>>>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct AppConfig {
-    theme: String,
-    animation: bool,
-    compact: bool,
+    // General settings
+    #[serde(default = "default_download_folder")]
+    default_download_folder: String,
+    #[serde(default = "default_subtitle_folder")]
+    default_subtitle_folder: String,
+    #[serde(default)]
+    launch_on_startup: bool,
+    #[serde(default = "default_true")]
+    desktop_notifications: bool,
+    #[serde(default = "default_language")]
+    language: String,
+    #[serde(default = "default_timezone")]
+    timezone: String,
+
+    // Download settings
+    #[serde(default)]
+    enable_transcoder: bool,
+    #[serde(default = "default_video_quality")]
+    default_video_quality: String,
+    #[serde(default = "default_output_container")]
+    output_container: String,
+    #[serde(default = "default_max_concurrent_downloads")]
     max_concurrent_downloads: usize,
+    #[serde(default = "default_true")]
+    auto_retry: bool,
+    #[serde(default = "default_max_retry_count")]
+    max_retry_count: u32,
+    #[serde(default)]
+    download_speed_limit: u32, // MB/s, 0 = unlimited
+    #[serde(default)]
+    show_codec_options: bool,
+
+    // Appearance settings
+    #[serde(default = "default_theme")]
+    theme: String,
+    #[serde(default = "default_true")]
+    animation: bool,
+    #[serde(default)]
+    compact: bool,
+
+    // Records settings
+    #[serde(default = "default_true")]
+    show_all_records_folder: bool,
+    #[serde(default = "default_true")]
+    show_uncategorized_folder: bool,
+    #[serde(default = "default_clip_offset")]
     download_clip_before_offset: u32,
+    #[serde(default = "default_clip_offset")]
     download_clip_after_offset: u32,
+}
+
+// Default value functions for serde
+fn default_download_folder() -> String {
+    "~/Tidemark/Downloads".to_string()
+}
+
+fn default_subtitle_folder() -> String {
+    "~/Tidemark/Downloads".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_language() -> String {
+    "繁體中文".to_string()
+}
+
+fn default_timezone() -> String {
+    "System".to_string()
+}
+
+fn default_video_quality() -> String {
+    "Highest".to_string()
+}
+
+fn default_output_container() -> String {
+    "Auto".to_string()
+}
+
+fn default_max_concurrent_downloads() -> usize {
+    3
+}
+
+fn default_max_retry_count() -> u32 {
+    3
+}
+
+fn default_theme() -> String {
+    "system".to_string()
+}
+
+fn default_clip_offset() -> u32 {
+    10
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -187,12 +275,27 @@ pub struct GoogleAuthResponse {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            theme: "system".to_string(),
+            default_download_folder: default_download_folder(),
+            default_subtitle_folder: default_subtitle_folder(),
+            launch_on_startup: false,
+            desktop_notifications: true,
+            language: default_language(),
+            timezone: default_timezone(),
+            enable_transcoder: false,
+            default_video_quality: default_video_quality(),
+            output_container: default_output_container(),
+            max_concurrent_downloads: default_max_concurrent_downloads(),
+            auto_retry: true,
+            max_retry_count: default_max_retry_count(),
+            download_speed_limit: 0,
+            show_codec_options: false,
+            theme: default_theme(),
             animation: true,
             compact: false,
-            max_concurrent_downloads: 3,
-            download_clip_before_offset: 10,
-            download_clip_after_offset: 10,
+            show_all_records_folder: true,
+            show_uncategorized_folder: true,
+            download_clip_before_offset: default_clip_offset(),
+            download_clip_after_offset: default_clip_offset(),
         }
     }
 }

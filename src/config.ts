@@ -1,17 +1,56 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export interface AppConfig {
+  // General settings
+  default_download_folder: string;
+  default_subtitle_folder: string;
+  launch_on_startup: boolean;
+  desktop_notifications: boolean;
+  language: string;
+  timezone: string;
+
+  // Download settings
+  enable_transcoder: boolean;
+  default_video_quality: string;
+  output_container: string;
+  max_concurrent_downloads: number;
+  auto_retry: boolean;
+  max_retry_count: number;
+  download_speed_limit: number; // MB/s, 0 = unlimited
+  show_codec_options: boolean;
+
+  // Appearance settings
   theme: 'dark' | 'light' | 'system';
   animation: boolean;
   compact: boolean;
+
+  // Records settings
+  show_all_records_folder: boolean;
+  show_uncategorized_folder: boolean;
   download_clip_before_offset: number;
   download_clip_after_offset: number;
 }
 
 const defaultConfig: AppConfig = {
+  default_download_folder: '~/Tidemark/Downloads',
+  default_subtitle_folder: '~/Tidemark/Downloads',
+  launch_on_startup: false,
+  desktop_notifications: true,
+  language: '繁體中文',
+  timezone: 'System',
+  enable_transcoder: false,
+  default_video_quality: 'Highest',
+  output_container: 'Auto',
+  max_concurrent_downloads: 3,
+  auto_retry: true,
+  max_retry_count: 3,
+  download_speed_limit: 0,
+  show_codec_options: false,
   theme: 'system',
   animation: true,
   compact: false,
+  show_all_records_folder: true,
+  show_uncategorized_folder: true,
   download_clip_before_offset: 10,
   download_clip_after_offset: 10,
 };

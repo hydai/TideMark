@@ -1234,6 +1234,79 @@ async fn show_in_folder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+fn get_history_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("無法取得應用程式資料目錄: {}", e))?;
+
+    let history_dir = app_data_dir.join("tidemark");
+    fs::create_dir_all(&history_dir)
+        .map_err(|e| format!("無法建立歷程目錄: {}", e))?;
+
+    Ok(history_dir.join("history.json"))
+}
+
+#[tauri::command]
+async fn get_download_history(app: AppHandle) -> Result<Vec<DownloadHistoryEntry>, String> {
+    let history_path = get_history_path(&app)?;
+
+    if !history_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&history_path)
+        .map_err(|e| format!("無法讀取歷程檔案: {}", e))?;
+
+    let history: Vec<DownloadHistoryEntry> = serde_json::from_str(&content)
+        .map_err(|e| format!("無法解析歷程資料: {}", e))?;
+
+    Ok(history)
+}
+
+#[tauri::command]
+async fn delete_history_entry(app: AppHandle, id: String) -> Result<(), String> {
+    let history_path = get_history_path(&app)?;
+
+    if !history_path.exists() {
+        return Ok(());
+    }
+
+    let content = fs::read_to_string(&history_path)
+        .map_err(|e| format!("無法讀取歷程檔案: {}", e))?;
+
+    let mut history: Vec<DownloadHistoryEntry> = serde_json::from_str(&content)
+        .map_err(|e| format!("無法解析歷程資料: {}", e))?;
+
+    // Remove entry with matching id
+    history.retain(|entry| entry.id != id);
+
+    // Save updated history
+    let content = serde_json::to_string_pretty(&history)
+        .map_err(|e| format!("無法序列化歷程資料: {}", e))?;
+
+    fs::write(&history_path, content)
+        .map_err(|e| format!("無法儲存歷程檔案: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn clear_all_history(app: AppHandle) -> Result<(), String> {
+    let history_path = get_history_path(&app)?;
+
+    // Write empty array
+    fs::write(&history_path, "[]")
+        .map_err(|e| format!("無法清空歷程: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn check_file_exists(path: String) -> Result<bool, String> {
+    Ok(PathBuf::from(&path).exists())
+}
+
 #[tauri::command]
 async fn get_download_tasks(tasks: tauri::State<'_, DownloadTasks>) -> Result<Vec<DownloadProgress>, String> {
     let tasks_guard = tasks.lock().unwrap();
@@ -1274,7 +1347,11 @@ pub fn run() {
             stop_recording,
             open_file,
             show_in_folder,
-            get_download_tasks
+            get_download_tasks,
+            get_download_history,
+            delete_history_entry,
+            clear_all_history,
+            check_file_exists
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

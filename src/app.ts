@@ -1,6 +1,7 @@
 import { ConfigManager } from './config';
 import { ThemeManager } from './theme';
 import { renderDownloadPage } from './pages/download';
+import { renderHistoryPage } from './pages/history';
 
 type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings';
 
@@ -93,15 +94,7 @@ function switchTab(tabId: TabId) {
 }
 
 // Download page is now in pages/download.ts
-
-function renderHistoryPage(container: HTMLElement) {
-  container.innerHTML = `
-    <div class="page">
-      <h1 class="page-title">歷程</h1>
-      <p class="placeholder">歷程頁面（開發中）</p>
-    </div>
-  `;
-}
+// History page is now in pages/history.ts
 
 function renderSubtitlesPage(container: HTMLElement) {
   container.innerHTML = `

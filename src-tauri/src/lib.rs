@@ -33,7 +33,7 @@ pub struct TimeRange {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DownloadProgress {
     pub task_id: String,
-    pub status: String, // "queued", "downloading", "processing", "completed", "failed", "cancelled", "paused"
+    pub status: String, // "queued", "downloading", "recording", "processing", "completed", "failed", "cancelled", "paused", "stream_interrupted"
     pub title: String,
     pub percentage: f64,
     pub speed: String,
@@ -42,6 +42,10 @@ pub struct DownloadProgress {
     pub total_bytes: u64,
     pub output_path: Option<String>,
     pub error_message: Option<String>,
+    // Live recording specific fields
+    pub is_recording: Option<bool>,
+    pub recorded_duration: Option<String>,
+    pub bitrate: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -507,6 +511,9 @@ async fn start_download(
         total_bytes: 0,
         output_path: None,
         error_message: None,
+        is_recording: None,
+        recorded_duration: None,
+        bitrate: None,
     };
 
     let task = DownloadTask {
@@ -531,6 +538,61 @@ async fn start_download(
 
     tokio::spawn(async move {
         execute_download(app_clone, tasks_clone, task_id_clone).await;
+    });
+
+    Ok(task_id)
+}
+
+#[tauri::command]
+async fn start_recording(
+    app: AppHandle,
+    config: DownloadConfig,
+    tasks: tauri::State<'_, DownloadTasks>,
+) -> Result<String, String> {
+    if !config.video_info.is_live {
+        return Err("此影片不是直播".to_string());
+    }
+
+    let task_id = Uuid::new_v4().to_string();
+
+    let progress = DownloadProgress {
+        task_id: task_id.clone(),
+        status: "recording".to_string(),
+        title: config.video_info.title.clone(),
+        percentage: 0.0,
+        speed: "0 B/s".to_string(),
+        eta: "直播錄製中...".to_string(),
+        downloaded_bytes: 0,
+        total_bytes: 0,
+        output_path: None,
+        error_message: None,
+        is_recording: Some(true),
+        recorded_duration: Some("00:00:00".to_string()),
+        bitrate: Some("N/A".to_string()),
+    };
+
+    let task = DownloadTask {
+        config: config.clone(),
+        progress: progress.clone(),
+        process: None,
+        paused: false,
+    };
+
+    {
+        let mut tasks_guard = tasks.lock().unwrap();
+        tasks_guard.insert(task_id.clone(), task);
+    }
+
+    // Emit initial progress
+    app.emit("download-progress", &progress).ok();
+
+    // Start recording in background
+    let app_clone = app.clone();
+    let tasks_clone = tasks.inner().clone();
+    let task_id_clone = task_id.clone();
+
+    tokio::spawn(async move {
+        execute_recording(app_clone, tasks_clone, task_id_clone).await;
     });
 
     Ok(task_id)
@@ -678,6 +740,228 @@ async fn execute_download(app: AppHandle, tasks: DownloadTasks, task_id: String)
             }
         }
     }
+}
+
+async fn execute_recording(app: AppHandle, tasks: DownloadTasks, task_id: String) {
+    let config = {
+        let tasks_guard = tasks.lock().unwrap();
+        match tasks_guard.get(&task_id) {
+            Some(task) => task.config.clone(),
+            None => return,
+        }
+    };
+
+    // Build output path
+    let output_path = PathBuf::from(&config.output_folder).join(&config.output_filename);
+    let output_template = output_path.to_str().unwrap();
+
+    // Build yt-dlp command for live recording
+    let mut args = vec![
+        "--newline",
+        "--progress",
+        "-f", &config.format_id,
+        "-o", output_template,
+        "--live-from-start",  // Try to record from the start of the stream
+    ];
+
+    // Add container format
+    if config.container_format != "auto" {
+        args.push("--remux-video");
+        args.push(&config.container_format);
+    }
+
+    args.push(&config.url);
+
+    // Spawn yt-dlp process
+    let mut child = match Command::new("yt-dlp")
+        .args(&args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            update_download_error(&app, &tasks, &task_id, &format!("無法啟動 yt-dlp: {}", e)).await;
+            return;
+        }
+    };
+
+    // Read stdout for progress
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            update_download_error(&app, &tasks, &task_id, "無法讀取 yt-dlp 輸出").await;
+            return;
+        }
+    };
+
+    // Store process handle
+    {
+        let mut tasks_guard = tasks.lock().unwrap();
+        if let Some(task) = tasks_guard.get_mut(&task_id) {
+            task.process = Some(child);
+        }
+    }
+
+    use std::io::{BufRead, BufReader};
+    use std::time::Instant;
+    let reader = BufReader::new(stdout);
+    let start_time = Instant::now();
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+
+        // Parse recording progress
+        if let Some(recording_info) = parse_recording_progress(&line) {
+            let elapsed = start_time.elapsed();
+            let duration_str = format_duration_hhmmss(elapsed.as_secs());
+
+            let mut tasks_guard = tasks.lock().unwrap();
+            if let Some(task) = tasks_guard.get_mut(&task_id) {
+                task.progress.downloaded_bytes = recording_info.0;
+                task.progress.bitrate = Some(recording_info.1);
+                task.progress.recorded_duration = Some(duration_str);
+                app.emit("download-progress", &task.progress).ok();
+            }
+        } else if let Some(progress_info) = parse_ytdlp_progress(&line) {
+            // Fallback to standard progress parsing
+            let elapsed = start_time.elapsed();
+            let duration_str = format_duration_hhmmss(elapsed.as_secs());
+
+            let mut tasks_guard = tasks.lock().unwrap();
+            if let Some(task) = tasks_guard.get_mut(&task_id) {
+                task.progress.speed = progress_info.1.clone();
+                task.progress.recorded_duration = Some(duration_str);
+                app.emit("download-progress", &task.progress).ok();
+            }
+        }
+    }
+
+    // Wait for process to complete
+    let mut child = {
+        let mut tasks_guard = tasks.lock().unwrap();
+        match tasks_guard.get_mut(&task_id) {
+            Some(task) => task.process.take(),
+            None => return,
+        }
+    };
+
+    if let Some(ref mut child) = child {
+        match child.wait() {
+            Ok(status) => {
+                if status.success() {
+                    // Recording completed - run post-processing
+                    {
+                        let mut tasks_guard = tasks.lock().unwrap();
+                        if let Some(task) = tasks_guard.get_mut(&task_id) {
+                            task.progress.status = "processing".to_string();
+                            app.emit("download-progress", &task.progress).ok();
+                        }
+                    }
+
+                    // Run FFmpeg remux if needed
+                    let final_path = post_process_recording(&output_path).await;
+                    let output_path_str = final_path.unwrap_or_else(|| output_path.to_str().unwrap().to_string());
+
+                    {
+                        let mut tasks_guard = tasks.lock().unwrap();
+                        if let Some(task) = tasks_guard.get_mut(&task_id) {
+                            task.progress.status = "completed".to_string();
+                            task.progress.percentage = 100.0;
+                            task.progress.output_path = Some(output_path_str.clone());
+                            task.progress.is_recording = Some(false);
+                            app.emit("download-progress", &task.progress).ok();
+                        }
+                    }
+
+                    // Save to history
+                    save_download_history(&app, &config, &output_path_str, "completed", None).await;
+                } else {
+                    // Check if stream was interrupted (exit code may vary)
+                    let stderr_output = child.stderr.as_mut()
+                        .and_then(|stderr| {
+                            use std::io::Read;
+                            let mut buf = String::new();
+                            stderr.read_to_string(&mut buf).ok()?;
+                            Some(buf)
+                        });
+
+                    let is_interrupted = stderr_output
+                        .as_ref()
+                        .map(|s| s.contains("Stream ended") || s.contains("connection") || s.contains("interrupt"))
+                        .unwrap_or(false);
+
+                    if is_interrupted {
+                        // Stream interrupted - preserve recorded content
+                        let output_path_str = output_path.to_str().unwrap().to_string();
+
+                        {
+                            let mut tasks_guard = tasks.lock().unwrap();
+                            if let Some(task) = tasks_guard.get_mut(&task_id) {
+                                task.progress.status = "stream_interrupted".to_string();
+                                task.progress.output_path = Some(output_path_str.clone());
+                                task.progress.is_recording = Some(false);
+                                task.progress.error_message = Some("串流中斷".to_string());
+                                app.emit("download-progress", &task.progress).ok();
+                            }
+                        }
+
+                        save_download_history(&app, &config, &output_path_str, "stream_interrupted", Some("串流中斷")).await;
+                    } else {
+                        update_download_error(&app, &tasks, &task_id, "錄製失敗").await;
+                    }
+                }
+            }
+            Err(e) => {
+                update_download_error(&app, &tasks, &task_id, &format!("程序錯誤: {}", e)).await;
+            }
+        }
+    }
+}
+
+async fn post_process_recording(input_path: &PathBuf) -> Option<String> {
+    // Run FFmpeg remux to ensure the file is properly formatted
+    // For MVP, we'll just verify the file exists
+    if input_path.exists() {
+        Some(input_path.to_str().unwrap().to_string())
+    } else {
+        None
+    }
+}
+
+fn parse_recording_progress(line: &str) -> Option<(u64, String)> {
+    // Parse yt-dlp live stream progress
+    // Example: [download]  1.23MiB at 256.00KiB/s
+    let re = Regex::new(r"\[download\]\s+([0-9.]+)([KMG]iB)\s+at\s+([0-9.]+)([KMG]iB/s)").ok()?;
+    let caps = re.captures(line)?;
+
+    let size_value: f64 = caps.get(1)?.as_str().parse().ok()?;
+    let size_unit = caps.get(2)?.as_str();
+    let bitrate_value = caps.get(3)?.as_str();
+    let bitrate_unit = caps.get(4)?.as_str();
+
+    // Convert to bytes
+    let multiplier = match size_unit {
+        "KiB" => 1024,
+        "MiB" => 1024 * 1024,
+        "GiB" => 1024 * 1024 * 1024,
+        _ => 1,
+    };
+
+    let bytes = (size_value * multiplier as f64) as u64;
+    let bitrate = format!("{}{}", bitrate_value, bitrate_unit);
+
+    Some((bytes, bitrate))
+}
+
+fn format_duration_hhmmss(seconds: u64) -> String {
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let secs = seconds % 60;
+    format!("{:02}:{:02}:{:02}", hours, minutes, secs)
 }
 
 fn parse_ytdlp_progress(line: &str) -> Option<(f64, String, String)> {
@@ -853,6 +1137,42 @@ async fn cancel_download(
 }
 
 #[tauri::command]
+async fn stop_recording(
+    app: AppHandle,
+    task_id: String,
+    tasks: tauri::State<'_, DownloadTasks>,
+) -> Result<(), String> {
+    {
+        let mut tasks_guard = tasks.lock().unwrap();
+        if let Some(task) = tasks_guard.get_mut(&task_id) {
+            if let Some(ref mut child) = task.process {
+                // Send SIGTERM for graceful shutdown (allows yt-dlp to finalize the file)
+                #[cfg(unix)]
+                {
+                    // On Unix, we can send SIGTERM which yt-dlp handles gracefully
+                    unsafe {
+                        libc::kill(child.id() as i32, libc::SIGTERM);
+                    }
+                }
+
+                #[cfg(not(unix))]
+                {
+                    // On Windows, just kill the process
+                    child.kill().ok();
+                }
+            }
+
+            task.progress.status = "processing".to_string();
+            task.progress.is_recording = Some(false);
+            app.emit("download-progress", &task.progress).ok();
+        }
+    }
+
+    // The execute_recording function will handle the completion when the process exits
+    Ok(())
+}
+
+#[tauri::command]
 async fn open_file(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -947,9 +1267,11 @@ pub fn run() {
             save_config,
             fetch_video_info,
             start_download,
+            start_recording,
             pause_download,
             resume_download,
             cancel_download,
+            stop_recording,
             open_file,
             show_in_folder,
             get_download_tasks

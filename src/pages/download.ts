@@ -52,6 +52,10 @@ interface DownloadProgress {
   total_bytes: number;
   output_path: string | null;
   error_message: string | null;
+  // Live recording specific fields
+  is_recording?: boolean;
+  recorded_duration?: string;
+  bitrate?: string;
 }
 
 let currentVideoInfo: VideoInfo | null = null;
@@ -167,6 +171,7 @@ export function renderDownloadPage(container: HTMLElement) {
 
           <div class="config-row">
             <button id="start-download-btn" class="primary-button large-button">開始下載</button>
+            <button id="record-stream-btn" class="primary-button large-button hidden" style="margin-left: 12px; background: #e91e63;">錄製直播</button>
           </div>
         </div>
       </div>
@@ -195,6 +200,7 @@ export function renderDownloadPage(container: HTMLElement) {
   const endTimeInput = container.querySelector('#end-time-input') as HTMLInputElement;
   const timeRangeError = container.querySelector('#time-range-error') as HTMLElement;
   const startDownloadBtn = container.querySelector('#start-download-btn') as HTMLButtonElement;
+  const recordStreamBtn = container.querySelector('#record-stream-btn') as HTMLButtonElement;
   const downloadsList = container.querySelector('#downloads-list') as HTMLElement;
 
   fetchBtn.addEventListener('click', async () => {
@@ -319,6 +325,30 @@ export function renderDownloadPage(container: HTMLElement) {
     }
   });
 
+  recordStreamBtn.addEventListener('click', async () => {
+    if (!currentVideoInfo || !currentVideoInfo.is_live) return;
+
+    const config: DownloadConfig = {
+      url: currentUrl,
+      video_info: currentVideoInfo,
+      format_id: qualitySelect.value,
+      content_type: contentTypeSelect.value,
+      video_codec: contentTypeSelect.value !== 'audio_only' ? (container.querySelector('#video-codec-select') as HTMLSelectElement).value : null,
+      audio_codec: contentTypeSelect.value !== 'video_only' ? (container.querySelector('#audio-codec-select') as HTMLSelectElement).value : null,
+      output_filename: filenameInput.value,
+      output_folder: folderInput.value,
+      container_format: containerSelect.value,
+      time_range: null, // No time range for live recording
+    };
+
+    try {
+      const taskId = await invoke<string>('start_recording', { config });
+      console.log('Recording started:', taskId);
+    } catch (error) {
+      showError(String(error));
+    }
+  });
+
   // Listen for download progress updates
   listen<DownloadProgress>('download-progress', (event) => {
     const progress = event.payload;
@@ -377,8 +407,26 @@ export function renderDownloadPage(container: HTMLElement) {
     const liveBadge = container.querySelector('#live-badge') as HTMLElement;
     if (info.is_live) {
       liveBadge.classList.remove('hidden');
+      // Show record button, hide/dim download button for live streams
+      recordStreamBtn.classList.remove('hidden');
+      startDownloadBtn.textContent = '開始下載 (僅 VOD)';
+      startDownloadBtn.disabled = true;
+      // Hide time range inputs for live streams
+      const timeRangeRow = container.querySelector('#start-time-input')?.closest('.config-row') as HTMLElement;
+      if (timeRangeRow) {
+        timeRangeRow.style.display = 'none';
+      }
     } else {
       liveBadge.classList.add('hidden');
+      // Show download button, hide record button for VODs
+      recordStreamBtn.classList.add('hidden');
+      startDownloadBtn.textContent = '開始下載';
+      startDownloadBtn.disabled = false;
+      // Show time range inputs for VODs
+      const timeRangeRow = container.querySelector('#start-time-input')?.closest('.config-row') as HTMLElement;
+      if (timeRangeRow) {
+        timeRangeRow.style.display = 'flex';
+      }
     }
 
     populateQualities(info.qualities);
@@ -483,31 +531,60 @@ function renderDownloadTasks(container: HTMLElement) {
 function createTaskCard(progress: DownloadProgress): HTMLElement {
   const card = document.createElement('div');
   card.className = `download-task-card status-${progress.status}`;
+
+  // Check if this is a live recording task
+  const isRecording = progress.is_recording || progress.status === 'recording';
+
   card.innerHTML = `
     <div class="task-header">
       <h4 class="task-title">${progress.title}</h4>
       <span class="task-status">${getStatusText(progress.status)}</span>
+      ${isRecording ? '<span class="live-indicator">🔴 直播錄製</span>' : ''}
     </div>
 
     <div class="task-progress">
-      <div class="progress-bar-container">
-        <div class="progress-bar" style="width: ${progress.percentage}%"></div>
-      </div>
-      <div class="progress-info">
-        <span class="progress-percentage">${progress.percentage.toFixed(1)}%</span>
-        <span class="progress-speed">${progress.speed}</span>
-        <span class="progress-eta">剩餘 ${progress.eta}</span>
-      </div>
+      ${!isRecording ? `
+        <div class="progress-bar-container">
+          <div class="progress-bar" style="width: ${progress.percentage}%"></div>
+        </div>
+        <div class="progress-info">
+          <span class="progress-percentage">${progress.percentage.toFixed(1)}%</span>
+          <span class="progress-speed">${progress.speed}</span>
+          <span class="progress-eta">剩餘 ${progress.eta}</span>
+        </div>
+      ` : `
+        <div class="recording-info">
+          <div class="recording-stat">
+            <span class="stat-label">已錄製時長</span>
+            <span class="stat-value">${progress.recorded_duration || '00:00:00'}</span>
+          </div>
+          <div class="recording-stat">
+            <span class="stat-label">檔案大小</span>
+            <span class="stat-value">${formatBytes(progress.downloaded_bytes)}</span>
+          </div>
+          <div class="recording-stat">
+            <span class="stat-label">串流位元率</span>
+            <span class="stat-value">${progress.bitrate || 'N/A'}</span>
+          </div>
+        </div>
+      `}
     </div>
 
     <div class="task-actions">
-      ${progress.status === 'downloading' ? `
+      ${progress.status === 'recording' ? `
+        <button class="action-btn stop-recording-btn" data-task-id="${progress.task_id}">停止錄製</button>
+        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">取消</button>
+      ` : ''}
+      ${progress.status === 'downloading' && !isRecording ? `
         <button class="action-btn pause-btn" data-task-id="${progress.task_id}">暫停</button>
         <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">取消</button>
       ` : ''}
       ${progress.status === 'paused' ? `
         <button class="action-btn resume-btn" data-task-id="${progress.task_id}">恢復</button>
         <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">取消</button>
+      ` : ''}
+      ${progress.status === 'processing' ? `
+        <p class="processing-text">正在後處理...</p>
       ` : ''}
       ${progress.status === 'completed' && progress.output_path ? `
         <button class="action-btn open-btn" data-path="${progress.output_path}">開啟檔案</button>
@@ -517,10 +594,30 @@ function createTaskCard(progress: DownloadProgress): HTMLElement {
       ${progress.status === 'failed' && progress.error_message ? `
         <p class="error-text">${progress.error_message}</p>
       ` : ''}
+      ${progress.status === 'stream_interrupted' ? `
+        <p class="warning-text">串流中斷 - 已錄製內容保留</p>
+        ${progress.output_path ? `
+          <button class="action-btn open-btn" data-path="${progress.output_path}">開啟檔案</button>
+          <button class="action-btn folder-btn" data-path="${progress.output_path}">顯示資料夾</button>
+        ` : ''}
+      ` : ''}
     </div>
   `;
 
   // Attach event listeners
+  card.querySelectorAll('.stop-recording-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const taskId = (e.target as HTMLElement).dataset.taskId;
+      if (taskId) {
+        try {
+          await invoke('stop_recording', { taskId });
+        } catch (error) {
+          console.error('Failed to stop recording:', error);
+        }
+      }
+    });
+  });
+
   card.querySelectorAll('.pause-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       const taskId = (e.target as HTMLElement).dataset.taskId;
@@ -601,13 +698,23 @@ function getStatusText(status: string): string {
   const statusMap: Record<string, string> = {
     'queued': '排隊中',
     'downloading': '下載中',
+    'recording': '錄製中',
     'processing': '處理中',
     'completed': '已完成',
     'failed': '失敗',
     'cancelled': '已取消',
     'paused': '已暫停',
+    'stream_interrupted': '串流中斷',
   };
   return statusMap[status] || status;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // Time format validation and parsing functions

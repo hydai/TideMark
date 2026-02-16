@@ -80,6 +80,7 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "libc",
  "log",
  "regex",
  "reqwest 0.12.28",

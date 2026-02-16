@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import * as CloudSync from '../sync';
+import { navigateToDownload } from '../app';
+import { ConfigManager } from '../config';
 
 interface Record {
   id: string;
@@ -548,6 +550,42 @@ function formatTimestamp(timestamp: string): string {
   }
 }
 
+// Parse time string (HH:MM:SS, MM:SS, or seconds) to total seconds
+function parseTimeToSeconds(time: string): number {
+  // Pure seconds
+  if (/^\d+$/.test(time)) {
+    return parseInt(time, 10);
+  }
+
+  // HH:MM:SS or MM:SS
+  const parts = time.split(':').map(p => parseInt(p, 10));
+
+  if (parts.length === 3) {
+    // HH:MM:SS
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  } else if (parts.length === 2) {
+    // MM:SS
+    return parts[0] * 60 + parts[1];
+  }
+
+  return 0;
+}
+
+// Format seconds to HH:MM:SS or MM:SS
+function formatSecondsToTime(seconds: number): string {
+  if (seconds < 0) seconds = 0;
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  } else {
+    return `${minutes}:${String(secs).padStart(2, '0')}`;
+  }
+}
+
 function attachEventListeners(container: HTMLElement) {
   // Create folder button
   const createFolderBtn = container.querySelector('#create-folder-btn');
@@ -852,10 +890,48 @@ function attachEventListeners(container: HTMLElement) {
     });
   });
 
-  // Download clip button (placeholder for Task #19)
+  // Download clip button
   container.querySelectorAll('.download-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      alert('下載片段功能將在 Task #19 中實作');
+    btn.addEventListener('click', async () => {
+      const recordId = (btn as HTMLElement).dataset.recordId;
+      if (!recordId) return;
+
+      const record = currentData.records.find(r => r.id === recordId);
+      if (!record) return;
+
+      try {
+        // Get config for offset values
+        const config = ConfigManager.get();
+        const beforeOffset = config.download_clip_before_offset || 10;
+        const afterOffset = config.download_clip_after_offset || 10;
+
+        // Parse live_time to seconds
+        const liveTimeSeconds = parseTimeToSeconds(record.live_time);
+
+        // Calculate start and end times
+        const startSeconds = Math.max(0, liveTimeSeconds - beforeOffset);
+        const endSeconds = liveTimeSeconds + afterOffset;
+
+        // Format back to time strings
+        const startTime = formatSecondsToTime(startSeconds);
+        const endTime = formatSecondsToTime(endSeconds);
+
+        // Check if VOD URL is valid
+        if (!record.channel_url || record.channel_url.trim() === '') {
+          alert('無法解析此記錄的連結');
+          return;
+        }
+
+        // Navigate to download tab with pre-filled data
+        navigateToDownload({
+          url: record.channel_url,
+          startTime: startTime,
+          endTime: endTime,
+        });
+      } catch (error) {
+        console.error('Failed to prepare download:', error);
+        alert('無法準備下載: ' + error);
+      }
     });
   });
 }

@@ -80,6 +80,8 @@ struct AppConfig {
     animation: bool,
     compact: bool,
     max_concurrent_downloads: usize,
+    download_clip_before_offset: u32,
+    download_clip_after_offset: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -189,6 +191,8 @@ impl Default for AppConfig {
             animation: true,
             compact: false,
             max_concurrent_downloads: 3,
+            download_clip_before_offset: 10,
+            download_clip_after_offset: 10,
         }
     }
 }

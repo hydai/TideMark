@@ -62,7 +62,13 @@ let currentVideoInfo: VideoInfo | null = null;
 let currentUrl: string = '';
 let downloadTasks: Map<string, DownloadProgress> = new Map();
 
-export function renderDownloadPage(container: HTMLElement) {
+interface NavigationData {
+  url: string;
+  startTime?: string;
+  endTime?: string;
+}
+
+export function renderDownloadPage(container: HTMLElement, navData?: NavigationData) {
   container.innerHTML = `
     <div class="page download-page">
       <h1 class="page-title">下載</h1>
@@ -358,6 +364,30 @@ export function renderDownloadPage(container: HTMLElement) {
 
   // Load existing tasks
   loadDownloadTasks(downloadsList);
+
+  // Auto-fetch if navigation data is provided
+  if (navData?.url) {
+    urlInput.value = navData.url;
+    fetchBtn.click();
+
+    // Wait for video info to load, then set time range
+    if (navData.startTime || navData.endTime) {
+      const checkVideoInfoInterval = setInterval(() => {
+        if (currentVideoInfo) {
+          clearInterval(checkVideoInfoInterval);
+          if (navData.startTime) {
+            startTimeInput.value = navData.startTime;
+          }
+          if (navData.endTime) {
+            endTimeInput.value = navData.endTime;
+          }
+        }
+      }, 100);
+
+      // Clear interval after 10 seconds to avoid infinite checking
+      setTimeout(() => clearInterval(checkVideoInfoInterval), 10000);
+    }
+  }
 
   function showError(message: string) {
     errorMessage.textContent = message;

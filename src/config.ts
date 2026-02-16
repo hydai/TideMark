@@ -4,12 +4,16 @@ export interface AppConfig {
   theme: 'dark' | 'light' | 'system';
   animation: boolean;
   compact: boolean;
+  download_clip_before_offset: number;
+  download_clip_after_offset: number;
 }
 
 const defaultConfig: AppConfig = {
   theme: 'system',
   animation: true,
   compact: false,
+  download_clip_before_offset: 10,
+  download_clip_after_offset: 10,
 };
 
 export class ConfigManager {

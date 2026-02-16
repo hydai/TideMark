@@ -10,6 +10,9 @@ type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings';
 
 let currentTab: TabId = 'download';
 
+// Navigation data that can be set before switching tabs
+let navigationData: any = null;
+
 export function renderApp() {
   const app = document.getElementById('app');
   if (!app) return;
@@ -79,7 +82,8 @@ function switchTab(tabId: TabId) {
 
   switch (tabId) {
     case 'download':
-      renderDownloadPage(container);
+      renderDownloadPage(container, navigationData);
+      navigationData = null; // Clear after use
       break;
     case 'history':
       renderHistoryPage(container);
@@ -94,6 +98,12 @@ function switchTab(tabId: TabId) {
       renderSettingsPageNew(container);
       break;
   }
+}
+
+// Export function to navigate with data
+export function navigateToDownload(data: any) {
+  navigationData = data;
+  switchTab('download');
 }
 
 // Download page is now in pages/download.ts

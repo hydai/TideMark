@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tidemark</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Header with platform theme -->
+    <div id="header">
+      <h1 id="title">Tidemark</h1>
+      <div id="platform-indicator"></div>
+    </div>
+
+    <!-- Error message area -->
+    <div id="error-message" class="error hidden"></div>
+
+    <!-- Video info section -->
+    <div id="video-info" class="hidden">
+      <div id="video-title"></div>
+      <div id="video-time"></div>
+    </div>
+
+    <!-- Record form -->
+    <div id="record-form">
+      <input
+        type="text"
+        id="topic-input"
+        placeholder="輸入主題名稱 (可選)"
+        maxlength="100"
+      />
+      <button id="record-button" class="primary">
+        記錄當前時間
+      </button>
+    </div>
+
+    <!-- Records list -->
+    <div id="records-section">
+      <div id="records-header">
+        <h2>記錄列表</h2>
+        <div id="record-count"></div>
+      </div>
+      <div id="records-list"></div>
+      <div id="no-records" class="empty-state hidden">
+        尚無記錄
+      </div>
+    </div>
+  </div>
+
+  <script src="popup/popup.js" type="module"></script>
+</body>
+</html>

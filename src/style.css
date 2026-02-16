@@ -1743,3 +1743,348 @@ body {
 .secondary-button:hover {
   background-color: var(--surface-tertiary);
 }
+
+/* Records Page Styles */
+.records-page {
+  padding: 0;
+  height: 100%;
+}
+
+.records-container {
+  display: flex;
+  height: 100%;
+  gap: 0;
+}
+
+.folders-sidebar {
+  width: 250px;
+  background-color: var(--sidebar-bg);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: var(--spacing-md);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.folder-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-sm) 0;
+}
+
+.folder-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.folder-item:hover {
+  background-color: var(--bg-secondary);
+}
+
+.folder-item.active {
+  background-color: var(--sidebar-active);
+  font-weight: 500;
+}
+
+.folder-item.draggable {
+  cursor: move;
+}
+
+.folder-item.dragging {
+  opacity: 0.5;
+}
+
+.folder-item.drag-over {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.folder-name {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.record-count {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.delete-folder-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+
+.delete-folder-btn:hover {
+  background-color: #ff4444;
+  color: white;
+}
+
+.folder-edit-input {
+  flex: 1;
+  padding: 2px 4px;
+  border: 1px solid var(--accent-color);
+  border-radius: 3px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.folder-actions {
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.folder-name-input {
+  width: 100%;
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.records-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.records-header {
+  padding: var(--spacing-lg);
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.records-header .page-title {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.search-box {
+  flex: 1;
+  max-width: 400px;
+}
+
+.search-input {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.records-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--spacing-md);
+}
+
+.empty-message {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: var(--spacing-xl);
+}
+
+.record-group {
+  margin-bottom: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-secondary);
+  overflow: hidden;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  cursor: pointer;
+  user-select: none;
+  background-color: var(--bg-tertiary);
+  transition: background-color 0.2s;
+}
+
+.group-header:hover {
+  background-color: var(--sidebar-active);
+}
+
+.collapse-icon {
+  color: var(--text-secondary);
+  font-size: 12px;
+  width: 16px;
+  text-align: center;
+}
+
+.group-title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.group-count {
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+
+.group-records {
+  padding: var(--spacing-sm);
+}
+
+.group-records.hidden {
+  display: none;
+}
+
+.record-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-sm);
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.record-item:last-child {
+  margin-bottom: 0;
+}
+
+.record-item:hover {
+  border-color: var(--accent-color);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.record-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  flex: 1;
+}
+
+.platform-badge {
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.platform-badge.youtube {
+  background-color: #ff0000;
+  color: white;
+}
+
+.platform-badge.twitch {
+  background-color: #9146ff;
+  color: white;
+}
+
+.record-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.record-topic {
+  display: block;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  cursor: text;
+}
+
+.record-topic:hover {
+  color: var(--accent-color);
+}
+
+.record-edit-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--accent-color);
+  border-radius: 3px;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.record-meta {
+  display: flex;
+  gap: var(--spacing-md);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.record-time {
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+}
+
+.record-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.record-action-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.record-action-btn:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--accent-color);
+}
+
+.record-action-btn.delete-btn:hover {
+  background-color: #ff4444;
+  border-color: #ff4444;
+}

@@ -91,6 +91,37 @@ pub struct AuthConfig {
     pub elevenlabs_api_key: Option<String>,
 }
 
+// Records management structures
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Record {
+    pub id: String,
+    pub timestamp: String,
+    pub live_time: String,
+    pub title: String,
+    pub topic: String,
+    pub folder_id: Option<String>,
+    pub channel_url: String,
+    pub platform: String,
+    #[serde(default)]
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Folder {
+    pub id: String,
+    pub name: String,
+    pub created: String,
+    #[serde(default)]
+    pub sort_order: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct RecordsData {
+    pub records: Vec<Record>,
+    pub folders: Vec<Folder>,
+    pub folder_order: Vec<String>,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -125,6 +156,19 @@ fn get_auth_config_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
 
     Ok(tidemark_dir.join("auth_config.json"))
+}
+
+fn get_records_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let tidemark_dir = app_data_dir.join("tidemark");
+    fs::create_dir_all(&tidemark_dir)
+        .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
+
+    Ok(tidemark_dir.join("records.json"))
 }
 
 #[tauri::command]
@@ -2574,6 +2618,161 @@ async fn start_transcription(
     Ok(())
 }
 
+// Records management commands
+#[tauri::command]
+fn get_local_records(app: AppHandle) -> Result<RecordsData, String> {
+    let records_path = get_records_path(&app)?;
+
+    if !records_path.exists() {
+        // Return empty data if file doesn't exist
+        return Ok(RecordsData {
+            records: Vec::new(),
+            folders: Vec::new(),
+            folder_order: Vec::new(),
+        });
+    }
+
+    let content = fs::read_to_string(&records_path)
+        .map_err(|e| format!("Failed to read records file: {}", e))?;
+
+    let data: RecordsData = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse records file: {}", e))?;
+
+    Ok(data)
+}
+
+#[tauri::command]
+fn save_local_records(app: AppHandle, data: RecordsData) -> Result<(), String> {
+    let records_path = get_records_path(&app)?;
+
+    let content = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("Failed to serialize records: {}", e))?;
+
+    fs::write(&records_path, content)
+        .map_err(|e| format!("Failed to write records file: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn create_folder(app: AppHandle, name: String) -> Result<Folder, String> {
+    if name.trim().is_empty() {
+        return Err("Folder name cannot be empty".to_string());
+    }
+
+    let mut data = get_local_records(app.clone())?;
+
+    let folder = Folder {
+        id: format!("folder-{}", Utc::now().timestamp_millis()),
+        name,
+        created: Utc::now().to_rfc3339(),
+        sort_order: data.folders.len() as i32,
+    };
+
+    data.folders.push(folder.clone());
+    data.folder_order.push(folder.id.clone());
+
+    save_local_records(app, data)?;
+
+    Ok(folder)
+}
+
+#[tauri::command]
+fn update_folder(app: AppHandle, folder: Folder) -> Result<(), String> {
+    let mut data = get_local_records(app.clone())?;
+
+    if let Some(pos) = data.folders.iter().position(|f| f.id == folder.id) {
+        data.folders[pos] = folder;
+        save_local_records(app, data)?;
+        Ok(())
+    } else {
+        Err("Folder not found".to_string())
+    }
+}
+
+#[tauri::command]
+fn delete_folder(app: AppHandle, id: String) -> Result<(), String> {
+    let mut data = get_local_records(app.clone())?;
+
+    // Move all records in this folder to uncategorized
+    for record in &mut data.records {
+        if record.folder_id.as_ref() == Some(&id) {
+            record.folder_id = None;
+        }
+    }
+
+    // Remove folder
+    data.folders.retain(|f| f.id != id);
+    data.folder_order.retain(|fid| fid != &id);
+
+    save_local_records(app, data)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn update_record(app: AppHandle, record: Record) -> Result<(), String> {
+    let mut data = get_local_records(app.clone())?;
+
+    if let Some(pos) = data.records.iter().position(|r| r.id == record.id) {
+        data.records[pos] = record;
+        save_local_records(app, data)?;
+        Ok(())
+    } else {
+        Err("Record not found".to_string())
+    }
+}
+
+#[tauri::command]
+fn delete_record(app: AppHandle, id: String) -> Result<(), String> {
+    let mut data = get_local_records(app.clone())?;
+
+    data.records.retain(|r| r.id != id);
+
+    save_local_records(app, data)?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn search_records(app: AppHandle, query: String) -> Result<Vec<Record>, String> {
+    let data = get_local_records(app)?;
+
+    if query.trim().is_empty() {
+        return Ok(data.records);
+    }
+
+    let query_lower = query.to_lowercase();
+    let filtered: Vec<Record> = data.records
+        .into_iter()
+        .filter(|r| {
+            r.title.to_lowercase().contains(&query_lower)
+                || r.topic.to_lowercase().contains(&query_lower)
+                || r.channel_url.to_lowercase().contains(&query_lower)
+        })
+        .collect();
+
+    Ok(filtered)
+}
+
+#[tauri::command]
+fn reorder_folders(app: AppHandle, folder_order: Vec<String>) -> Result<(), String> {
+    let mut data = get_local_records(app.clone())?;
+
+    data.folder_order = folder_order;
+
+    // Update sort_order based on position in folder_order
+    for (index, folder_id) in data.folder_order.iter().enumerate() {
+        if let Some(folder) = data.folders.iter_mut().find(|f| &f.id == folder_id) {
+            folder.sort_order = index as i32;
+        }
+    }
+
+    save_local_records(app, data)?;
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let download_tasks: DownloadTasks = Arc::new(Mutex::new(HashMap::new()));
@@ -2622,7 +2821,16 @@ pub fn run() {
             get_file_duration,
             get_file_size,
             start_transcription,
-            start_cloud_transcription
+            start_cloud_transcription,
+            get_local_records,
+            save_local_records,
+            create_folder,
+            update_folder,
+            delete_folder,
+            update_record,
+            delete_record,
+            search_records,
+            reorder_folders
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

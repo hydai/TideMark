@@ -1,3 +1,5 @@
+<p align="center"><img src="TideMark.png" width="400" /></p>
+
 # Tidemark
 
 Unified streaming content capture tool for YouTube and Twitch. Mark time points while watching streams, download videos, and transcribe content — all synced across browser extension and desktop app.

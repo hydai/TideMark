@@ -403,6 +403,7 @@ function attachSubtitlesEventListeners(container: HTMLElement) {
     radio.addEventListener('change', (e) => {
       const target = e.currentTarget as HTMLInputElement;
       currentEngine = target.value;
+      checkCloudApiKey(target.value);
       updateTranscriptionButton();
     });
   });
@@ -663,6 +664,37 @@ function updateTranscriptionButton() {
 
 let transcriptionUnlisteners: Array<() => void> = [];
 
+async function checkCloudApiKey(provider: string) {
+  const warningEl = document.getElementById('cloud-api-warning');
+  if (!warningEl) return;
+
+  try {
+    const authConfig = await invoke<any>('get_auth_config');
+    const keyField = `${provider}_api_key`;
+    const hasKey = authConfig && authConfig[keyField];
+
+    if (hasKey) {
+      warningEl.style.display = 'none';
+    } else {
+      warningEl.style.display = 'flex';
+      const providerName = provider === 'openai' ? 'OpenAI' : provider === 'groq' ? 'Groq' : 'ElevenLabs';
+      // Clear existing content
+      warningEl.textContent = '';
+      // Create warning icon
+      const iconSpan = document.createElement('span');
+      iconSpan.textContent = '⚠️';
+      // Create message text
+      const messageSpan = document.createElement('span');
+      messageSpan.textContent = `請先在設定頁面中設定 ${providerName} API Key`;
+      // Append to warning element
+      warningEl.appendChild(iconSpan);
+      warningEl.appendChild(messageSpan);
+    }
+  } catch (error) {
+    console.error('Failed to check API key:', error);
+  }
+}
+
 async function startTranscription() {
   if (!selectedFile) {
     alert('請先選擇檔案');
@@ -690,6 +722,12 @@ async function startTranscription() {
       updateTranscriptionProgress(processed, total);
     });
     transcriptionUnlisteners.push(progressUnlisten);
+
+    const cloudProgressUnlisten = await listen('cloud-transcription-progress', (event: any) => {
+      const { current_segment, total_segments, percentage } = event.payload;
+      updateCloudTranscriptionProgress(current_segment, total_segments, percentage);
+    });
+    transcriptionUnlisteners.push(cloudProgressUnlisten);
 
     const completeUnlisten = await listen('transcription-complete', (event: any) => {
       const { output_path } = event.payload;
@@ -735,6 +773,29 @@ function updateTranscriptionProgress(processed: number, total: number) {
 
   if (status) {
     status.textContent = '轉錄中...';
+  }
+}
+
+function updateCloudTranscriptionProgress(currentSegment: number, totalSegments: number, percentage: number) {
+  const progressFill = document.getElementById('transcription-progress-fill');
+  const progressPercentage = document.getElementById('progress-percentage');
+  const progressTime = document.getElementById('progress-time');
+  const status = document.getElementById('transcription-status');
+
+  if (progressFill) {
+    progressFill.style.width = `${percentage}%`;
+  }
+
+  if (progressPercentage) {
+    progressPercentage.textContent = `${Math.round(percentage)}%`;
+  }
+
+  if (progressTime) {
+    progressTime.textContent = `${currentSegment} / ${totalSegments} 段`;
+  }
+
+  if (status) {
+    status.textContent = `上傳中 (${currentSegment}/${totalSegments})...`;
   }
 }
 

@@ -86,6 +86,9 @@ struct AppConfig {
 pub struct AuthConfig {
     pub twitch_token: Option<String>,
     pub youtube_cookies_path: Option<String>,
+    pub openai_api_key: Option<String>,
+    pub groq_api_key: Option<String>,
+    pub elevenlabs_api_key: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -1442,10 +1445,76 @@ async fn save_auth_config(
 ) -> Result<(), String> {
     let auth_config_path = get_auth_config_path(&app)?;
 
-    let config = AuthConfig {
-        twitch_token,
-        youtube_cookies_path,
+    // Load existing config to preserve API keys
+    let mut config = if auth_config_path.exists() {
+        let content = fs::read_to_string(&auth_config_path)
+            .map_err(|e| format!("Failed to read auth config: {}", e))?;
+        serde_json::from_str::<AuthConfig>(&content)
+            .unwrap_or(AuthConfig {
+                twitch_token: None,
+                youtube_cookies_path: None,
+                openai_api_key: None,
+                groq_api_key: None,
+                elevenlabs_api_key: None,
+            })
+    } else {
+        AuthConfig {
+            twitch_token: None,
+            youtube_cookies_path: None,
+            openai_api_key: None,
+            groq_api_key: None,
+            elevenlabs_api_key: None,
+        }
     };
+
+    // Update fields
+    config.twitch_token = twitch_token;
+    config.youtube_cookies_path = youtube_cookies_path;
+
+    let content = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("Failed to serialize auth config: {}", e))?;
+
+    fs::write(&auth_config_path, content)
+        .map_err(|e| format!("Failed to write auth config: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn save_api_keys(
+    app: AppHandle,
+    openai_api_key: Option<String>,
+    groq_api_key: Option<String>,
+    elevenlabs_api_key: Option<String>,
+) -> Result<(), String> {
+    let auth_config_path = get_auth_config_path(&app)?;
+
+    // Load existing config to preserve Twitch/YouTube auth
+    let mut config = if auth_config_path.exists() {
+        let content = fs::read_to_string(&auth_config_path)
+            .map_err(|e| format!("Failed to read auth config: {}", e))?;
+        serde_json::from_str::<AuthConfig>(&content)
+            .unwrap_or(AuthConfig {
+                twitch_token: None,
+                youtube_cookies_path: None,
+                openai_api_key: None,
+                groq_api_key: None,
+                elevenlabs_api_key: None,
+            })
+    } else {
+        AuthConfig {
+            twitch_token: None,
+            youtube_cookies_path: None,
+            openai_api_key: None,
+            groq_api_key: None,
+            elevenlabs_api_key: None,
+        }
+    };
+
+    // Update API keys
+    config.openai_api_key = openai_api_key;
+    config.groq_api_key = groq_api_key;
+    config.elevenlabs_api_key = elevenlabs_api_key;
 
     let content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize auth config: {}", e))?;
@@ -1464,6 +1533,9 @@ async fn get_auth_config(app: AppHandle) -> Result<AuthConfig, String> {
         return Ok(AuthConfig {
             twitch_token: None,
             youtube_cookies_path: None,
+            openai_api_key: None,
+            groq_api_key: None,
+            elevenlabs_api_key: None,
         });
     }
 
@@ -1829,11 +1901,564 @@ async fn get_file_size(path: String) -> Result<u64, String> {
     Ok(metadata.len())
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CloudSegmentProgress {
+    pub current_segment: usize,
+    pub total_segments: usize,
+    pub percentage: f64,
+}
+
+async fn split_audio_for_cloud(input_path: &str, max_size_mb: u64) -> Result<Vec<String>, String> {
+    // Get file size
+    let metadata = fs::metadata(input_path)
+        .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+    let file_size_mb = metadata.len() / (1024 * 1024);
+
+    if file_size_mb <= max_size_mb {
+        // File is small enough, no need to split
+        return Ok(vec![input_path.to_string()]);
+    }
+
+    // Split file using FFmpeg
+    let input_pathbuf = PathBuf::from(input_path);
+    let parent_dir = input_pathbuf.parent()
+        .ok_or("Invalid input path")?;
+    let file_stem = input_pathbuf.file_stem()
+        .ok_or("Invalid file name")?
+        .to_string_lossy();
+
+    // Calculate segment duration (aim for max_size_mb - 1 MB buffer)
+    let target_size_mb = max_size_mb - 1;
+    let total_segments = ((file_size_mb as f64) / (target_size_mb as f64)).ceil() as usize;
+
+    // Get file duration
+    let duration_output = Command::new("ffprobe")
+        .args(&[
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            input_path
+        ])
+        .output()
+        .map_err(|e| format!("Failed to run ffprobe: {}", e))?;
+
+    let duration_str = String::from_utf8_lossy(&duration_output.stdout);
+    let total_duration: f64 = duration_str.trim().parse()
+        .map_err(|e| format!("Failed to parse duration: {}", e))?;
+
+    let segment_duration = total_duration / (total_segments as f64);
+
+    // Split file into segments
+    let mut segment_paths = Vec::new();
+    for i in 0..total_segments {
+        let start_time = i as f64 * segment_duration;
+        let segment_path = parent_dir.join(format!("{}_segment_{:03}.mp3", file_stem, i));
+
+        let output = Command::new("ffmpeg")
+            .args(&[
+                "-i", input_path,
+                "-ss", &format!("{:.2}", start_time),
+                "-t", &format!("{:.2}", segment_duration),
+                "-c:a", "libmp3lame",
+                "-b:a", "128k",
+                "-y",
+                segment_path.to_str().ok_or("Invalid segment path")?
+            ])
+            .output()
+            .map_err(|e| format!("Failed to split audio: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("FFmpeg split failed: {}", stderr));
+        }
+
+        segment_paths.push(segment_path.to_string_lossy().to_string());
+    }
+
+    Ok(segment_paths)
+}
+
+async fn upload_to_openai(
+    api_key: &str,
+    file_path: &str,
+    language: &str,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+
+    let file_bytes = fs::read(file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let file_name = PathBuf::from(file_path)
+        .file_name()
+        .ok_or("Invalid file path")?
+        .to_string_lossy()
+        .to_string();
+
+    let file_part = reqwest::multipart::Part::bytes(file_bytes)
+        .file_name(file_name)
+        .mime_str("audio/mpeg")
+        .map_err(|e| format!("Failed to create file part: {}", e))?;
+
+    let mut form = reqwest::multipart::Form::new()
+        .part("file", file_part)
+        .text("model", "whisper-1")
+        .text("response_format", "verbose_json");
+
+    if language != "auto" {
+        form = form.text("language", language.to_string());
+    }
+
+    let response = client
+        .post("https://api.openai.com/v1/audio/transcriptions")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("API request failed: {}", e))?;
+
+    let status = response.status();
+    let response_text = response.text().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if !status.is_success() {
+        if status.as_u16() == 401 {
+            return Err("API Key 無效，請檢查後重試".to_string());
+        } else if status.as_u16() == 429 {
+            return Err("API 額度已用盡，請檢查帳戶餘額".to_string());
+        } else {
+            return Err(format!("API 請求失敗: {} - {}", status, response_text));
+        }
+    }
+
+    serde_json::from_str(&response_text)
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+async fn upload_to_groq(
+    api_key: &str,
+    file_path: &str,
+    language: &str,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+
+    let file_bytes = fs::read(file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let file_name = PathBuf::from(file_path)
+        .file_name()
+        .ok_or("Invalid file path")?
+        .to_string_lossy()
+        .to_string();
+
+    let file_part = reqwest::multipart::Part::bytes(file_bytes)
+        .file_name(file_name)
+        .mime_str("audio/mpeg")
+        .map_err(|e| format!("Failed to create file part: {}", e))?;
+
+    let mut form = reqwest::multipart::Form::new()
+        .part("file", file_part)
+        .text("model", "whisper-large-v3")
+        .text("response_format", "verbose_json");
+
+    if language != "auto" {
+        form = form.text("language", language.to_string());
+    }
+
+    let response = client
+        .post("https://api.groq.com/openai/v1/audio/transcriptions")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("API request failed: {}", e))?;
+
+    let status = response.status();
+    let response_text = response.text().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if !status.is_success() {
+        if status.as_u16() == 401 {
+            return Err("API Key 無效，請檢查後重試".to_string());
+        } else if status.as_u16() == 429 {
+            return Err("API 額度已用盡，請檢查帳戶餘額".to_string());
+        } else {
+            return Err(format!("API 請求失敗: {} - {}", status, response_text));
+        }
+    }
+
+    serde_json::from_str(&response_text)
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+async fn upload_to_elevenlabs(
+    api_key: &str,
+    file_path: &str,
+    language: &str,
+) -> Result<serde_json::Value, String> {
+    let client = reqwest::Client::new();
+
+    let file_bytes = fs::read(file_path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    let file_name = PathBuf::from(file_path)
+        .file_name()
+        .ok_or("Invalid file path")?
+        .to_string_lossy()
+        .to_string();
+
+    let file_part = reqwest::multipart::Part::bytes(file_bytes)
+        .file_name(file_name)
+        .mime_str("audio/mpeg")
+        .map_err(|e| format!("Failed to create file part: {}", e))?;
+
+    let mut form = reqwest::multipart::Form::new()
+        .part("audio", file_part)
+        .text("model_id", "scribe_v2");
+
+    if language != "auto" {
+        form = form.text("language", language.to_string());
+    }
+
+    let response = client
+        .post("https://api.elevenlabs.io/v1/audio-to-text")
+        .header("xi-api-key", api_key)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|e| format!("API request failed: {}", e))?;
+
+    let status = response.status();
+    let response_text = response.text().await
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+
+    if !status.is_success() {
+        if status.as_u16() == 401 {
+            return Err("API Key 無效，請檢查後重試".to_string());
+        } else if status.as_u16() == 429 {
+            return Err("API 額度已用盡，請檢查帳戶餘額".to_string());
+        } else {
+            return Err(format!("API 請求失敗: {} - {}", status, response_text));
+        }
+    }
+
+    serde_json::from_str(&response_text)
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+fn generate_srt_from_openai(response: &serde_json::Value) -> Result<String, String> {
+    let segments = response.get("segments")
+        .and_then(|v| v.as_array())
+        .ok_or("No segments in response")?;
+
+    let mut srt = String::new();
+    for (i, segment) in segments.iter().enumerate() {
+        let start = segment.get("start")
+            .and_then(|v| v.as_f64())
+            .ok_or("Missing start time")?;
+        let end = segment.get("end")
+            .and_then(|v| v.as_f64())
+            .ok_or("Missing end time")?;
+        let text = segment.get("text")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing text")?;
+
+        srt.push_str(&format!("{}\n", i + 1));
+        srt.push_str(&format!("{} --> {}\n", format_srt_time(start), format_srt_time(end)));
+        srt.push_str(&format!("{}\n\n", text.trim()));
+    }
+
+    Ok(srt)
+}
+
+fn generate_srt_from_elevenlabs(response: &serde_json::Value) -> Result<String, String> {
+    let words = response.get("words")
+        .and_then(|v| v.as_array())
+        .ok_or("No words in response")?;
+
+    // Group words into subtitle segments (every 10 words or at punctuation)
+    let mut srt = String::new();
+    let mut current_segment = Vec::new();
+    let mut segment_index = 1;
+
+    for word_obj in words {
+        let word = word_obj.get("text")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing word text")?;
+        let start = word_obj.get("start")
+            .and_then(|v| v.as_f64())
+            .ok_or("Missing start time")?;
+        let end = word_obj.get("end")
+            .and_then(|v| v.as_f64())
+            .ok_or("Missing end time")?;
+
+        current_segment.push((word, start, end));
+
+        // End segment at punctuation or after 10 words
+        let should_end = word.ends_with('.') || word.ends_with('?') || word.ends_with('!') ||
+                         word.ends_with('。') || word.ends_with('？') || word.ends_with('！') ||
+                         current_segment.len() >= 10;
+
+        if should_end && !current_segment.is_empty() {
+            let first_start = current_segment[0].1;
+            let last_end = current_segment[current_segment.len() - 1].2;
+            let text: String = current_segment.iter()
+                .map(|(w, _, _)| *w)
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            srt.push_str(&format!("{}\n", segment_index));
+            srt.push_str(&format!("{} --> {}\n", format_srt_time(first_start), format_srt_time(last_end)));
+            srt.push_str(&format!("{}\n\n", text.trim()));
+
+            segment_index += 1;
+            current_segment.clear();
+        }
+    }
+
+    // Handle remaining words
+    if !current_segment.is_empty() {
+        let first_start = current_segment[0].1;
+        let last_end = current_segment[current_segment.len() - 1].2;
+        let text: String = current_segment.iter()
+            .map(|(w, _, _)| *w)
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        srt.push_str(&format!("{}\n", segment_index));
+        srt.push_str(&format!("{} --> {}\n", format_srt_time(first_start), format_srt_time(last_end)));
+        srt.push_str(&format!("{}\n\n", text.trim()));
+    }
+
+    Ok(srt)
+}
+
+fn format_srt_time(seconds: f64) -> String {
+    let total_seconds = seconds as u64;
+    let hours = total_seconds / 3600;
+    let minutes = (total_seconds % 3600) / 60;
+    let secs = total_seconds % 60;
+    let millis = ((seconds - total_seconds as f64) * 1000.0) as u64;
+
+    format!("{:02}:{:02}:{:02},{:03}", hours, minutes, secs, millis)
+}
+
+fn merge_transcriptions_with_offset(
+    segments: &[serde_json::Value],
+    segment_durations: &[f64]
+) -> Result<serde_json::Value, String> {
+    let mut merged_segments = Vec::new();
+    let mut time_offset = 0.0;
+
+    for (i, response) in segments.iter().enumerate() {
+        if let Some(segs) = response.get("segments").and_then(|v| v.as_array()) {
+            for seg in segs {
+                let mut new_seg = seg.clone();
+                if let Some(obj) = new_seg.as_object_mut() {
+                    // Adjust timestamps
+                    if let Some(start) = obj.get("start").and_then(|v| v.as_f64()) {
+                        obj.insert("start".to_string(), serde_json::Value::from(start + time_offset));
+                    }
+                    if let Some(end) = obj.get("end").and_then(|v| v.as_f64()) {
+                        obj.insert("end".to_string(), serde_json::Value::from(end + time_offset));
+                    }
+                }
+                merged_segments.push(new_seg);
+            }
+        }
+
+        if i < segment_durations.len() {
+            time_offset += segment_durations[i];
+        }
+    }
+
+    Ok(serde_json::json!({
+        "segments": merged_segments,
+        "text": merged_segments.iter()
+            .filter_map(|s| s.get("text").and_then(|t| t.as_str()))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }))
+}
+
+#[tauri::command]
+async fn start_cloud_transcription(config: TranscriptionConfig, app: AppHandle) -> Result<(), String> {
+    // Validate engine
+    let provider = match config.engine.as_str() {
+        "openai" | "groq" | "elevenlabs" => config.engine.clone(),
+        _ => return Err(format!("Unsupported cloud engine: {}", config.engine))
+    };
+
+    // Get API key from auth config
+    let auth_config = get_auth_config(app.clone()).await?;
+
+    let api_key = match provider.as_str() {
+        "openai" => auth_config.openai_api_key
+            .ok_or("請先在設定中輸入 OpenAI API Key")?,
+        "groq" => auth_config.groq_api_key
+            .ok_or("請先在設定中輸入 Groq API Key")?,
+        "elevenlabs" => auth_config.elevenlabs_api_key
+            .ok_or("請先在設定中輸入 ElevenLabs API Key")?,
+        _ => unreachable!()
+    };
+
+    // Determine file size limit based on provider
+    let max_size_mb = match provider.as_str() {
+        "openai" | "groq" => 25,
+        "elevenlabs" => 1024, // 1 GB
+        _ => unreachable!()
+    };
+
+    // Split file if needed
+    let segment_paths = if config.auto_segment {
+        split_audio_for_cloud(&config.input_file, max_size_mb).await?
+    } else {
+        // Check file size
+        let metadata = fs::metadata(&config.input_file)
+            .map_err(|e| format!("Failed to get file metadata: {}", e))?;
+        let file_size_mb = metadata.len() / (1024 * 1024);
+
+        if file_size_mb > max_size_mb {
+            return Err("檔案過大，請啟用自動分段或嘗試使用本地引擎".to_string());
+        }
+
+        vec![config.input_file.clone()]
+    };
+
+    let total_segments = segment_paths.len();
+    let mut transcription_results = Vec::new();
+    let mut segment_durations = Vec::new();
+
+    // Process each segment
+    for (i, segment_path) in segment_paths.iter().enumerate() {
+        // Emit progress
+        let progress = CloudSegmentProgress {
+            current_segment: i + 1,
+            total_segments,
+            percentage: ((i as f64) / (total_segments as f64)) * 100.0,
+        };
+        let _ = app.emit("cloud-transcription-progress", &progress);
+
+        // Get segment duration for offset calculation
+        let duration_output = Command::new("ffprobe")
+            .args(&[
+                "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                segment_path
+            ])
+            .output()
+            .map_err(|e| format!("Failed to get segment duration: {}", e))?;
+
+        let duration_str = String::from_utf8_lossy(&duration_output.stdout);
+        let duration: f64 = duration_str.trim().parse()
+            .unwrap_or(0.0);
+        segment_durations.push(duration);
+
+        // Upload to API
+        let result = match provider.as_str() {
+            "openai" => upload_to_openai(&api_key, segment_path, &config.language).await,
+            "groq" => upload_to_groq(&api_key, segment_path, &config.language).await,
+            "elevenlabs" => upload_to_elevenlabs(&api_key, segment_path, &config.language).await,
+            _ => unreachable!()
+        };
+
+        match result {
+            Ok(response) => {
+                transcription_results.push(response);
+            }
+            Err(e) => {
+                // Clean up temporary segments
+                if total_segments > 1 {
+                    for path in &segment_paths {
+                        if path != &config.input_file {
+                            let _ = fs::remove_file(path);
+                        }
+                    }
+                }
+
+                // Emit error event
+                let error_payload = serde_json::json!({
+                    "message": format!("Segment {} failed: {}", i + 1, e)
+                });
+                let _ = app.emit("transcription-error", &error_payload);
+
+                return Err(format!("Segment {} transcription failed: {}", i + 1, e));
+            }
+        }
+    }
+
+    // Merge results if multiple segments
+    let final_result = if transcription_results.len() > 1 {
+        merge_transcriptions_with_offset(&transcription_results, &segment_durations)?
+    } else {
+        transcription_results.into_iter().next()
+            .ok_or("No transcription result")?
+    };
+
+    // Generate output files
+    let input_pathbuf = PathBuf::from(&config.input_file);
+    let parent_dir = input_pathbuf.parent()
+        .ok_or("Invalid input path")?;
+    let file_stem = input_pathbuf.file_stem()
+        .ok_or("Invalid file name")?
+        .to_string_lossy();
+
+    let mut output_paths = Vec::new();
+
+    // Generate SRT
+    if config.output_format == "srt" || config.output_format == "both" {
+        let srt_content = match provider.as_str() {
+            "openai" | "groq" => generate_srt_from_openai(&final_result)?,
+            "elevenlabs" => generate_srt_from_elevenlabs(&final_result)?,
+            _ => unreachable!()
+        };
+
+        let srt_path = parent_dir.join(format!("{}.srt", file_stem));
+        fs::write(&srt_path, srt_content)
+            .map_err(|e| format!("Failed to write SRT file: {}", e))?;
+        output_paths.push(srt_path.to_string_lossy().to_string());
+    }
+
+    // Generate TXT
+    if config.output_format == "txt" || config.output_format == "both" {
+        let text = final_result.get("text")
+            .and_then(|v| v.as_str())
+            .ok_or("No text in response")?;
+
+        let txt_path = parent_dir.join(format!("{}.txt", file_stem));
+        fs::write(&txt_path, text)
+            .map_err(|e| format!("Failed to write TXT file: {}", e))?;
+        output_paths.push(txt_path.to_string_lossy().to_string());
+    }
+
+    // Clean up temporary segments
+    if segment_paths.len() > 1 {
+        for path in &segment_paths {
+            if path != &config.input_file {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
+
+    // Emit completion event
+    let complete_payload = serde_json::json!({
+        "output_path": output_paths.join(", ")
+    });
+    let _ = app.emit("transcription-complete", &complete_payload);
+
+    Ok(())
+}
+
 #[tauri::command]
 async fn start_transcription(
     config: TranscriptionConfig,
     app: AppHandle,
 ) -> Result<(), String> {
+    // Route to cloud transcription if using cloud engine
+    if config.engine == "openai" || config.engine == "groq" || config.engine == "elevenlabs" {
+        return start_cloud_transcription(config, app).await;
+    }
+
     use std::env;
     use std::io::{BufRead, BufReader};
 
@@ -1987,6 +2612,7 @@ pub fn run() {
             validate_twitch_token,
             import_youtube_cookies,
             save_auth_config,
+            save_api_keys,
             get_auth_config,
             check_asr_environment,
             install_asr_environment,
@@ -1995,7 +2621,8 @@ pub fn run() {
             delete_asr_model,
             get_file_duration,
             get_file_size,
-            start_transcription
+            start_transcription,
+            start_cloud_transcription
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

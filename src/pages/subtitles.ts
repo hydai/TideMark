@@ -1,5 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
+import { listen } from '@tauri-apps/api/event';
 
 interface AsrModel {
   engine: string;
@@ -281,9 +282,37 @@ export function renderSubtitlesPage(container: HTMLElement) {
         </div>
       </section>
 
+      <section id="transcription-progress-section" class="transcription-progress-section hidden">
+        <h2 class="section-title">轉錄進度</h2>
+        <div class="progress-container">
+          <div class="progress-bar">
+            <div id="transcription-progress-fill" class="progress-fill"></div>
+          </div>
+          <div class="progress-info">
+            <span id="progress-percentage">0%</span>
+            <span id="progress-time">0:00 / 0:00</span>
+          </div>
+          <p id="transcription-status" class="transcription-status">準備中...</p>
+        </div>
+      </section>
+
+      <section id="transcription-result-section" class="transcription-result-section hidden">
+        <h2 class="section-title">轉錄完成</h2>
+        <div class="result-container">
+          <p id="output-file-path" class="output-path"></p>
+          <div class="result-actions">
+            <button id="open-output-file-btn" class="primary-button">開啟檔案</button>
+            <button id="show-in-folder-btn" class="secondary-button">在資料夾中顯示</button>
+          </div>
+        </div>
+      </section>
+
       <div class="transcription-actions">
         <button id="start-transcription-btn" class="primary-button large-button" disabled>
           開始轉錄
+        </button>
+        <button id="cancel-transcription-btn" class="secondary-button large-button hidden">
+          取消轉錄
         </button>
       </div>
     </div>
@@ -386,6 +415,32 @@ function attachSubtitlesEventListeners(container: HTMLElement) {
   const startBtn = container.querySelector('#start-transcription-btn');
   startBtn?.addEventListener('click', async () => {
     await startTranscription();
+  });
+
+  const openOutputBtn = container.querySelector('#open-output-file-btn');
+  openOutputBtn?.addEventListener('click', async () => {
+    const outputPath = (window as any).lastOutputPath;
+    if (outputPath) {
+      try {
+        await invoke('open_file', { path: outputPath });
+      } catch (error) {
+        console.error('Failed to open file:', error);
+        alert('無法開啟檔案');
+      }
+    }
+  });
+
+  const showInFolderBtn = container.querySelector('#show-in-folder-btn');
+  showInFolderBtn?.addEventListener('click', async () => {
+    const outputPath = (window as any).lastOutputPath;
+    if (outputPath) {
+      try {
+        await invoke('show_in_folder', { path: outputPath });
+      } catch (error) {
+        console.error('Failed to show in folder:', error);
+        alert('無法開啟資料夾');
+      }
+    }
   });
 }
 
@@ -606,6 +661,8 @@ function updateTranscriptionButton() {
   }
 }
 
+let transcriptionUnlisteners: Array<() => void> = [];
+
 async function startTranscription() {
   if (!selectedFile) {
     alert('請先選擇檔案');
@@ -613,13 +670,123 @@ async function startTranscription() {
   }
 
   try {
+    // Show progress section
+    const progressSection = document.getElementById('transcription-progress-section');
+    const resultSection = document.getElementById('transcription-result-section');
+    const startBtn = document.getElementById('start-transcription-btn') as HTMLButtonElement;
+    const cancelBtn = document.getElementById('cancel-transcription-btn') as HTMLButtonElement;
+
+    if (progressSection) progressSection.classList.remove('hidden');
+    if (resultSection) resultSection.classList.add('hidden');
+    if (startBtn) {
+      startBtn.disabled = true;
+      startBtn.textContent = '轉錄中...';
+    }
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+
+    // Set up event listeners
+    const progressUnlisten = await listen('transcription-progress', (event: any) => {
+      const { processed, total } = event.payload;
+      updateTranscriptionProgress(processed, total);
+    });
+    transcriptionUnlisteners.push(progressUnlisten);
+
+    const completeUnlisten = await listen('transcription-complete', (event: any) => {
+      const { output_path } = event.payload;
+      handleTranscriptionComplete(output_path);
+    });
+    transcriptionUnlisteners.push(completeUnlisten);
+
+    const errorUnlisten = await listen('transcription-error', (event: any) => {
+      const { message } = event.payload;
+      handleTranscriptionError(message);
+    });
+    transcriptionUnlisteners.push(errorUnlisten);
+
+    // Start transcription
     const config = buildTranscriptionConfig();
     await invoke('start_transcription', { config });
-    alert('轉錄已開始');
+
   } catch (error) {
     console.error('Failed to start transcription:', error);
-    alert(`轉錄失敗：${error}`);
+    handleTranscriptionError(String(error));
   }
+}
+
+function updateTranscriptionProgress(processed: number, total: number) {
+  const percentage = total > 0 ? (processed / total) * 100 : 0;
+
+  const progressFill = document.getElementById('transcription-progress-fill');
+  const progressPercentage = document.getElementById('progress-percentage');
+  const progressTime = document.getElementById('progress-time');
+  const status = document.getElementById('transcription-status');
+
+  if (progressFill) {
+    progressFill.style.width = `${percentage}%`;
+  }
+
+  if (progressPercentage) {
+    progressPercentage.textContent = `${Math.round(percentage)}%`;
+  }
+
+  if (progressTime) {
+    progressTime.textContent = `${formatDuration(processed)} / ${formatDuration(total)}`;
+  }
+
+  if (status) {
+    status.textContent = '轉錄中...';
+  }
+}
+
+function handleTranscriptionComplete(outputPath: string) {
+  // Clean up event listeners
+  transcriptionUnlisteners.forEach(unlisten => unlisten());
+  transcriptionUnlisteners = [];
+
+  // Hide progress, show result
+  const progressSection = document.getElementById('transcription-progress-section');
+  const resultSection = document.getElementById('transcription-result-section');
+  const startBtn = document.getElementById('start-transcription-btn') as HTMLButtonElement;
+  const cancelBtn = document.getElementById('cancel-transcription-btn') as HTMLButtonElement;
+
+  if (progressSection) progressSection.classList.add('hidden');
+  if (resultSection) resultSection.classList.remove('hidden');
+  if (startBtn) {
+    startBtn.disabled = false;
+    startBtn.textContent = '開始轉錄';
+  }
+  if (cancelBtn) cancelBtn.classList.add('hidden');
+
+  // Update result display
+  const outputFilePathEl = document.getElementById('output-file-path');
+  if (outputFilePathEl) {
+    outputFilePathEl.textContent = `輸出檔案：${outputPath}`;
+  }
+
+  // Store output path for later actions
+  (window as any).lastOutputPath = outputPath;
+
+  alert('轉錄完成！');
+}
+
+function handleTranscriptionError(message: string) {
+  // Clean up event listeners
+  transcriptionUnlisteners.forEach(unlisten => unlisten());
+  transcriptionUnlisteners = [];
+
+  // Hide progress
+  const progressSection = document.getElementById('transcription-progress-section');
+  const startBtn = document.getElementById('start-transcription-btn') as HTMLButtonElement;
+  const cancelBtn = document.getElementById('cancel-transcription-btn') as HTMLButtonElement;
+
+  if (progressSection) progressSection.classList.add('hidden');
+  if (startBtn) {
+    startBtn.disabled = false;
+    startBtn.textContent = '開始轉錄';
+  }
+  if (cancelBtn) cancelBtn.classList.add('hidden');
+
+  alert(`轉錄失敗：${message}`);
 }
 
 function buildTranscriptionConfig(): TranscriptionConfig {

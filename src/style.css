@@ -1666,3 +1666,80 @@ body {
   transform: none;
   box-shadow: none;
 }
+
+/* Transcription Progress Section */
+.transcription-progress-section,
+.transcription-result-section {
+  background-color: var(--surface-secondary);
+  border-radius: var(--border-radius);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.progress-container,
+.result-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+#progress-percentage {
+  font-weight: 600;
+  color: var(--accent-color);
+  font-size: 18px;
+}
+
+#progress-time {
+  font-family: 'Courier New', monospace;
+}
+
+.transcription-status {
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+
+.result-container {
+  align-items: center;
+}
+
+.output-path {
+  word-break: break-all;
+  color: var(--text-primary);
+  margin: 0 0 var(--spacing-md) 0;
+  padding: var(--spacing-md);
+  background-color: var(--background-primary);
+  border-radius: var(--border-radius);
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.result-actions {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.transcription-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg) 0;
+}
+
+.secondary-button {
+  background-color: var(--surface-secondary);
+  color: var(--text-primary);
+}
+
+.secondary-button:hover {
+  background-color: var(--surface-tertiary);
+}

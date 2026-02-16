@@ -1,0 +1,16 @@
+# ASR Transcription Requirements
+# Install with: pip install -r requirements.txt
+
+# Whisper dependencies
+openai-whisper>=20231117
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Qwen/FunASR dependencies
+funasr>=1.0.0
+
+# Optional: Traditional Chinese conversion
+opencc-python-reimplemented>=0.1.7
+
+# Utilities
+ffmpeg-python>=0.2.0

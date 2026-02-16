@@ -1513,6 +1513,53 @@ pub struct TranscriptionConfig {
     pub auto_segment: bool,
 }
 
+fn check_gpu_availability() -> (bool, Option<String>) {
+    // Check for NVIDIA GPU (CUDA)
+    if let Ok(output) = Command::new("nvidia-smi")
+        .arg("--query-gpu=name")
+        .arg("--format=csv,noheader")
+        .output()
+    {
+        if output.status.success() {
+            let gpu_name = String::from_utf8_lossy(&output.stdout)
+                .trim()
+                .to_string();
+            if !gpu_name.is_empty() {
+                return (true, Some(gpu_name));
+            }
+        }
+    }
+
+    // Check for AMD GPU (ROCm)
+    if let Ok(output) = Command::new("rocm-smi")
+        .arg("--showproductname")
+        .output()
+    {
+        if output.status.success() {
+            return (true, Some("AMD GPU (ROCm)".to_string()));
+        }
+    }
+
+    // Check for Apple Silicon
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(output) = Command::new("sysctl")
+            .arg("-n")
+            .arg("machdep.cpu.brand_string")
+            .output()
+        {
+            if output.status.success() {
+                let cpu_info = String::from_utf8_lossy(&output.stdout);
+                if cpu_info.contains("Apple") {
+                    return (true, Some("Apple Silicon (Metal)".to_string()));
+                }
+            }
+        }
+    }
+
+    (false, None)
+}
+
 #[tauri::command]
 async fn check_asr_environment() -> Result<AsrEnvironmentStatus, String> {
     // Check Python installation
@@ -1529,76 +1576,52 @@ async fn check_asr_environment() -> Result<AsrEnvironmentStatus, String> {
         Err(_) => (false, None),
     };
 
-    // Check GPU availability (stub - would need actual GPU detection)
-    let gpu_available = false;
-    let gpu_name = None;
+    // Check GPU availability
+    use std::env;
+    let (gpu_available, gpu_name) = check_gpu_availability();
 
-    // Mock installed models for now
-    let installed_models = vec![
-        AsrModel {
-            engine: "whisper".to_string(),
-            model_id: "tiny".to_string(),
-            display_name: "Whisper Tiny".to_string(),
-            size: "75 MB".to_string(),
-            installed: false,
-            downloading: false,
-            download_progress: 0.0,
-        },
-        AsrModel {
-            engine: "whisper".to_string(),
-            model_id: "base".to_string(),
-            display_name: "Whisper Base".to_string(),
-            size: "145 MB".to_string(),
-            installed: false,
-            downloading: false,
-            download_progress: 0.0,
-        },
-        AsrModel {
-            engine: "whisper".to_string(),
-            model_id: "small".to_string(),
-            display_name: "Whisper Small".to_string(),
-            size: "466 MB".to_string(),
-            installed: false,
-            downloading: false,
-            download_progress: 0.0,
-        },
-        AsrModel {
-            engine: "whisper".to_string(),
-            model_id: "medium".to_string(),
-            display_name: "Whisper Medium".to_string(),
-            size: "1.5 GB".to_string(),
-            installed: false,
-            downloading: false,
-            download_progress: 0.0,
-        },
-        AsrModel {
-            engine: "whisper".to_string(),
-            model_id: "large".to_string(),
-            display_name: "Whisper Large".to_string(),
-            size: "3.1 GB".to_string(),
-            installed: false,
-            downloading: false,
-            download_progress: 0.0,
-        },
-        AsrModel {
-            engine: "qwen".to_string(),
-            model_id: "qwen3-asr-base".to_string(),
-            display_name: "Qwen3-ASR-Base".to_string(),
-            size: "500 MB".to_string(),
-            installed: false,
-            downloading: false,
-            download_progress: 0.0,
-        },
-        AsrModel {
-            engine: "qwen".to_string(),
-            model_id: "qwen3-asr-large".to_string(),
-            display_name: "Qwen3-ASR-Large".to_string(),
-            size: "1.2 GB".to_string(),
-            installed: false,
-            downloading: false,
-            download_progress: 0.0,
-        },
+    // Check for installed models
+    let home_dir = env::var("HOME")
+        .or_else(|_| env::var("USERPROFILE"))
+        .unwrap_or_else(|_| String::from("."));
+
+    let home_path = PathBuf::from(&home_dir);
+    let whisper_cache = home_path.join(".cache/whisper");
+
+    // Define available models
+    let model_specs = vec![
+        ("whisper", "tiny", "Whisper Tiny", "75 MB"),
+        ("whisper", "base", "Whisper Base", "145 MB"),
+        ("whisper", "small", "Whisper Small", "466 MB"),
+        ("whisper", "medium", "Whisper Medium", "1.5 GB"),
+        ("whisper", "large", "Whisper Large", "3.1 GB"),
+        ("qwen", "qwen3-asr-base", "Qwen3-ASR-Base", "500 MB"),
+        ("qwen", "qwen3-asr-large", "Qwen3-ASR-Large", "1.2 GB"),
     ];
+
+    let installed_models: Vec<AsrModel> = model_specs
+        .iter()
+        .map(|(engine, model_id, display_name, size)| {
+            let installed = match *engine {
+                "whisper" => whisper_cache.join(format!("{}.pt", model_id)).exists(),
+                "qwen" => {
+                    // Check if FunASR models are available
+                    home_path.join(".cache/modelscope/hub/iic").exists()
+                }
+                _ => false,
+            };
+
+            AsrModel {
+                engine: engine.to_string(),
+                model_id: model_id.to_string(),
+                display_name: display_name.to_string(),
+                size: size.to_string(),
+                installed,
+                downloading: false,
+                download_progress: 0.0,
+            }
+        })
+        .collect();
 
     Ok(AsrEnvironmentStatus {
         python_installed,
@@ -1612,9 +1635,54 @@ async fn check_asr_environment() -> Result<AsrEnvironmentStatus, String> {
 
 #[tauri::command]
 async fn install_asr_environment() -> Result<(), String> {
-    // This would install Python environment, dependencies, etc.
-    // For now, return error as it's not implemented
-    Err("ASR environment installation not yet implemented".to_string())
+    use std::env;
+
+    // Get the scripts/asr directory
+    let exe_dir = env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+    let exe_parent = exe_dir.parent()
+        .ok_or("Failed to get executable parent directory")?;
+
+    // Try multiple possible locations for the scripts directory
+    let possible_paths = vec![
+        exe_parent.join("../scripts/asr"),
+        exe_parent.join("../../scripts/asr"),
+        exe_parent.join("../../../scripts/asr"),
+        PathBuf::from("./scripts/asr"),
+        PathBuf::from("../scripts/asr"),
+    ];
+
+    let script_dir = possible_paths.iter()
+        .find(|p| p.join("setup_environment.sh").exists())
+        .ok_or("Could not find scripts/asr directory")?;
+
+    let setup_script = script_dir.join("setup_environment.sh");
+
+    // Make script executable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = fs::metadata(&setup_script)
+            .map_err(|e| format!("Failed to get script permissions: {}", e))?
+            .permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&setup_script, perms)
+            .map_err(|e| format!("Failed to set script permissions: {}", e))?;
+    }
+
+    // Execute setup script
+    let output = Command::new("bash")
+        .arg(&setup_script)
+        .current_dir(script_dir)
+        .output()
+        .map_err(|e| format!("Failed to execute setup script: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Environment setup failed: {}", stderr));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -1627,16 +1695,104 @@ async fn list_asr_models() -> Result<Vec<AsrModel>, String> {
 
 #[tauri::command]
 async fn download_asr_model(engine: String, model: String) -> Result<(), String> {
-    // This would download the specified model
-    // For now, return error as it's not implemented
-    Err(format!("Model download not yet implemented: {}/{}", engine, model))
+    use std::env;
+
+    // Get the scripts/asr directory
+    let exe_dir = env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+    let exe_parent = exe_dir.parent()
+        .ok_or("Failed to get executable parent directory")?;
+
+    let possible_paths = vec![
+        exe_parent.join("../scripts/asr"),
+        exe_parent.join("../../scripts/asr"),
+        exe_parent.join("../../../scripts/asr"),
+        PathBuf::from("./scripts/asr"),
+        PathBuf::from("../scripts/asr"),
+    ];
+
+    let script_dir = possible_paths.iter()
+        .find(|p| p.exists())
+        .ok_or("Could not find scripts/asr directory")?;
+
+    let venv_python = script_dir.join("venv/bin/python3");
+    let python_cmd = if venv_python.exists() {
+        venv_python.to_str().unwrap_or("python3")
+    } else {
+        "python3"
+    };
+
+    // Download model using Python
+    let download_script = match engine.as_str() {
+        "whisper" => {
+            // Whisper models are downloaded automatically on first use
+            format!(
+                r#"import whisper; whisper.load_model('{}'); print('Model {} downloaded successfully')"#,
+                model, model
+            )
+        }
+        "qwen" => {
+            // Qwen models from FunASR
+            let model_name = match model.as_str() {
+                "qwen3-asr-base" => "iic/Qwen2Audio-7B-Instruct",
+                "qwen3-asr-large" => "iic/Qwen2Audio-7B-Instruct",
+                _ => return Err(format!("Unknown Qwen model: {}", model)),
+            };
+            format!(
+                r#"from funasr import AutoModel; AutoModel(model='{}', disable_update=True); print('Model downloaded successfully')"#,
+                model_name
+            )
+        }
+        _ => return Err(format!("Unknown engine: {}", engine)),
+    };
+
+    let output = Command::new(python_cmd)
+        .arg("-c")
+        .arg(&download_script)
+        .output()
+        .map_err(|e| format!("Failed to execute Python: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Model download failed: {}", stderr));
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
 async fn delete_asr_model(engine: String, model: String) -> Result<(), String> {
-    // This would delete the specified model
-    // For now, return error as it's not implemented
-    Err(format!("Model deletion not yet implemented: {}/{}", engine, model))
+    use std::env;
+
+    // Get user's home directory for model cache
+    let home_dir = env::var("HOME")
+        .or_else(|_| env::var("USERPROFILE"))
+        .map_err(|_| "Could not determine home directory".to_string())?;
+
+    let home_path = PathBuf::from(home_dir);
+
+    // Whisper models are stored in ~/.cache/whisper/
+    // Qwen/FunASR models are stored in ~/.cache/modelscope/ or similar
+    let model_path = match engine.as_str() {
+        "whisper" => {
+            home_path.join(".cache/whisper").join(format!("{}.pt", model))
+        }
+        "qwen" => {
+            // FunASR/modelscope cache location
+            home_path.join(".cache/modelscope/hub")
+        }
+        _ => return Err(format!("Unknown engine: {}", engine)),
+    };
+
+    if !model_path.exists() {
+        return Err(format!("Model not found: {}", model_path.display()));
+    }
+
+    fs::remove_file(&model_path)
+        .or_else(|_| fs::remove_dir_all(&model_path))
+        .map_err(|e| format!("Failed to delete model: {}", e))?;
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -1674,10 +1830,123 @@ async fn get_file_size(path: String) -> Result<u64, String> {
 }
 
 #[tauri::command]
-async fn start_transcription(_config: TranscriptionConfig) -> Result<(), String> {
-    // This would start the transcription process
-    // For now, return error as it's not implemented
-    Err("Transcription not yet implemented".to_string())
+async fn start_transcription(
+    config: TranscriptionConfig,
+    app: AppHandle,
+) -> Result<(), String> {
+    use std::env;
+    use std::io::{BufRead, BufReader};
+
+    // Get the scripts/asr directory
+    let exe_dir = env::current_exe()
+        .map_err(|e| format!("Failed to get executable path: {}", e))?;
+    let exe_parent = exe_dir.parent()
+        .ok_or("Failed to get executable parent directory")?;
+
+    let possible_paths = vec![
+        exe_parent.join("../scripts/asr"),
+        exe_parent.join("../../scripts/asr"),
+        exe_parent.join("../../../scripts/asr"),
+        PathBuf::from("./scripts/asr"),
+        PathBuf::from("../scripts/asr"),
+    ];
+
+    let script_dir = possible_paths.iter()
+        .find(|p| p.exists())
+        .ok_or("Could not find scripts/asr directory")?;
+
+    let transcribe_script = script_dir.join("transcribe.py");
+    if !transcribe_script.exists() {
+        return Err("Transcription script not found".to_string());
+    }
+
+    let venv_python = script_dir.join("venv/bin/python3");
+    let python_cmd = if venv_python.exists() {
+        venv_python
+    } else {
+        PathBuf::from("python3")
+    };
+
+    // Prepare configuration with output directory
+    let mut exec_config = serde_json::to_value(&config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+    // Add output directory based on settings or input file location
+    if let Some(obj) = exec_config.as_object_mut() {
+        if !obj.contains_key("output_dir") {
+            let input_path = PathBuf::from(&config.input_file);
+            if let Some(parent) = input_path.parent() {
+                obj.insert(
+                    "output_dir".to_string(),
+                    serde_json::Value::String(parent.to_string_lossy().to_string())
+                );
+            }
+        }
+    }
+
+    let config_json = serde_json::to_string(&exec_config)
+        .map_err(|e| format!("Failed to serialize config: {}", e))?;
+
+    // Start Python process
+    let mut child = Command::new(&python_cmd)
+        .arg(&transcribe_script)
+        .arg("--config")
+        .arg(&config_json)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start transcription process: {}", e))?;
+
+    // Get stdout for reading progress
+    let stdout = child.stdout.take()
+        .ok_or("Failed to capture stdout".to_string())?;
+
+    let reader = BufReader::new(stdout);
+
+    // Read progress updates line by line
+    for line in reader.lines() {
+        let line = line.map_err(|e| format!("Failed to read output: {}", e))?;
+
+        // Parse JSON line
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
+            let msg_type = json.get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            match msg_type {
+                "progress" => {
+                    // Emit progress event to frontend
+                    let _ = app.emit("transcription-progress", &json);
+                }
+                "complete" => {
+                    // Emit completion event
+                    let _ = app.emit("transcription-complete", &json);
+                }
+                "error" => {
+                    let message = json.get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown error")
+                        .to_string();
+
+                    // Emit error event
+                    let _ = app.emit("transcription-error", &json);
+
+                    return Err(message);
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Wait for process to complete
+    let status = child.wait()
+        .map_err(|e| format!("Failed to wait for process: {}", e))?;
+
+    if !status.success() {
+        return Err("Transcription process failed".to_string());
+    }
+
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

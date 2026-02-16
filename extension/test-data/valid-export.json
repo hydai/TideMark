@@ -1,0 +1,63 @@
+{
+  "version": "1.0",
+  "exportedAt": "2026-02-16T03:00:00.000Z",
+  "records": [
+    {
+      "id": "record-1708052400000",
+      "timestamp": "2026-02-16T03:00:00.000Z",
+      "liveTime": "01:23:45",
+      "title": "測試直播標題 A",
+      "topic": "精彩時刻",
+      "folderId": "folder-1708052300000",
+      "channelUrl": "https://youtu.be/dQw4w9WgXcQ?t=5025",
+      "platform": "youtube"
+    },
+    {
+      "id": "record-1708052500000",
+      "timestamp": "2026-02-16T03:05:00.000Z",
+      "liveTime": "02:15:30",
+      "title": "測試直播標題 A",
+      "topic": "爆笑片段",
+      "folderId": "folder-1708052300000",
+      "channelUrl": "https://youtu.be/dQw4w9WgXcQ?t=8130",
+      "platform": "youtube"
+    },
+    {
+      "id": "record-1708052600000",
+      "timestamp": "2026-02-16T03:10:00.000Z",
+      "liveTime": "00:45:20",
+      "title": "測試直播標題 B",
+      "topic": "無主題",
+      "folderId": "folder-1708052400000",
+      "channelUrl": "https://www.twitch.tv/videos/123456789?t=0h45m20s",
+      "platform": "twitch"
+    },
+    {
+      "id": "record-1708052700000",
+      "timestamp": "2026-02-16T03:15:00.000Z",
+      "liveTime": "03:30:00",
+      "title": "測試直播標題 C",
+      "topic": "重要片段",
+      "folderId": null,
+      "channelUrl": "https://youtu.be/test123?t=12600",
+      "platform": "youtube"
+    }
+  ],
+  "folders": [
+    {
+      "id": "folder-1708052300000",
+      "name": "測試資料夾 A",
+      "created": "2026-02-16T02:55:00.000Z"
+    },
+    {
+      "id": "folder-1708052400000",
+      "name": "測試資料夾 B",
+      "created": "2026-02-16T03:00:00.000Z"
+    },
+    {
+      "id": "folder-1708052500000",
+      "name": "測試資料夾 C",
+      "created": "2026-02-16T03:05:00.000Z"
+    }
+  ]
+}

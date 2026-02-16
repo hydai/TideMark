@@ -67,9 +67,20 @@ export interface RecordGroup {
 }
 
 /**
+ * Export/Import data structure
+ */
+export interface ExportData {
+  version: string;
+  exportedAt: string;  // ISO 8601
+  records: Record[];
+  folders: Folder[];
+}
+
+/**
  * Constants
  */
 export const MAX_RECORDS = 500;
 export const DEFAULT_TOPIC = '無主題';
 export const UNCATEGORIZED_ID = 'uncategorized';
 export const UNCATEGORIZED_NAME = '未分類';
+export const EXPORT_VERSION = '1.0';

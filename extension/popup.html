@@ -67,6 +67,67 @@
         </div>
       </div>
     </div>
+
+    <!-- Settings section (collapsed by default) -->
+    <div id="settings-section">
+      <button id="settings-toggle" class="settings-toggle">
+        ⚙️ 設定
+      </button>
+      <div id="settings-content" class="settings-content hidden">
+        <div class="settings-group">
+          <h3>資料備份與還原</h3>
+
+          <div class="settings-item">
+            <button id="export-button" class="secondary">
+              📥 匯出資料
+            </button>
+            <p class="settings-description">
+              匯出所有記錄與資料夾為 JSON 檔案
+            </p>
+          </div>
+
+          <div class="settings-item">
+            <button id="import-button" class="secondary">
+              📤 匯入資料
+            </button>
+            <input
+              type="file"
+              id="import-file-input"
+              accept=".json,application/json"
+              style="display: none;"
+            />
+            <p class="settings-description">
+              從 JSON 檔案匯入記錄與資料夾
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import mode selection modal -->
+    <div id="import-modal" class="modal hidden">
+      <div class="modal-content">
+        <h3>選擇匯入模式</h3>
+        <p class="modal-description">
+          找到 <span id="import-stats"></span>
+        </p>
+        <div class="modal-buttons">
+          <button id="import-merge-button" class="primary">
+            合併 (Merge)
+          </button>
+          <button id="import-overwrite-button" class="secondary">
+            覆寫 (Overwrite)
+          </button>
+          <button id="import-cancel-button" class="tertiary">
+            取消
+          </button>
+        </div>
+        <div class="modal-help">
+          <p><strong>合併:</strong> 將匯入的資料加入現有資料，重複的 ID 會被跳過</p>
+          <p><strong>覆寫:</strong> 刪除所有現有資料，並替換為匯入的資料</p>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="popup/popup.js" type="module"></script>

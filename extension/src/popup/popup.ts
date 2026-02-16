@@ -1,5 +1,5 @@
-import type { Record, Folder, PlaybackInfo, Platform, StorageData, ContentMessage, RecordGroup } from '../types';
-import { MAX_RECORDS, DEFAULT_TOPIC, UNCATEGORIZED_ID, UNCATEGORIZED_NAME } from '../types';
+import type { Record, Folder, PlaybackInfo, Platform, StorageData, ContentMessage, RecordGroup, ExportData } from '../types';
+import { MAX_RECORDS, DEFAULT_TOPIC, UNCATEGORIZED_ID, UNCATEGORIZED_NAME, EXPORT_VERSION } from '../types';
 
 // DOM elements
 const errorMessage = document.getElementById('error-message') as HTMLDivElement;
@@ -17,6 +17,18 @@ const foldersList = document.getElementById('folders-list') as HTMLDivElement;
 const folderInput = document.getElementById('folder-input') as HTMLInputElement;
 const folderAddButton = document.getElementById('folder-add-button') as HTMLButtonElement;
 
+// Settings elements
+const settingsToggle = document.getElementById('settings-toggle') as HTMLButtonElement;
+const settingsContent = document.getElementById('settings-content') as HTMLDivElement;
+const exportButton = document.getElementById('export-button') as HTMLButtonElement;
+const importButton = document.getElementById('import-button') as HTMLButtonElement;
+const importFileInput = document.getElementById('import-file-input') as HTMLInputElement;
+const importModal = document.getElementById('import-modal') as HTMLDivElement;
+const importStats = document.getElementById('import-stats') as HTMLSpanElement;
+const importMergeButton = document.getElementById('import-merge-button') as HTMLButtonElement;
+const importOverwriteButton = document.getElementById('import-overwrite-button') as HTMLButtonElement;
+const importCancelButton = document.getElementById('import-cancel-button') as HTMLButtonElement;
+
 // State
 let currentPlaybackInfo: PlaybackInfo | null = null;
 let currentPlatform: Platform = 'unknown';
@@ -29,6 +41,7 @@ let draggedRecordElement: HTMLElement | null = null;
 let draggedGroupElement: HTMLElement | null = null;
 let recordGroups: RecordGroup[] = [];
 let groupCollapsedState: Map<string, boolean> = new Map();
+let pendingImportData: ExportData | null = null;
 
 /**
  * Initialize popup
@@ -167,6 +180,25 @@ function setupEventListeners() {
       handleCreateFolder();
     }
   });
+
+  // Settings toggle
+  settingsToggle.addEventListener('click', toggleSettings);
+
+  // Export button
+  exportButton.addEventListener('click', handleExport);
+
+  // Import button (triggers file picker)
+  importButton.addEventListener('click', () => {
+    importFileInput.click();
+  });
+
+  // File input change
+  importFileInput.addEventListener('change', handleImportFileSelected);
+
+  // Import modal buttons
+  importMergeButton.addEventListener('click', () => handleImportConfirm('merge'));
+  importOverwriteButton.addEventListener('click', () => handleImportConfirm('overwrite'));
+  importCancelButton.addEventListener('click', closeImportModal);
 }
 
 /**
@@ -1425,6 +1457,269 @@ async function saveFoldersOrder(folders: Folder[]): Promise<void> {
       }
     });
   });
+}
+
+/**
+ * ========================================
+ * Import/Export Functions
+ * ========================================
+ */
+
+/**
+ * Toggle settings panel
+ */
+function toggleSettings() {
+  settingsContent.classList.toggle('hidden');
+}
+
+/**
+ * Handle export data
+ */
+async function handleExport() {
+  try {
+    // Disable button during export
+    exportButton.disabled = true;
+    exportButton.textContent = '匯出中...';
+
+    // Get all data from storage
+    const data = await getAllData();
+
+    // Create export object
+    const exportData: ExportData = {
+      version: EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      records: data.records,
+      folders: data.folders
+    };
+
+    // Convert to JSON
+    const json = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    // Create download link
+    const filename = `tidemark-export-${new Date().toISOString().split('T')[0]}.json`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Show success message
+    showSuccess(`已匯出 ${exportData.records.length} 筆記錄與 ${exportData.folders.length} 個資料夾`);
+
+  } catch (error) {
+    console.error('Export error:', error);
+    showError('匯出失敗，請稍後重試');
+  } finally {
+    // Re-enable button
+    exportButton.disabled = false;
+    exportButton.textContent = '📥 匯出資料';
+  }
+}
+
+/**
+ * Handle import file selected
+ */
+async function handleImportFileSelected(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  try {
+    // Read file content
+    const text = await file.text();
+
+    // Parse JSON
+    let importData: ExportData;
+    try {
+      importData = JSON.parse(text);
+    } catch (e) {
+      // E1.4a: Invalid JSON file
+      showError('檔案格式不正確');
+      input.value = ''; // Reset input
+      return;
+    }
+
+    // Validate data structure
+    if (!validateImportData(importData)) {
+      // E1.4b: Incompatible data structure
+      showError('無法匯入：資料版本不相容');
+      input.value = ''; // Reset input
+      return;
+    }
+
+    // Store import data and show modal
+    pendingImportData = importData;
+    showImportModal(importData);
+
+  } catch (error) {
+    console.error('Import file read error:', error);
+    showError('讀取檔案失敗');
+  }
+
+  // Reset file input
+  input.value = '';
+}
+
+/**
+ * Validate import data structure
+ */
+function validateImportData(data: any): data is ExportData {
+  // Check required fields
+  if (!data || typeof data !== 'object') {
+    return false;
+  }
+
+  if (!data.version || typeof data.version !== 'string') {
+    return false;
+  }
+
+  if (!data.exportedAt || typeof data.exportedAt !== 'string') {
+    return false;
+  }
+
+  if (!Array.isArray(data.records)) {
+    return false;
+  }
+
+  if (!Array.isArray(data.folders)) {
+    return false;
+  }
+
+  // Validate each record has required fields
+  for (const record of data.records) {
+    if (!record.id || !record.timestamp || !record.liveTime ||
+        !record.title || !record.topic || !record.channelUrl || !record.platform) {
+      return false;
+    }
+  }
+
+  // Validate each folder has required fields
+  for (const folder of data.folders) {
+    if (!folder.id || !folder.name || !folder.created) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Show import modal with data stats
+ */
+function showImportModal(data: ExportData) {
+  importStats.textContent = `${data.records.length} 筆記錄與 ${data.folders.length} 個資料夾`;
+  importModal.classList.remove('hidden');
+}
+
+/**
+ * Close import modal
+ */
+function closeImportModal() {
+  importModal.classList.add('hidden');
+  pendingImportData = null;
+}
+
+/**
+ * Handle import confirmation
+ */
+async function handleImportConfirm(mode: 'merge' | 'overwrite') {
+  if (!pendingImportData) {
+    return;
+  }
+
+  try {
+    // Disable buttons during import
+    importMergeButton.disabled = true;
+    importOverwriteButton.disabled = true;
+    importCancelButton.disabled = true;
+
+    if (mode === 'overwrite') {
+      // Overwrite: Replace all data
+      await chrome.storage.local.set({
+        records: pendingImportData.records,
+        folders: pendingImportData.folders
+      });
+
+      showSuccess(`已覆寫：匯入 ${pendingImportData.records.length} 筆記錄與 ${pendingImportData.folders.length} 個資料夾`);
+
+    } else {
+      // Merge: Add to existing data, skip duplicates by ID
+      const currentData = await getAllData();
+
+      // Create ID sets for deduplication
+      const existingRecordIds = new Set(currentData.records.map(r => r.id));
+      const existingFolderIds = new Set(currentData.folders.map(f => f.id));
+
+      // Filter out duplicates
+      const newRecords = pendingImportData.records.filter(r => !existingRecordIds.has(r.id));
+      const newFolders = pendingImportData.folders.filter(f => !existingFolderIds.has(f.id));
+
+      // Merge with existing data
+      const mergedRecords = [...currentData.records, ...newRecords];
+      const mergedFolders = [...currentData.folders, ...newFolders];
+
+      // Apply MAX_RECORDS limit
+      const finalRecords = mergedRecords.slice(0, MAX_RECORDS);
+
+      await chrome.storage.local.set({
+        records: finalRecords,
+        folders: mergedFolders
+      });
+
+      showSuccess(`已合併：新增 ${newRecords.length} 筆記錄與 ${newFolders.length} 個資料夾`);
+    }
+
+    // Close modal
+    closeImportModal();
+
+    // Reload data
+    await loadFolders();
+    await loadRecords();
+
+  } catch (error) {
+    console.error('Import error:', error);
+    showError('匯入失敗，請稍後重試');
+  } finally {
+    // Re-enable buttons
+    importMergeButton.disabled = false;
+    importOverwriteButton.disabled = false;
+    importCancelButton.disabled = false;
+  }
+}
+
+/**
+ * Get all data from storage
+ */
+async function getAllData(): Promise<StorageData> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['records', 'folders'], (result) => {
+      const data = result as Partial<StorageData>;
+      resolve({
+        records: data.records || [],
+        folders: data.folders || []
+      });
+    });
+  });
+}
+
+/**
+ * Show success message
+ */
+function showSuccess(message: string) {
+  errorMessage.textContent = message;
+  errorMessage.className = 'error success';
+  errorMessage.style.display = 'block';
+
+  setTimeout(() => {
+    errorMessage.style.display = 'none';
+  }, 3000);
 }
 
 // Initialize on load

@@ -340,7 +340,7 @@ function attachSubtitlesEventListeners(container: HTMLElement) {
 
       const files = (e as DragEvent).dataTransfer?.files;
       if (files && files.length > 0) {
-        await handleFileSelection(files[0].path);
+        await handleFileSelection((files[0] as any).path);
       }
     });
   }

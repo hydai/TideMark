@@ -3,11 +3,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, Child};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::collections::HashMap;
-use tauri::{AppHandle, Manager, Emitter};
+use tauri::{AppHandle, Manager, Emitter, WindowEvent};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
 use regex::Regex;
 use chrono::Utc;
 use uuid::Uuid;
+
+// Global state for force quit and monitoring pause
+static FORCE_QUIT: AtomicBool = AtomicBool::new(false);
+static MONITORING_PAUSED: AtomicBool = AtomicBool::new(false);
 
 // Download configuration structures
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -3952,6 +3959,39 @@ fn get_available_hardware_encoders() -> Result<Vec<String>, String> {
     Ok(encoders)
 }
 
+// System tray / background mode commands
+
+#[tauri::command]
+fn check_has_enabled_presets(app: AppHandle) -> Result<bool, String> {
+    let presets = get_scheduled_presets(app)?;
+    Ok(presets.iter().any(|p| p.enabled))
+}
+
+#[tauri::command]
+fn force_quit(app: AppHandle) {
+    FORCE_QUIT.store(true, Ordering::SeqCst);
+    app.exit(0);
+}
+
+#[tauri::command]
+fn get_monitoring_paused() -> bool {
+    MONITORING_PAUSED.load(Ordering::SeqCst)
+}
+
+#[tauri::command]
+fn set_monitoring_paused(paused: bool) {
+    MONITORING_PAUSED.store(paused, Ordering::SeqCst);
+}
+
+/// Update tray menu item text for pause/resume state.
+/// Returns ("暫停所有監聽", false) when monitoring is active,
+/// or ("恢復所有監聽", false) when monitoring is paused.
+fn update_pause_menu_item(pause_item: &MenuItem<tauri::Wry>) {
+    let paused = MONITORING_PAUSED.load(Ordering::SeqCst);
+    let label = if paused { "恢復所有監聽" } else { "暫停所有監聽" };
+    let _ = pause_item.set_text(label);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let download_tasks: DownloadTasks = Arc::new(Mutex::new(HashMap::new()));
@@ -3968,6 +4008,106 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Build tray context menu
+            let show_item = MenuItem::with_id(app, "show", "顯示主視窗", true, None::<&str>)?;
+            let status_item = MenuItem::with_id(app, "status", "監聽狀態：未啟動", false, None::<&str>)?;
+            let pause_item = MenuItem::with_id(app, "pause", "暫停所有監聽", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "結束", true, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
+            let tray_menu = Menu::with_items(
+                app,
+                &[&show_item, &status_item, &sep1, &pause_item, &sep2, &quit_item],
+            )?;
+
+            let tray_app = app.handle().clone();
+            let pause_item_clone = pause_item.clone();
+
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
+                .tooltip("Tidemark")
+                .on_menu_event(move |app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(win) = app.get_webview_window("main") {
+                                let _ = win.show();
+                                let _ = win.set_focus();
+                            }
+                        }
+                        "pause" => {
+                            let current = MONITORING_PAUSED.load(Ordering::SeqCst);
+                            MONITORING_PAUSED.store(!current, Ordering::SeqCst);
+                            update_pause_menu_item(&pause_item_clone);
+                        }
+                        "quit" => {
+                            FORCE_QUIT.store(true, Ordering::SeqCst);
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(move |_tray, event| {
+                    // On macOS: single left click shows window
+                    // On Windows: double-click shows window, single click also acceptable
+                    let should_show = match &event {
+                        TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } => true,
+                        TrayIconEvent::DoubleClick {
+                            button: MouseButton::Left,
+                            ..
+                        } => true,
+                        _ => false,
+                    };
+                    if should_show {
+                        if let Some(win) = tray_app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Intercept window close event
+            let win_app = app.handle().clone();
+            if let Some(main_window) = app.get_webview_window("main") {
+                main_window.on_window_event(move |event| {
+                    if let WindowEvent::CloseRequested { api, .. } = event {
+                        // If force quit is set, allow the close
+                        if FORCE_QUIT.load(Ordering::SeqCst) {
+                            return;
+                        }
+
+                        // Check if there are enabled scheduled presets
+                        let has_enabled = get_scheduled_presets(win_app.clone())
+                            .map(|presets| presets.iter().any(|p| p.enabled))
+                            .unwrap_or(false);
+
+                        let should_minimize = if has_enabled {
+                            // Always minimize to tray if there are enabled presets
+                            true
+                        } else {
+                            // Follow the close_behavior config setting
+                            let cfg = load_config(win_app.clone()).unwrap_or_default();
+                            cfg.close_behavior == "minimize_to_tray"
+                        };
+
+                        if should_minimize {
+                            api.prevent_close();
+                            if let Some(win) = win_app.get_webview_window("main") {
+                                let _ = win.hide();
+                            }
+                        }
+                        // If should_minimize is false, allow the close to proceed normally
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -4031,7 +4171,11 @@ pub fn run() {
             save_scheduled_preset,
             delete_scheduled_preset,
             toggle_preset_enabled,
-            resolve_channel_info
+            resolve_channel_info,
+            check_has_enabled_presets,
+            force_quit,
+            get_monitoring_paused,
+            set_monitoring_paused
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

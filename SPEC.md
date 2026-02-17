@@ -660,7 +660,7 @@ Tidemark 的轉錄功能支援兩種模式：**本地 ASR**（在使用者電腦
 |--------|------|--------|
 | 啟用頻道書籤 | 是否啟用頻道書籤功能（關閉時隱藏 Channel Bookmarks 頁面） | 關閉 |
 | 元資料自動刷新間隔 | 頻道元資料（頭像、追蹤者數等）的自動刷新間隔（小時） | 24 |
-| 影片快取數量 | 每個頻道顯示的最新影片數量 | 5 |
+| 影片快取數量 | 每個頻道顯示的最新影片數量，範圍 1–20 | 5 |
 
 ---
 
@@ -1005,7 +1005,7 @@ Tidemark 的頻道書籤功能讓使用者收藏常看的 Twitch/YouTube 頻道�
 
 **系統回應**：
 
-1. 展開時呼叫平台 API 取得最新 5-10 筆影片（VOD/Clip）
+1. 展開時呼叫平台 API 取得最新影片（VOD/Clip），數量由 F6.9「影片快取數量」控制（預設 5 筆，範圍 1–20）
 2. 影片清單以時間倒序排列，每筆顯示：縮圖、標題、發佈時間、時長、觀看數
 3. 影片清單為**暫態快取**（記憶體中），關閉頁面或切換頁面後清除，不持久化、不同步
 
@@ -1310,7 +1310,7 @@ CREATE UNIQUE INDEX idx_channel_bookmarks_user_channel ON channel_bookmarks(user
 | Clip Range | 片段範圍 | 下載時指定的開始時間到結束時間 |
 | Transcription | 轉錄 | 將影音檔案的音訊轉換為文字/字幕的過程 |
 | Sidecar | Sidecar | 與主應用程式打包在一起的外部可執行程式 |
-| Cloud Sync | 雲端同步 | Record/Folder 在 Extension 與 Desktop 之間的同步服務 |
+| Cloud Sync | 雲端同步 | Record/Folder/Channel Bookmark 在 Extension 與 Desktop 之間的同步服務 |
 | VOD | VOD | Video on Demand，直播結束後的回放影片 |
 | Offset | 偏移 | 從 Record 帶入下載時，前後額外包含的秒數 |
 | BYOK | Bring Your Own Key | 使用者自行提供第三方 API Key 來使用雲端服務 |

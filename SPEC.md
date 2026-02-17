@@ -7,6 +7,7 @@
 | 0.3 | 2026-02-17 | 新增 Module 8: 頻道書籤（P2.2 升級為正式規格） |
 | 0.4 | 2026-02-17 | 新增 Module 9: 多語系介面（P2.5 升級為正式規格）；Module 10: 檔名範本編輯器（P2.6 升級為正式規格） |
 | 0.5 | 2026-02-17 | 品質修正：完善 Interface 7 直連規格；釐清 F7.6 佇列搶佔行為；定義 F9.5 後端 i18n 訊息合約 |
+| 0.6 | 2026-02-17 | 品質修正：清理 Phase 2 殘留標記；新增 Pattern 8 設定檔版本遷移；釐清 topic 預設值與 i18n 關係；補充 records.db schema 說明；Cloud Sync 輪詢頻率說明 |
 
 ---
 
@@ -52,11 +53,10 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 - NG-1: 不處理 DRM 保護或付費牆內容的繞過
 - NG-2: 不提供影片編輯功能（裁切是下載階段的功能，非後製編輯）
 - NG-3: 不做社群功能（分享、評論、公開書籤）
-- ~~NG-4: Phase 1 不實作頻道書籤（Phase 2 範疇）~~ → 已於 v0.3 升級為 Module 8
-- NG-5: 不取代 OBS 等專業錄製軟體
-- NG-6: 不做行動端版本
-- NG-7: 不做社群翻譯平台——僅支援 3 種目標語言（zh-TW, en, ja），社群翻譯工作流不在範圍內
-- NG-8: 不做正規表達式檔名系統——範本使用簡單 `{variable}` 替換，不支援任意表達式
+- NG-4: 不取代 OBS 等專業錄製軟體
+- NG-5: 不做行動端版本
+- NG-6: 不做社群翻譯平台——僅支援 3 種目標語言（zh-TW, en, ja），社群翻譯工作流不在範圍內
+- NG-7: 不做正規表達式檔名系統——範本使用簡單 `{variable}` 替換，不支援任意表達式
 
 ---
 
@@ -149,7 +149,7 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 | timestamp | string | 記錄建立的本地時間（顯示用） |
 | liveTime | string | 播放時間點，格式 `HH:MM:SS` 或 `MM:SS` |
 | title | string | 直播/影片標題 |
-| topic | string | 使用者輸入的主題名稱（預設「無主題」） |
+| topic | string | 使用者輸入的主題名稱（儲存值預設 `"無主題"`，不隨 UI 語言變動；顯示時由前端 i18n 系統以 `records.default_topic` 鍵值呈現對應語言文字） |
 | folderId | string \| null | 所屬 Folder ID |
 | channelUrl | string | VOD 連結（含 `?t=` 時間參數）或 YouTube 短連結 |
 | platform | string | `"youtube"` 或 `"twitch"` |
@@ -1515,7 +1515,7 @@ Tidemark 使用自己的 `{variable}` 語法，與 yt-dlp 的 `%(variable)s` 語
 
 - 通訊協定：HTTPS REST API（Cloudflare Workers）
 - 認證方式：Google OAuth → Workers 驗證 → JWT token
-- 同步策略：客戶端每 3-5 秒輪詢 `GET /sync?since={lastUpdatedAt}`，取得增量變更
+- 同步策略：客戶端每 3-5 秒輪詢 `GET /sync?since={lastUpdatedAt}`，取得增量變更。此為單一客戶端的輪詢間隔；同一使用者若同時開啟多個 Extension 分頁，各分頁獨立輪詢。Cloud Sync Workers 端不額外限制同一使用者的請求頻率（Cloudflare Workers 的全域速率限制已足夠）
 - 寫入：每次本地變更後立即 `POST /records`、`POST /folders` 或 `POST /channel-bookmarks`
 - 衝突解決：Last-write-wins，以 `updatedAt` 較新者為準
 - 資料範圍：Records、Folders、Channel Bookmarks
@@ -1634,7 +1634,7 @@ CREATE TABLE records (
   timestamp TEXT NOT NULL,
   live_time TEXT NOT NULL,
   title TEXT NOT NULL,
-  topic TEXT NOT NULL DEFAULT '無主題',
+  topic TEXT NOT NULL DEFAULT '無主題',  -- 儲存值固定為 zh-TW，顯示時由前端 i18n 處理
   channel_url TEXT NOT NULL,
   platform TEXT NOT NULL CHECK (platform IN ('youtube', 'twitch')),
   sort_order INTEGER NOT NULL DEFAULT 0,
@@ -1906,13 +1906,35 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 - 排程下載（F7.1）：即時 + 延遲，需兩階段
 - 預覽（F10.3）中延遲變數以視覺區別標示
 
+#### Pattern 8: 設定檔版本遷移
+
+Desktop 的本地 JSON 檔案（`config.json`、`scheduled_presets.json`、`channel_bookmarks.json`、`history.json`）在應用程式更新時可能新增欄位或變更結構。
+
+**遷移策略**：
+
+1. 每個 JSON 檔案包含 `config_version` 整數欄位（初始值 `1`）
+2. 應用程式啟動時讀取 `config_version`，與當前版本期望值比對
+3. 若 `config_version` 低於期望值，依序執行遷移步驟（version 1→2→3...）
+4. 若 `config_version` 缺失（舊版檔案無此欄位），視為 version `0`，從頭執行所有遷移
+5. 遷移過程中，新增的欄位使用 `defaultConfig` 中定義的預設值
+6. 遷移完成後更新 `config_version` 並寫回檔案
+7. 遷移前自動備份原檔為 `{filename}.bak`（僅保留最近一次備份）
+
+**遷移範例**：
+
+| 從版本 | 到版本 | 遷移內容 |
+|--------|--------|----------|
+| 0 → 1 | 基準版本 | 加入 `config_version: 1` |
+| 1 → 2 | Module 9 | 加入 `language: "zh-TW"` |
+| 2 → 3 | Module 10 | 加入 `default_filename_template: "[{type}] [{channel_name}] [{date}] {title}"` |
+
 ### Form（形式規範）
 
 #### 檔案命名
 
 - 應用程式設定檔：`{appDataDir}/tidemark/config.json`
 - 下載歷史：`{appDataDir}/tidemark/history.json`
-- Records 本地快取：`{appDataDir}/tidemark/records.db`（SQLite）
+- Records 本地快取：`{appDataDir}/tidemark/records.db`（SQLite，schema 鏡像 Cloud Sync D1 的 `records` 與 `folders` 表結構，但不含 `user_id` 欄位，並額外加入 `config_version` 元資料表）
 - 下載輸出：預設 `[{type}] [{channel_name}] [{date}] {title}`（詳見 Module 10 F10.5 全域預設範本；副檔名由 yt-dlp 自動決定）
 - 字幕輸出：與輸入檔案同名，副檔名為 `.srt` 或 `.txt`
 - 排程下載預設：`{appDataDir}/tidemark/scheduled_presets.json`
@@ -1926,6 +1948,7 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 - Toast Notifications：短暫操作回饋（右下角，1.5~3 秒自動消失）
 - Modal Dialogs：破壞性操作（刪除、清空）需要確認對話框
 - Theme System：支援深色/淺色/跟隨系統，使用 CSS 變數實作
+- Keyboard Shortcuts：Desktop 不定義全域快捷鍵。各頁面的表單中 Enter 鍵觸發主要動作（如 F1.1 記錄時間、F7.1 新增預設）、Escape 鍵取消編輯模式。完整快捷鍵對照表留待實作階段依 UI 實際佈局制定
 
 #### URL 處理
 
@@ -1937,29 +1960,9 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 
 ## Phase 2 Features（第二階段功能）
 
-以下功能在 Phase 1 不實作，但在架構設計時需預留擴充空間。
-
-### ~~P2.1 Scheduled Downloads（排程下載）~~ → 已升級為 Module 7
-
-已於 v0.2 升級為正式規格，詳見 Design Layer 的 Module 7。
-
-### ~~P2.2 Channel Bookmarks（頻道書籤）~~ → 已升級為 Module 8
-
-已於 v0.3 升級為正式規格，詳見 Design Layer 的 Module 8。
-
-### ~~P2.3 PubSub Live Detection（直播偵測）~~ → 已併入 Module 7
-
-已於 v0.2 併入 Module 7（F7.2 Twitch 直播偵測），詳見 Design Layer 的 Module 7。
+以下功能在目前版本不實作，但在架構設計時需預留擴充空間。原 P2.1（排程下載）、P2.2（頻道書籤）、P2.3（直播偵測）、P2.5（多語系介面）、P2.6（檔名範本編輯器）已升級為正式規格（Module 7–10）。
 
 ### P2.4 Video Unmuting（靜音片段修復）
 
 - 來源：TwitchLink 的 unmute video 功能
 - 功能：Twitch VOD 中因版權音樂被靜音的片段，嘗試修復音訊
-
-### ~~P2.5 Multi-Language UI~~ → 已升級為 Module 9
-
-已於 v0.4 升級為正式規格，詳見 Design Layer 的 Module 9。
-
-### ~~P2.6 Filename Template Editor~~ → 已升級為 Module 10
-
-已於 v0.4 升級為正式規格，詳見 Design Layer 的 Module 10。

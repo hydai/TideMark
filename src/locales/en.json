@@ -48,6 +48,12 @@
     "languageLoadFailed": "Failed to load language file, falling back to Traditional Chinese",
     "languageLoadFailedTitle": "Language Load Failed"
   },
+  "migration": {
+    "configCorrupted": "Config file corrupted, reset to default values",
+    "presetsCorrupted": "Scheduled presets file corrupted, reset to empty",
+    "bookmarksCorrupted": "Channel bookmarks file corrupted, reset to empty",
+    "historyCorrupted": "Download history file corrupted, reset to empty"
+  },
   "settings": {
     "filenameTemplate": {
       "title": "Default Filename Template",

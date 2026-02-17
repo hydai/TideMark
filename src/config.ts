@@ -1,6 +1,9 @@
 import { invoke } from '@tauri-apps/api/core';
 
 export interface AppConfig {
+  // Config version for migration tracking
+  config_version: number;
+
   // General settings
   default_download_folder: string;
   default_subtitle_folder: string;
@@ -54,6 +57,7 @@ export interface AppConfig {
 }
 
 const defaultConfig: AppConfig = {
+  config_version: 3,
   default_download_folder: '~/Tidemark/Downloads',
   default_subtitle_folder: '~/Tidemark/Downloads',
   launch_on_startup: false,
@@ -91,10 +95,36 @@ const defaultConfig: AppConfig = {
   default_filename_template: '[{type}] [{channel_name}] [{date}] {title}',
 };
 
+export interface MigrationResult {
+  config_corrupted: boolean;
+  presets_corrupted: boolean;
+  bookmarks_corrupted: boolean;
+  history_corrupted: boolean;
+}
+
 export class ConfigManager {
   private static config: AppConfig = { ...defaultConfig };
 
-  static async init() {
+  /**
+   * Run config file migrations, then load the config.
+   * Returns the migration result so the caller can show warning toasts if needed.
+   */
+  static async init(): Promise<MigrationResult> {
+    // Run migrations first (backup, version check, corruption recovery)
+    let migrationResult: MigrationResult = {
+      config_corrupted: false,
+      presets_corrupted: false,
+      bookmarks_corrupted: false,
+      history_corrupted: false,
+    };
+
+    try {
+      migrationResult = await invoke<MigrationResult>('run_config_migration');
+    } catch (error) {
+      console.warn('Config migration failed, will load defaults:', error);
+    }
+
+    // Load config after migration
     try {
       const savedConfig = await invoke<AppConfig>('load_config');
       this.config = { ...defaultConfig, ...savedConfig };
@@ -102,6 +132,8 @@ export class ConfigManager {
       console.warn('Failed to load config, using defaults:', error);
       this.config = { ...defaultConfig };
     }
+
+    return migrationResult;
   }
 
   static get(): AppConfig {

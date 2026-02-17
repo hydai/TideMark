@@ -2079,6 +2079,10 @@ type DownloadTasks = Arc<Mutex<HashMap<String, DownloadTask>>>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct AppConfig {
+    // Config version for migration
+    #[serde(default)]
+    config_version: u32,
+
     // General settings
     #[serde(default = "default_download_folder")]
     default_download_folder: String,
@@ -2295,6 +2299,8 @@ pub struct UpdateStatus {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RecordsData {
+    #[serde(default)]
+    pub config_version: u32,
     pub records: Vec<Record>,
     pub folders: Vec<Folder>,
     pub folder_order: Vec<String>,
@@ -2434,6 +2440,7 @@ pub struct BookmarkSortOrder {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            config_version: CURRENT_CONFIG_VERSION,
             default_download_folder: default_download_folder(),
             default_subtitle_folder: default_subtitle_folder(),
             launch_on_startup: false,
@@ -2471,6 +2478,433 @@ impl Default for AppConfig {
             default_filename_template: default_filename_template(),
         }
     }
+}
+
+/// Current config version for all managed JSON files and records.db.
+const CURRENT_CONFIG_VERSION: u32 = 3;
+
+/// Versioned wrapper for array-based JSON files (presets, bookmarks, history).
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct VersionedWrapper<T> {
+    config_version: u32,
+    items: Vec<T>,
+}
+
+
+/// Back up a file to `<path>.bak`, replacing any existing backup.
+fn backup_file(path: &Path) -> std::io::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let bak_path = path.with_extension(format!(
+        "{}.bak",
+        path.extension().and_then(|e| e.to_str()).unwrap_or("")
+    ));
+    fs::copy(path, bak_path)?;
+    Ok(())
+}
+
+/// Migration result for a single file.
+#[derive(Debug)]
+enum MigrationStatus {
+    /// File was already at current version – nothing changed.
+    AlreadyCurrent,
+    /// File was migrated from old version.
+    Migrated,
+    /// File was corrupt; restored from backup.
+    RestoredFromBackup,
+    /// File was corrupt and no backup available; reset to defaults.
+    ResetToDefault,
+}
+
+/// Migrate `config.json`.
+/// Returns (migrated_config, status, corrupted) where corrupted=true means
+/// the caller should show a "config corrupted" warning toast.
+fn migrate_app_config(path: &Path) -> (AppConfig, MigrationStatus, bool) {
+    if !path.exists() {
+        // New install — write defaults
+        let cfg = AppConfig::default();
+        if let Ok(content) = serde_json::to_string_pretty(&cfg) {
+            let _ = fs::write(path, content);
+        }
+        return (cfg, MigrationStatus::AlreadyCurrent, false);
+    }
+
+    // Attempt to read and parse
+    let content_result = fs::read_to_string(path);
+    let value_opt: Option<serde_json::Value> = content_result.ok()
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    let (value, was_corrupted) = match value_opt {
+        Some(v) => (v, false),
+        None => {
+            // Primary file corrupt — try backup
+            let bak_path = path.with_extension("json.bak");
+            if bak_path.exists() {
+                if let Ok(bak_str) = fs::read_to_string(&bak_path) {
+                    if let Ok(bak_v) = serde_json::from_str::<serde_json::Value>(&bak_str) {
+                        // Restore from backup
+                        let _ = fs::copy(&bak_path, path);
+                        return run_app_config_migration_on_value(path, bak_v, true, MigrationStatus::RestoredFromBackup);
+                    }
+                }
+            }
+            // Both corrupt/missing — reset to defaults
+            let cfg = AppConfig::default();
+            if let Ok(content) = serde_json::to_string_pretty(&cfg) {
+                let _ = fs::write(path, content);
+            }
+            return (cfg, MigrationStatus::ResetToDefault, true);
+        }
+    };
+
+    // Check if already at current version
+    let file_version = value.get("config_version")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(0);
+
+    if file_version >= CURRENT_CONFIG_VERSION {
+        // Try to deserialize directly
+        if let Ok(cfg) = serde_json::from_value::<AppConfig>(value.clone()) {
+            return (cfg, MigrationStatus::AlreadyCurrent, false);
+        }
+    }
+
+    run_app_config_migration_on_value(path, value, was_corrupted, MigrationStatus::Migrated)
+}
+
+fn run_app_config_migration_on_value(
+    path: &Path,
+    value: serde_json::Value,
+    was_corrupted: bool,
+    status: MigrationStatus,
+) -> (AppConfig, MigrationStatus, bool) {
+    let file_version = value.get("config_version")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(0);
+
+    // Back up before migrating (skip if already restored from backup)
+    if !was_corrupted {
+        let _ = backup_file(path);
+    }
+
+    // Ensure we have a JSON object to work with
+    let mut obj = match value {
+        serde_json::Value::Object(m) => m,
+        _ => {
+            // Not an object — reset to defaults
+            let cfg = AppConfig::default();
+            if let Ok(content) = serde_json::to_string_pretty(&cfg) {
+                let _ = fs::write(path, content);
+            }
+            return (cfg, status, true);
+        }
+    };
+
+    // v0 → v1: add config_version field
+    if file_version < 1 {
+        obj.insert("config_version".to_string(), serde_json::json!(1));
+    }
+
+    // v1 → v2: add language field (Module 9)
+    if file_version < 2 {
+        if !obj.contains_key("language") {
+            obj.insert("language".to_string(), serde_json::json!("zh-TW"));
+        }
+    }
+
+    // v2 → v3: add default_filename_template (Module 10)
+    if file_version < 3 {
+        if !obj.contains_key("default_filename_template") {
+            obj.insert("default_filename_template".to_string(),
+                serde_json::json!("[{type}] [{channel_name}] [{date}] {title}"));
+        }
+    }
+
+    // Set to current version
+    obj.insert("config_version".to_string(), serde_json::json!(CURRENT_CONFIG_VERSION));
+
+    let final_value = serde_json::Value::Object(obj);
+
+    // Deserialize (merge with defaults for any missing fields via serde defaults)
+    let cfg: AppConfig = serde_json::from_value(final_value)
+        .unwrap_or_else(|_| AppConfig::default());
+
+    // Save migrated config
+    if let Ok(content) = serde_json::to_string_pretty(&cfg) {
+        let _ = fs::write(path, content);
+    }
+
+    (cfg, status, was_corrupted)
+}
+
+/// Migrate a versioned array file. Returns (items, was_corrupted).
+fn migrate_versioned_array<T>(path: &Path) -> (Vec<T>, bool)
+where
+    T: serde::de::DeserializeOwned + serde::Serialize + Clone,
+{
+    if !path.exists() {
+        // New file — write empty wrapper at current version
+        let empty: Vec<T> = Vec::new();
+        let wrapper = serde_json::json!({
+            "config_version": CURRENT_CONFIG_VERSION,
+            "items": empty
+        });
+        if let Ok(content) = serde_json::to_string_pretty(&wrapper) {
+            let _ = fs::write(path, content);
+        }
+        return (Vec::new(), false);
+    }
+
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => {
+            // Try backup
+            let bak = path.with_extension("json.bak");
+            match fs::read_to_string(&bak) {
+                Ok(c) => { let _ = fs::copy(&bak, path); c }
+                Err(_) => {
+                    // Reset
+                    let wrapper = serde_json::json!({
+                        "config_version": CURRENT_CONFIG_VERSION,
+                        "items": serde_json::json!([])
+                    });
+                    if let Ok(s) = serde_json::to_string_pretty(&wrapper) {
+                        let _ = fs::write(path, s);
+                    }
+                    return (Vec::new(), true);
+                }
+            }
+        }
+    };
+
+    // Try parsing as new format (wrapper object)
+    if let Ok(wrapper) = serde_json::from_str::<serde_json::Value>(&content) {
+        if wrapper.is_object() && wrapper.get("items").is_some() {
+            // New versioned format
+            let file_version = wrapper.get("config_version")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32)
+                .unwrap_or(0);
+
+            if file_version >= CURRENT_CONFIG_VERSION {
+                // Already current
+                if let Ok(w) = serde_json::from_value::<VersionedWrapper<T>>(wrapper.clone()) {
+                    return (w.items, false);
+                }
+            }
+
+            // Migrate: back up first
+            let _ = backup_file(path);
+            let items: Vec<T> = wrapper.get("items")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
+
+            // Save at current version
+            let new_wrapper = serde_json::json!({
+                "config_version": CURRENT_CONFIG_VERSION,
+                "items": items
+            });
+            if let Ok(s) = serde_json::to_string_pretty(&new_wrapper) {
+                let _ = fs::write(path, s);
+            }
+            return (items, false);
+        }
+
+        if wrapper.is_array() {
+            // Old format (plain array = v0) — back up and wrap
+            let _ = backup_file(path);
+            let items: Vec<T> = serde_json::from_value(wrapper).unwrap_or_default();
+            let new_wrapper = serde_json::json!({
+                "config_version": CURRENT_CONFIG_VERSION,
+                "items": items
+            });
+            if let Ok(s) = serde_json::to_string_pretty(&new_wrapper) {
+                let _ = fs::write(path, s);
+            }
+            return (items, false);
+        }
+    }
+
+    // Parse failure — try backup
+    let bak = path.with_extension("json.bak");
+    if bak.exists() {
+        if let Ok(bak_content) = fs::read_to_string(&bak) {
+            let _ = fs::copy(&bak, path);
+            // Recursively retry (backup should be valid)
+            if let Ok(wrapper) = serde_json::from_str::<serde_json::Value>(&bak_content) {
+                if wrapper.is_array() {
+                    let items: Vec<T> = serde_json::from_value(wrapper).unwrap_or_default();
+                    let new_wrapper = serde_json::json!({
+                        "config_version": CURRENT_CONFIG_VERSION,
+                        "items": items
+                    });
+                    if let Ok(s) = serde_json::to_string_pretty(&new_wrapper) {
+                        let _ = fs::write(path, s);
+                    }
+                    return (items, true);
+                } else if let Ok(w) = serde_json::from_value::<VersionedWrapper<T>>(wrapper) {
+                    return (w.items, true);
+                }
+            }
+        }
+    }
+
+    // Complete failure — reset
+    let new_wrapper = serde_json::json!({
+        "config_version": CURRENT_CONFIG_VERSION,
+        "items": serde_json::json!([])
+    });
+    if let Ok(s) = serde_json::to_string_pretty(&new_wrapper) {
+        let _ = fs::write(path, s);
+    }
+    (Vec::new(), true)
+}
+
+/// Read items from a versioned array file (used by existing commands post-migration).
+fn read_versioned_array<T>(path: &Path) -> Result<Vec<T>, String>
+where
+    T: serde::de::DeserializeOwned,
+{
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read file: {}", e))?;
+
+    // Try new wrapper format first
+    if let Ok(wrapper) = serde_json::from_str::<VersionedWrapper<T>>(&content) {
+        return Ok(wrapper.items);
+    }
+
+    // Fall back to plain array (old format)
+    serde_json::from_str::<Vec<T>>(&content)
+        .map_err(|e| format!("Failed to parse file: {}", e))
+}
+
+/// Write items to a versioned array file, preserving current config_version.
+fn write_versioned_array<T>(path: &Path, items: &[T]) -> Result<(), String>
+where
+    T: serde::Serialize,
+{
+    // Read existing version, default to CURRENT
+    let existing_version = if path.exists() {
+        fs::read_to_string(path).ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.get("config_version").and_then(|v| v.as_u64()))
+            .map(|v| v as u32)
+            .unwrap_or(CURRENT_CONFIG_VERSION)
+    } else {
+        CURRENT_CONFIG_VERSION
+    };
+
+    let wrapper = serde_json::json!({
+        "config_version": existing_version,
+        "items": items
+    });
+
+    let content = serde_json::to_string_pretty(&wrapper)
+        .map_err(|e| format!("Failed to serialize: {}", e))?;
+
+    fs::write(path, content)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(())
+}
+
+/// Result type returned by `run_config_migration` command.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MigrationResult {
+    /// If true, caller should show "設定檔損毀，已恢復為預設值" warning toast.
+    pub config_corrupted: bool,
+    /// If true, caller should show warning for scheduled_presets.json
+    pub presets_corrupted: bool,
+    /// If true, caller should show warning for channel_bookmarks.json
+    pub bookmarks_corrupted: bool,
+    /// If true, caller should show warning for history.json
+    pub history_corrupted: bool,
+}
+
+/// Migrate records.json, ensuring config_version is set.
+/// Equivalent to checking _meta table in records.db.
+fn migrate_records_data(path: &Path) {
+    if !path.exists() {
+        return;
+    }
+
+    let content = match fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let mut value: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let file_version = value.get("config_version")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(0);
+
+    if file_version >= CURRENT_CONFIG_VERSION {
+        return; // Already current — idempotent
+    }
+
+    // Back up before migrating
+    let _ = backup_file(path);
+
+    // Set config_version to current
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("config_version".to_string(), serde_json::json!(CURRENT_CONFIG_VERSION));
+    }
+
+    if let Ok(updated) = serde_json::to_string_pretty(&value) {
+        let _ = fs::write(path, updated);
+    }
+}
+
+/// Run all config migrations on startup. Returns which files (if any) were corrupted.
+#[tauri::command]
+fn run_config_migration(app: AppHandle) -> Result<MigrationResult, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    fs::create_dir_all(&app_data_dir)
+        .map_err(|e| format!("Failed to create app data dir: {}", e))?;
+
+    let tidemark_dir = app_data_dir.join("tidemark");
+    fs::create_dir_all(&tidemark_dir)
+        .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
+
+    // config.json lives in app_data_dir (not tidemark subdir) per get_config_path
+    let config_path = app_data_dir.join("config.json");
+    let (_, _, config_corrupted) = migrate_app_config(&config_path);
+
+    // Array files live in tidemark subdir
+    let presets_path = tidemark_dir.join("scheduled_presets.json");
+    let (_, presets_corrupted) = migrate_versioned_array::<DownloadPreset>(&presets_path);
+
+    let bookmarks_path = tidemark_dir.join("channel_bookmarks.json");
+    let (_, bookmarks_corrupted) = migrate_versioned_array::<ChannelBookmark>(&bookmarks_path);
+
+    let history_path = tidemark_dir.join("history.json");
+    let (_, history_corrupted) = migrate_versioned_array::<DownloadHistoryEntry>(&history_path);
+
+    // Migrate records.json (equivalent of records.db _meta config_version)
+    let records_path = tidemark_dir.join("records.json");
+    migrate_records_data(&records_path);
+
+    Ok(MigrationResult {
+        config_corrupted,
+        presets_corrupted,
+        bookmarks_corrupted,
+        history_corrupted,
+    })
 }
 
 fn get_config_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -3490,15 +3924,9 @@ async fn save_download_history(
 
     fs::create_dir_all(history_path.parent().unwrap()).ok();
 
-    // Load existing history
-    let mut history: Vec<DownloadHistoryEntry> = if history_path.exists() {
-        fs::read_to_string(&history_path)
-            .ok()
-            .and_then(|content| serde_json::from_str(&content).ok())
-            .unwrap_or_default()
-    } else {
-        Vec::new()
-    };
+    // Load existing history using versioned wrapper
+    let mut history = read_versioned_array::<DownloadHistoryEntry>(&history_path)
+        .unwrap_or_default();
 
     // Get file size if completed
     let file_size = if status == "completed" {
@@ -3525,10 +3953,8 @@ async fn save_download_history(
 
     history.push(entry);
 
-    // Save history
-    if let Ok(content) = serde_json::to_string_pretty(&history) {
-        fs::write(&history_path, content).ok();
-    }
+    // Save history using versioned wrapper
+    write_versioned_array(&history_path, &history).ok();
 }
 
 #[tauri::command]
@@ -3724,18 +4150,7 @@ fn get_history_path(app: &AppHandle) -> Result<PathBuf, String> {
 #[tauri::command]
 async fn get_download_history(app: AppHandle) -> Result<Vec<DownloadHistoryEntry>, String> {
     let history_path = get_history_path(&app)?;
-
-    if !history_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let content = fs::read_to_string(&history_path)
-        .map_err(|e| format!("無法讀取歷程檔案: {}", e))?;
-
-    let history: Vec<DownloadHistoryEntry> = serde_json::from_str(&content)
-        .map_err(|e| format!("無法解析歷程資料: {}", e))?;
-
-    Ok(history)
+    read_versioned_array::<DownloadHistoryEntry>(&history_path)
 }
 
 #[tauri::command]
@@ -3746,20 +4161,13 @@ async fn delete_history_entry(app: AppHandle, id: String) -> Result<(), String> 
         return Ok(());
     }
 
-    let content = fs::read_to_string(&history_path)
-        .map_err(|e| format!("無法讀取歷程檔案: {}", e))?;
-
-    let mut history: Vec<DownloadHistoryEntry> = serde_json::from_str(&content)
-        .map_err(|e| format!("無法解析歷程資料: {}", e))?;
+    let mut history = read_versioned_array::<DownloadHistoryEntry>(&history_path)?;
 
     // Remove entry with matching id
     history.retain(|entry| entry.id != id);
 
-    // Save updated history
-    let content = serde_json::to_string_pretty(&history)
-        .map_err(|e| format!("無法序列化歷程資料: {}", e))?;
-
-    fs::write(&history_path, content)
+    // Save updated history using versioned wrapper
+    write_versioned_array(&history_path, &history)
         .map_err(|e| format!("無法儲存歷程檔案: {}", e))?;
 
     Ok(())
@@ -3769,8 +4177,9 @@ async fn delete_history_entry(app: AppHandle, id: String) -> Result<(), String> 
 async fn clear_all_history(app: AppHandle) -> Result<(), String> {
     let history_path = get_history_path(&app)?;
 
-    // Write empty array
-    fs::write(&history_path, "[]")
+    // Write empty versioned wrapper
+    let empty: Vec<DownloadHistoryEntry> = Vec::new();
+    write_versioned_array(&history_path, &empty)
         .map_err(|e| format!("無法清空歷程: {}", e))?;
 
     Ok(())
@@ -5196,6 +5605,7 @@ fn get_local_records(app: AppHandle) -> Result<RecordsData, String> {
     if !records_path.exists() {
         // Return empty data if file doesn't exist
         return Ok(RecordsData {
+            config_version: CURRENT_CONFIG_VERSION,
             records: Vec::new(),
             folders: Vec::new(),
             folder_order: Vec::new(),
@@ -5212,8 +5622,20 @@ fn get_local_records(app: AppHandle) -> Result<RecordsData, String> {
 }
 
 #[tauri::command]
-fn save_local_records(app: AppHandle, data: RecordsData) -> Result<(), String> {
+fn save_local_records(app: AppHandle, mut data: RecordsData) -> Result<(), String> {
     let records_path = get_records_path(&app)?;
+
+    // Preserve existing config_version (or use current if new file)
+    let existing_version = if records_path.exists() {
+        fs::read_to_string(&records_path).ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| v.get("config_version").and_then(|v| v.as_u64()))
+            .map(|v| v as u32)
+            .unwrap_or(CURRENT_CONFIG_VERSION)
+    } else {
+        CURRENT_CONFIG_VERSION
+    };
+    data.config_version = existing_version;
 
     let content = serde_json::to_string_pretty(&data)
         .map_err(|e| format!("Failed to serialize records: {}", e))?;
@@ -5347,18 +5769,7 @@ fn reorder_folders(app: AppHandle, folder_order: Vec<String>) -> Result<(), Stri
 #[tauri::command]
 fn get_scheduled_presets(app: AppHandle) -> Result<Vec<DownloadPreset>, String> {
     let presets_path = get_scheduled_presets_path(&app)?;
-
-    if !presets_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let content = fs::read_to_string(&presets_path)
-        .map_err(|e| format!("Failed to read presets file: {}", e))?;
-
-    let presets: Vec<DownloadPreset> = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse presets file: {}", e))?;
-
-    Ok(presets)
+    read_versioned_array::<DownloadPreset>(&presets_path)
 }
 
 #[tauri::command]
@@ -5391,11 +5802,7 @@ fn save_scheduled_preset(app: AppHandle, preset: DownloadPreset) -> Result<(), S
     }
 
     let presets_path = get_scheduled_presets_path(&app)?;
-    let content = serde_json::to_string_pretty(&presets)
-        .map_err(|e| format!("Failed to serialize presets: {}", e))?;
-
-    fs::write(&presets_path, content)
-        .map_err(|e| format!("Failed to write presets file: {}", e))?;
+    write_versioned_array(&presets_path, &presets)?;
 
     Ok(())
 }
@@ -5406,11 +5813,7 @@ fn delete_scheduled_preset(app: AppHandle, id: String) -> Result<(), String> {
     presets.retain(|p| p.id != id);
 
     let presets_path = get_scheduled_presets_path(&app)?;
-    let content = serde_json::to_string_pretty(&presets)
-        .map_err(|e| format!("Failed to serialize presets: {}", e))?;
-
-    fs::write(&presets_path, content)
-        .map_err(|e| format!("Failed to write presets file: {}", e))?;
+    write_versioned_array(&presets_path, &presets)?;
 
     Ok(())
 }
@@ -5426,11 +5829,7 @@ fn toggle_preset_enabled(app: AppHandle, id: String, enabled: bool) -> Result<()
     }
 
     let presets_path = get_scheduled_presets_path(&app)?;
-    let content = serde_json::to_string_pretty(&presets)
-        .map_err(|e| format!("Failed to serialize presets: {}", e))?;
-
-    fs::write(&presets_path, content)
-        .map_err(|e| format!("Failed to write presets file: {}", e))?;
+    write_versioned_array(&presets_path, &presets)?;
 
     Ok(())
 }
@@ -6134,18 +6533,7 @@ fn get_channel_bookmarks_path(app: &AppHandle) -> Result<PathBuf, String> {
 #[tauri::command]
 fn get_channel_bookmarks(app: AppHandle) -> Result<Vec<ChannelBookmark>, String> {
     let bookmarks_path = get_channel_bookmarks_path(&app)?;
-
-    if !bookmarks_path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let content = fs::read_to_string(&bookmarks_path)
-        .map_err(|e| format!("Failed to read bookmarks file: {}", e))?;
-
-    let bookmarks: Vec<ChannelBookmark> = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse bookmarks file: {}", e))?;
-
-    Ok(bookmarks)
+    read_versioned_array::<ChannelBookmark>(&bookmarks_path)
 }
 
 #[tauri::command]
@@ -6175,11 +6563,7 @@ fn save_channel_bookmark(app: AppHandle, bookmark: ChannelBookmark) -> Result<()
     }
 
     let bookmarks_path = get_channel_bookmarks_path(&app)?;
-    let content = serde_json::to_string_pretty(&bookmarks)
-        .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
-
-    fs::write(&bookmarks_path, content)
-        .map_err(|e| format!("Failed to write bookmarks file: {}", e))?;
+    write_versioned_array(&bookmarks_path, &bookmarks)?;
 
     Ok(())
 }
@@ -6190,11 +6574,7 @@ fn delete_channel_bookmark(app: AppHandle, id: String) -> Result<(), String> {
     bookmarks.retain(|b| b.id != id);
 
     let bookmarks_path = get_channel_bookmarks_path(&app)?;
-    let content = serde_json::to_string_pretty(&bookmarks)
-        .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
-
-    fs::write(&bookmarks_path, content)
-        .map_err(|e| format!("Failed to write bookmarks file: {}", e))?;
+    write_versioned_array(&bookmarks_path, &bookmarks)?;
 
     Ok(())
 }
@@ -6211,11 +6591,7 @@ fn reorder_channel_bookmarks(app: AppHandle, orders: Vec<BookmarkSortOrder>) -> 
     }
 
     let bookmarks_path = get_channel_bookmarks_path(&app)?;
-    let content = serde_json::to_string_pretty(&bookmarks)
-        .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
-
-    fs::write(&bookmarks_path, content)
-        .map_err(|e| format!("Failed to write bookmarks file: {}", e))?;
+    write_versioned_array(&bookmarks_path, &bookmarks)?;
 
     Ok(())
 }
@@ -7257,6 +7633,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            run_config_migration,
             load_config,
             save_config,
             fetch_video_info,

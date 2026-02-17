@@ -510,6 +510,12 @@
       "youtubeError": "YouTube 頻道錯誤 ({channelId}): {error}"
     }
   },
+  "migration": {
+    "configCorrupted": "設定檔損毀，已恢復為預設值",
+    "presetsCorrupted": "排程預設檔案損毀，已重設為空白",
+    "bookmarksCorrupted": "頻道書籤檔案損毀，已重設為空白",
+    "historyCorrupted": "下載歷程檔案損毀，已重設為空白"
+  },
   "settings": {
     "title": "設定",
     "general": {

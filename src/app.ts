@@ -169,6 +169,15 @@ function showGlobalToast(payload: ScheduledToastPayload) {
   }
 }
 
+/** Show a warning toast for config migration issues (corruption recovery). */
+export function showMigrationWarningToast(message: string) {
+  showGlobalToast({
+    title: message,
+    body: '',
+    level: 'warning',
+  });
+}
+
 /** Initialize the global scheduled-notification-toast listener. Called once at app startup. */
 export async function initGlobalToastListener() {
   await listen<ScheduledToastPayload>('scheduled-notification-toast', (event) => {

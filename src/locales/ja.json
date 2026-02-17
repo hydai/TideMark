@@ -48,6 +48,12 @@
     "languageLoadFailed": "言語ファイルの読み込みに失敗しました。繁体字中国語に切り替えます",
     "languageLoadFailedTitle": "言語読み込みエラー"
   },
+  "migration": {
+    "configCorrupted": "設定ファイルが破損しています。デフォルト値にリセットしました",
+    "presetsCorrupted": "スケジュールプリセットファイルが破損しています。空にリセットしました",
+    "bookmarksCorrupted": "チャンネルブックマークファイルが破損しています。空にリセットしました",
+    "historyCorrupted": "ダウンロード履歴ファイルが破損しています。空にリセットしました"
+  },
   "settings": {
     "filenameTemplate": {
       "title": "デフォルトファイル名テンプレート",

@@ -54,9 +54,23 @@ export interface GoogleTokenInfo {
   iat: number;
 }
 
+export interface ChannelBookmark {
+  id: string;
+  user_id: string;
+  channel_id: string;
+  channel_name: string;
+  platform: 'youtube' | 'twitch';
+  notes: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted: number;
+}
+
 export interface SyncResponse {
   records: Record[];
   folders: Folder[];
+  channel_bookmarks: ChannelBookmark[];
   synced_at: string;
 }
 
@@ -77,6 +91,17 @@ export interface RecordInput {
 export interface FolderInput {
   id: string;
   name: string;
+  sort_order?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChannelBookmarkInput {
+  id: string;
+  channel_id: string;
+  channel_name: string;
+  platform: 'youtube' | 'twitch';
+  notes?: string;
   sort_order?: number;
   created_at: string;
   updated_at: string;

@@ -1,7 +1,7 @@
 // API route handlers
 
 import type { Context } from 'hono';
-import type { Env, RecordInput, FolderInput, Record, Folder, SyncResponse } from './types';
+import type { Env, RecordInput, FolderInput, ChannelBookmarkInput, Record, Folder, ChannelBookmark, SyncResponse } from './types';
 import { handleGoogleLogin } from './auth';
 
 type Variables = {
@@ -37,7 +37,7 @@ export async function getSync(c: Context<{ Bindings: Env; Variables: Variables }
     const userId = c.get('user_id') as string;
     const since = c.req.query('since') || '1970-01-01T00:00:00.000Z';
 
-    // Query records updated after 'since' (2 subrequests total: 1 for records, 1 for folders)
+    // Query all data types updated after 'since' (3 subrequests: records, folders, channel_bookmarks)
     const recordsResult = await c.env.DB.prepare(
       'SELECT * FROM records WHERE user_id = ? AND updated_at > ? ORDER BY updated_at ASC'
     )
@@ -50,9 +50,16 @@ export async function getSync(c: Context<{ Bindings: Env; Variables: Variables }
       .bind(userId, since)
       .all<Folder>();
 
+    const channelBookmarksResult = await c.env.DB.prepare(
+      'SELECT * FROM channel_bookmarks WHERE user_id = ? AND updated_at > ? ORDER BY updated_at ASC'
+    )
+      .bind(userId, since)
+      .all<ChannelBookmark>();
+
     const response: SyncResponse = {
       records: recordsResult.results || [],
       folders: foldersResult.results || [],
+      channel_bookmarks: channelBookmarksResult.results || [],
       synced_at: new Date().toISOString(),
     };
 
@@ -197,5 +204,76 @@ export async function deleteFolder(c: Context<{ Bindings: Env; Variables: Variab
   } catch (error) {
     console.error('Delete folder error:', error);
     return c.json({ error: 'Failed to delete folder' }, 500);
+  }
+}
+
+// POST /channel-bookmarks
+export async function handleChannelBookmarkUpsert(c: Context<{ Bindings: Env; Variables: Variables }>) {
+  try {
+    const userId = c.get('user_id') as string;
+    const bookmark: ChannelBookmarkInput = await c.req.json();
+
+    // Validate required fields
+    if (!bookmark.id || !bookmark.channel_id || !bookmark.channel_name || !bookmark.platform) {
+      return c.json({ error: 'Missing required fields' }, 400);
+    }
+
+    // Validate platform
+    if (bookmark.platform !== 'youtube' && bookmark.platform !== 'twitch') {
+      return c.json({ error: 'Invalid platform' }, 400);
+    }
+
+    // Upsert channel bookmark (INSERT OR REPLACE)
+    await c.env.DB.prepare(
+      `INSERT OR REPLACE INTO channel_bookmarks
+       (id, user_id, channel_id, channel_name, platform, notes, sort_order, created_at, updated_at, deleted)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`
+    )
+      .bind(
+        bookmark.id,
+        userId,
+        bookmark.channel_id,
+        bookmark.channel_name,
+        bookmark.platform,
+        bookmark.notes || '',
+        bookmark.sort_order || 0,
+        bookmark.created_at,
+        bookmark.updated_at
+      )
+      .run();
+
+    return c.json({ success: true, id: bookmark.id });
+  } catch (error) {
+    console.error('Create channel bookmark error:', error);
+    return c.json({ error: 'Failed to create channel bookmark' }, 500);
+  }
+}
+
+// DELETE /channel-bookmarks/:id
+export async function handleChannelBookmarkDelete(c: Context<{ Bindings: Env; Variables: Variables }>) {
+  try {
+    const userId = c.get('user_id') as string;
+    const bookmarkId = c.req.param('id');
+
+    if (!bookmarkId) {
+      return c.json({ error: 'Missing bookmark ID' }, 400);
+    }
+
+    // Soft delete: set deleted=1 and update updated_at
+    const now = new Date().toISOString();
+    const result = await c.env.DB.prepare(
+      'UPDATE channel_bookmarks SET deleted = 1, updated_at = ? WHERE id = ? AND user_id = ?'
+    )
+      .bind(now, bookmarkId, userId)
+      .run();
+
+    if (result.meta.changes === 0) {
+      return c.json({ error: 'Channel bookmark not found' }, 404);
+    }
+
+    return c.json({ success: true, id: bookmarkId });
+  } catch (error) {
+    console.error('Delete channel bookmark error:', error);
+    return c.json({ error: 'Failed to delete channel bookmark' }, 500);
   }
 }

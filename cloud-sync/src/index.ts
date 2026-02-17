@@ -12,6 +12,8 @@ import {
   deleteRecord,
   createFolder,
   deleteFolder,
+  handleChannelBookmarkUpsert,
+  handleChannelBookmarkDelete,
 } from './handlers';
 
 type Variables = {
@@ -36,6 +38,8 @@ app.use('/records', authMiddleware);
 app.use('/records/*', authMiddleware);
 app.use('/folders', authMiddleware);
 app.use('/folders/*', authMiddleware);
+app.use('/channel-bookmarks', authMiddleware);
+app.use('/channel-bookmarks/*', authMiddleware);
 
 // Sync endpoint
 app.get('/sync', getSync);
@@ -47,6 +51,10 @@ app.delete('/records/:id', deleteRecord);
 // Folders endpoints
 app.post('/folders', createFolder);
 app.delete('/folders/:id', deleteFolder);
+
+// Channel bookmarks endpoints
+app.post('/channel-bookmarks', handleChannelBookmarkUpsert);
+app.delete('/channel-bookmarks/:id', handleChannelBookmarkDelete);
 
 // Health check
 app.get('/health', (c) => {

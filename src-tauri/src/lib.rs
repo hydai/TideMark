@@ -462,6 +462,456 @@ async fn get_twitch_pubsub_status() -> Result<PubSubStatus, String> {
     })
 }
 
+// ── YouTube RSS polling state ─────────────────────────────────────────────────
+
+struct YouTubePollingState {
+    active: bool,
+    shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+    polling_channels: Vec<String>, // channel IDs being monitored
+}
+
+impl YouTubePollingState {
+    fn new() -> Self {
+        Self {
+            active: false,
+            shutdown_tx: None,
+            polling_channels: Vec::new(),
+        }
+    }
+}
+
+static YOUTUBE_POLLING_STATE: std::sync::OnceLock<tokio::sync::Mutex<YouTubePollingState>> =
+    std::sync::OnceLock::new();
+
+fn youtube_polling_state() -> &'static tokio::sync::Mutex<YouTubePollingState> {
+    YOUTUBE_POLLING_STATE
+        .get_or_init(|| tokio::sync::Mutex::new(YouTubePollingState::new()))
+}
+
+// ── YouTube RSS XML parsing ───────────────────────────────────────────────────
+
+/// Parse an Atom XML feed from YouTube and return the first `max_entries` video IDs.
+fn parse_youtube_rss(xml: &str, max_entries: usize) -> Vec<String> {
+    use quick_xml::Reader;
+    use quick_xml::events::Event;
+
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+
+    let mut video_ids: Vec<String> = Vec::new();
+    let mut inside_video_id = false;
+    let mut buf = Vec::new();
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+                // Match <yt:videoId>
+                let local = e.local_name();
+                if local.as_ref() == b"videoId" {
+                    // Verify namespace prefix contains "yt"
+                    let name_bytes = e.name();
+                    let name_str = std::str::from_utf8(name_bytes.as_ref()).unwrap_or("");
+                    if name_str.starts_with("yt:") || name_str == "videoId" {
+                        inside_video_id = true;
+                    }
+                }
+            }
+            Ok(Event::Text(e)) => {
+                if inside_video_id {
+                    if let Ok(text) = e.unescape() {
+                        let id = text.trim().to_string();
+                        if !id.is_empty() && video_ids.len() < max_entries {
+                            video_ids.push(id);
+                        }
+                    }
+                    inside_video_id = false;
+                }
+            }
+            Ok(Event::End(_)) => {
+                inside_video_id = false;
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                log::warn!("[YouTube RSS] XML parse error: {}", e);
+                break;
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    video_ids
+}
+
+// ── YouTube live check via yt-dlp ─────────────────────────────────────────────
+
+/// Check whether a YouTube video is currently live using yt-dlp --dump-json.
+/// Returns `Ok(true)` if live, `Ok(false)` if not live, `Err(...)` on timeout/error.
+async fn check_youtube_video_live(video_id: &str) -> Result<bool, String> {
+    use tokio::time::{timeout, Duration};
+    use tokio::process::Command as TokioCommand;
+
+    let url = format!("https://www.youtube.com/watch?v={}", video_id);
+    let fut = TokioCommand::new("yt-dlp")
+        .args(["--dump-json", "--no-playlist", &url])
+        .output();
+
+    match timeout(Duration::from_secs(30), fut).await {
+        Err(_) => Err(format!("yt-dlp timed out for video {}", video_id)),
+        Ok(Err(e)) => Err(format!("yt-dlp spawn error: {}", e)),
+        Ok(Ok(output)) => {
+            if output.status.success() {
+                let info: serde_json::Value =
+                    serde_json::from_slice(&output.stdout).unwrap_or(serde_json::Value::Null);
+                let is_live = info
+                    .get("is_live")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                Ok(is_live)
+            } else {
+                Err(format!(
+                    "yt-dlp exited with status {:?}",
+                    output.status.code()
+                ))
+            }
+        }
+    }
+}
+
+// ── YouTube RSS polling loop ──────────────────────────────────────────────────
+
+/// Maximum number of YouTube channels checked simultaneously.
+const YOUTUBE_CONCURRENCY: usize = 3;
+
+/// How many recent RSS entries to check per channel.
+const YOUTUBE_RSS_ENTRIES: usize = 5;
+
+/// Run the YouTube RSS polling loop for a list of channel presets until shutdown.
+async fn run_youtube_polling(
+    app: AppHandle,
+    mut presets: Vec<(String, String)>, // (channel_id, channel_name)
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) {
+    use tokio::sync::Semaphore;
+    use std::sync::Arc;
+    use tokio::time::{sleep, Instant};
+
+    // Rate-limit state: optional until-timestamp after which to restore.
+    let mut rate_limit_until: Option<Instant> = None;
+
+    // Emit initial status.
+    let _ = app.emit(
+        "youtube-polling-status",
+        serde_json::json!({
+            "active": true,
+            "message": "輪詢中",
+            "channels_count": presets.len(),
+        }),
+    );
+
+    loop {
+        // Check shutdown.
+        if *shutdown_rx.borrow() {
+            break;
+        }
+
+        // --- Load fresh config each cycle for dynamic interval updates ---
+        let interval_secs = {
+            let cfg = load_config(app.clone()).unwrap_or_default();
+            cfg.youtube_polling_interval
+        };
+
+        // Determine effective interval (doubled if rate-limited).
+        let effective_interval_secs = if rate_limit_until
+            .map(|until| Instant::now() < until)
+            .unwrap_or(false)
+        {
+            interval_secs * 2
+        } else {
+            rate_limit_until = None; // restore
+            interval_secs
+        };
+
+        // Refresh preset list (handles dynamic enable/disable).
+        if let Ok(fresh_presets) = get_scheduled_presets(app.clone()) {
+            presets = fresh_presets
+                .into_iter()
+                .filter(|p| p.platform == "youtube" && p.enabled)
+                .map(|p| (p.channel_id, p.channel_name))
+                .collect();
+        }
+
+        if presets.is_empty() {
+            log::info!("[YouTube] No enabled YouTube presets; polling idle");
+            let _ = app.emit(
+                "youtube-polling-status",
+                serde_json::json!({
+                    "active": true,
+                    "message": "無啟用頻道",
+                    "channels_count": 0u32,
+                }),
+            );
+            // Wait for full interval then try again.
+            let sleep_fut = sleep(tokio::time::Duration::from_secs(effective_interval_secs as u64));
+            tokio::pin!(sleep_fut);
+            tokio::select! {
+                _ = &mut sleep_fut => {}
+                _ = shutdown_rx.changed() => {
+                    if *shutdown_rx.borrow() { break; }
+                }
+            }
+            continue;
+        }
+
+        // Update polling state with current channel list.
+        {
+            let mut st = youtube_polling_state().lock().await;
+            st.polling_channels = presets.iter().map(|(id, _)| id.clone()).collect();
+        }
+
+        log::info!(
+            "[YouTube] Polling {} channels (interval {}s)",
+            presets.len(),
+            effective_interval_secs
+        );
+
+        let semaphore = Arc::new(Semaphore::new(YOUTUBE_CONCURRENCY));
+        let mut handles = Vec::new();
+        let mut got_rate_limit = false;
+
+        for (channel_id, channel_name) in presets.clone() {
+            // Check shutdown before spawning each task.
+            if *shutdown_rx.borrow() {
+                break;
+            }
+
+            let sem_clone = semaphore.clone();
+            let ch_id = channel_id.clone();
+            let ch_name = channel_name.clone();
+
+            let handle = tokio::spawn(async move {
+                let _permit = sem_clone.acquire().await.ok()?;
+
+                // Fetch RSS feed.
+                let rss_url = format!(
+                    "https://www.youtube.com/feeds/videos.xml?channel_id={}",
+                    ch_id
+                );
+
+                let resp = reqwest::get(&rss_url).await.ok()?;
+                let status = resp.status();
+
+                // Handle 429 Rate Limit.
+                if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    log::warn!("[YouTube] Rate limited for channel {}", ch_id);
+                    return Some(("rate_limit", ch_id, ch_name, String::new()));
+                }
+
+                // Handle 404 Invalid Channel.
+                if status == reqwest::StatusCode::NOT_FOUND {
+                    log::warn!("[YouTube] Channel not found: {}", ch_id);
+                    return Some(("not_found", ch_id, ch_name, String::new()));
+                }
+
+                if !status.is_success() {
+                    log::warn!("[YouTube] RSS fetch failed for {} with status {}", ch_id, status);
+                    return None;
+                }
+
+                let body = resp.text().await.ok()?;
+
+                // Parse XML to extract video IDs.
+                let video_ids = parse_youtube_rss(&body, YOUTUBE_RSS_ENTRIES);
+
+                if video_ids.is_empty() {
+                    log::info!("[YouTube] No entries in RSS for channel {}", ch_id);
+                    // Empty RSS could mean invalid channel; treat as not_found.
+                    return Some(("not_found", ch_id, ch_name, String::new()));
+                }
+
+                // Check the most recent entries for live status.
+                for video_id in video_ids {
+                    match check_youtube_video_live(&video_id).await {
+                        Err(e) => {
+                            log::warn!("[YouTube] yt-dlp check skipped ({}): {}", video_id, e);
+                            // E7.3d: timeout/error → skip, retry next cycle.
+                            continue;
+                        }
+                        Ok(true) => {
+                            log::info!(
+                                "[YouTube] Live stream detected: {} on {}",
+                                video_id,
+                                ch_id
+                            );
+                            return Some(("live", ch_id, ch_name, video_id));
+                        }
+                        Ok(false) => {
+                            // Not live; continue checking next video.
+                        }
+                    }
+                }
+
+                None // No live stream found this cycle.
+            });
+
+            handles.push(handle);
+        }
+
+        // Collect results.
+        let mut presets_to_disable: Vec<(String, String)> = Vec::new();
+
+        for handle in handles {
+            if let Ok(Some((event_type, ch_id, ch_name, payload))) = handle.await {
+                match event_type {
+                    "live" => {
+                        let now = Utc::now().to_rfc3339();
+                        let _ = app.emit(
+                            "youtube-stream-live",
+                            serde_json::json!({
+                                "channel_id": ch_id,
+                                "channel_name": ch_name,
+                                "video_id": payload,
+                                "timestamp": now,
+                                "paused": MONITORING_PAUSED.load(Ordering::SeqCst),
+                            }),
+                        );
+                    }
+                    "rate_limit" => {
+                        got_rate_limit = true;
+                    }
+                    "not_found" => {
+                        presets_to_disable.push((ch_id, ch_name));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Apply rate-limit doubling for 5 minutes.
+        if got_rate_limit && rate_limit_until.is_none() {
+            rate_limit_until =
+                Some(Instant::now() + tokio::time::Duration::from_secs(300));
+            log::warn!("[YouTube] Rate limit hit; doubling interval for 5 minutes");
+        }
+
+        // Disable invalid channels.
+        for (ch_id, _ch_name) in &presets_to_disable {
+            // Find preset id by channel_id.
+            if let Ok(all_presets) = get_scheduled_presets(app.clone()) {
+                if let Some(preset) = all_presets.iter().find(|p| &p.channel_id == ch_id) {
+                    let _ = toggle_preset_enabled(app.clone(), preset.id.clone(), false);
+                }
+            }
+            let _ = app.emit(
+                "youtube-channel-error",
+                serde_json::json!({
+                    "channel_id": ch_id,
+                    "error": "頻道不存在",
+                }),
+            );
+        }
+
+        // Wait for the configured interval before next poll.
+        let sleep_fut = sleep(tokio::time::Duration::from_secs(effective_interval_secs as u64));
+        tokio::pin!(sleep_fut);
+        tokio::select! {
+            _ = &mut sleep_fut => {}
+            _ = shutdown_rx.changed() => {
+                if *shutdown_rx.borrow() { break; }
+            }
+        }
+    }
+
+    // Emit stopped status.
+    {
+        let mut st = youtube_polling_state().lock().await;
+        st.active = false;
+        st.polling_channels.clear();
+    }
+    let _ = app.emit(
+        "youtube-polling-status",
+        serde_json::json!({
+            "active": false,
+            "message": "已停止",
+            "channels_count": 0u32,
+        }),
+    );
+    log::info!("[YouTube] Polling loop ended");
+}
+
+// ── Tauri commands for YouTube polling ───────────────────────────────────────
+
+#[tauri::command]
+async fn start_youtube_polling(app: AppHandle) -> Result<(), String> {
+    // Load enabled YouTube presets.
+    let presets = get_scheduled_presets(app.clone())?;
+    let youtube_presets: Vec<(String, String)> = presets
+        .into_iter()
+        .filter(|p| p.platform == "youtube" && p.enabled)
+        .map(|p| (p.channel_id, p.channel_name))
+        .collect();
+
+    if youtube_presets.is_empty() {
+        return Err("沒有已啟用的 YouTube 頻道預設".to_string());
+    }
+
+    // Stop any existing polling first.
+    stop_youtube_polling_inner().await;
+
+    // Create shutdown channel.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+    {
+        let mut st = youtube_polling_state().lock().await;
+        st.active = true;
+        st.shutdown_tx = Some(shutdown_tx);
+        st.polling_channels = youtube_presets.iter().map(|(id, _)| id.clone()).collect();
+    }
+
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        run_youtube_polling(app_clone, youtube_presets, shutdown_rx).await;
+    });
+
+    log::info!("[YouTube] Started RSS polling");
+    Ok(())
+}
+
+/// Internal helper: send shutdown signal to any running YouTube polling task.
+async fn stop_youtube_polling_inner() {
+    let mut st = youtube_polling_state().lock().await;
+    if let Some(tx) = st.shutdown_tx.take() {
+        let _ = tx.send(true);
+    }
+    st.active = false;
+    st.polling_channels.clear();
+}
+
+#[tauri::command]
+async fn stop_youtube_polling() -> Result<(), String> {
+    stop_youtube_polling_inner().await;
+    log::info!("[YouTube] Polling stopped");
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct YouTubePollingStatus {
+    active: bool,
+    polling_channels: Vec<String>,
+    interval_seconds: u32,
+}
+
+#[tauri::command]
+async fn get_youtube_polling_status(app: AppHandle) -> Result<YouTubePollingStatus, String> {
+    let st = youtube_polling_state().lock().await;
+    let cfg = load_config(app).unwrap_or_default();
+    Ok(YouTubePollingStatus {
+        active: st.active,
+        polling_channels: st.polling_channels.clone(),
+        interval_seconds: cfg.youtube_polling_interval,
+    })
+}
+
 // Download configuration structures
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DownloadConfig {
@@ -4554,13 +5004,14 @@ pub fn run() {
                 });
             }
 
-            // Auto-start Twitch PubSub monitoring if configured and presets exist.
+            // Auto-start Twitch PubSub and YouTube RSS monitoring if configured.
             {
                 let auto_app = app.handle().clone();
                 tokio::spawn(async move {
                     let config = load_config(auto_app.clone()).unwrap_or_default();
                     if config.auto_start_monitoring {
-                        let _ = start_twitch_pubsub(auto_app).await;
+                        let _ = start_twitch_pubsub(auto_app.clone()).await;
+                        let _ = start_youtube_polling(auto_app).await;
                     }
                 });
             }
@@ -4635,7 +5086,10 @@ pub fn run() {
             set_monitoring_paused,
             start_twitch_pubsub,
             stop_twitch_pubsub,
-            get_twitch_pubsub_status
+            get_twitch_pubsub_status,
+            start_youtube_polling,
+            stop_youtube_polling,
+            get_youtube_polling_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

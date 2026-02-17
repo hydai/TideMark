@@ -29,6 +29,12 @@ interface PubSubStatus {
   subscribed_channels: string[];
 }
 
+interface YouTubePollingStatus {
+  active: boolean;
+  polling_channels: string[];
+  interval_seconds: number;
+}
+
 interface TwitchStreamEvent {
   channel_id: string;
   channel_name: string;
@@ -36,9 +42,28 @@ interface TwitchStreamEvent {
   paused?: boolean;
 }
 
+interface YouTubeStreamEvent {
+  channel_id: string;
+  channel_name: string;
+  video_id: string;
+  timestamp: string;
+  paused?: boolean;
+}
+
 interface PubSubStatusEvent {
   connected: boolean;
   message: string;
+}
+
+interface YouTubePollingStatusEvent {
+  active: boolean;
+  message: string;
+  channels_count: number;
+}
+
+interface YouTubeChannelErrorEvent {
+  channel_id: string;
+  error: string;
 }
 
 const DEFAULT_FILENAME_TEMPLATE = '[{type}] [{channel_name}] [{date}] {title}';
@@ -52,6 +77,11 @@ let isNewPreset = false;
 // PubSub state tracked on the frontend
 let pubsubConnected = false;
 let pubsubMessage = '';
+// YouTube polling state
+let youtubePollingActive = false;
+let youtubePollingMessage = '';
+let youtubePollingChannelsCount = 0;
+let youtubePollingIntervalSecs = 90;
 // channel_id -> 'live' | 'offline'
 const liveStatusMap: Map<string, 'live' | 'offline'> = new Map();
 
@@ -68,7 +98,7 @@ export async function renderScheduledDownloadsPage(container: HTMLElement) {
 
   await loadPresets();
 
-  // Load current PubSub status from backend.
+  // Load current Twitch PubSub status from backend.
   try {
     const status = await invoke<PubSubStatus>('get_twitch_pubsub_status');
     pubsubConnected = status.connected;
@@ -77,6 +107,17 @@ export async function renderScheduledDownloadsPage(container: HTMLElement) {
       : '';
   } catch {
     pubsubConnected = false;
+  }
+
+  // Load current YouTube polling status from backend.
+  try {
+    const ytStatus = await invoke<YouTubePollingStatus>('get_youtube_polling_status');
+    youtubePollingActive = ytStatus.active;
+    youtubePollingChannelsCount = ytStatus.polling_channels.length;
+    youtubePollingIntervalSecs = ytStatus.interval_seconds;
+    youtubePollingMessage = ytStatus.active ? '輪詢中' : '';
+  } catch {
+    youtubePollingActive = false;
   }
 
   renderPage(container);
@@ -109,35 +150,94 @@ async function setupPubSubListeners() {
     updatePresetLiveStatus(event.payload.channel_id, 'offline');
   });
 
-  _unlisteners.push(statusUn, streamUpUn, streamDownUn);
+  // YouTube event listeners
+  const ytPollingStatusUn = await listen<YouTubePollingStatusEvent>('youtube-polling-status', (event) => {
+    youtubePollingActive = event.payload.active;
+    youtubePollingMessage = event.payload.message;
+    youtubePollingChannelsCount = event.payload.channels_count;
+    updateMonitorStatusUI();
+  });
+
+  const ytStreamLiveUn = await listen<YouTubeStreamEvent>('youtube-stream-live', (event) => {
+    liveStatusMap.set(event.payload.channel_id, 'live');
+    updatePresetLiveStatus(event.payload.channel_id, 'live');
+  });
+
+  const ytChannelErrorUn = await listen<YouTubeChannelErrorEvent>('youtube-channel-error', (event) => {
+    showToast(`YouTube 頻道錯誤 (${event.payload.channel_id}): ${event.payload.error}`);
+    // Update preset list since it may have been disabled.
+    loadPresets().then(() => {
+      if (containerEl) renderPage(containerEl);
+    });
+  });
+
+  _unlisteners.push(statusUn, streamUpUn, streamDownUn, ytPollingStatusUn, ytStreamLiveUn, ytChannelErrorUn);
 }
 
 /** Update only the monitor status bar without re-rendering the full page. */
 function updateMonitorStatusUI() {
-  const statusText = document.getElementById('twitch-pubsub-status-text');
-  const statusDot = document.getElementById('twitch-pubsub-status-dot');
+  const twitchStatusText = document.getElementById('twitch-pubsub-status-text');
+  const twitchStatusDot = document.getElementById('twitch-pubsub-status-dot');
   const startBtn = document.getElementById('twitch-pubsub-start-btn') as HTMLButtonElement | null;
   const stopBtn = document.getElementById('twitch-pubsub-stop-btn') as HTMLButtonElement | null;
 
-  if (statusText) {
-    statusText.textContent = buildStatusLabel();
+  if (twitchStatusText) {
+    twitchStatusText.textContent = buildTwitchStatusLabel();
   }
-  if (statusDot) {
-    statusDot.className = pubsubConnected
+  if (twitchStatusDot) {
+    twitchStatusDot.className = pubsubConnected
       ? 'status-dot connected'
       : 'status-dot disconnected';
   }
   if (startBtn) startBtn.disabled = pubsubConnected;
   if (stopBtn) stopBtn.disabled = !pubsubConnected;
+
+  // Update YouTube status text and buttons.
+  const ytStatusText = document.getElementById('youtube-polling-status-text');
+  const ytStatusDot = document.getElementById('youtube-polling-status-dot');
+  const ytStartBtn = document.getElementById('youtube-polling-start-btn') as HTMLButtonElement | null;
+  const ytStopBtn = document.getElementById('youtube-polling-stop-btn') as HTMLButtonElement | null;
+
+  if (ytStatusText) {
+    ytStatusText.textContent = buildYouTubeStatusLabel();
+  }
+  if (ytStatusDot) {
+    ytStatusDot.className = youtubePollingActive
+      ? 'status-dot connected'
+      : 'status-dot disconnected';
+  }
+  if (ytStartBtn) ytStartBtn.disabled = youtubePollingActive;
+  if (ytStopBtn) ytStopBtn.disabled = !youtubePollingActive;
 }
 
-function buildStatusLabel(): string {
+function buildTwitchStatusLabel(): string {
   if (pubsubConnected) {
     const count = presets.filter(p => p.platform === 'twitch' && p.enabled).length;
     return `Twitch: 已連線 (${count} 個頻道)`;
   }
   if (pubsubMessage) return `Twitch: ${pubsubMessage}`;
   return 'Twitch: 已斷線';
+}
+
+function buildYouTubeStatusLabel(): string {
+  if (youtubePollingActive) {
+    const count = youtubePollingChannelsCount || presets.filter(p => p.platform === 'youtube' && p.enabled).length;
+    return `YouTube: 輪詢中 (${count} 個頻道, 每 ${youtubePollingIntervalSecs} 秒)`;
+  }
+  if (youtubePollingMessage) return `YouTube: ${youtubePollingMessage}`;
+  return 'YouTube: 已停止';
+}
+
+/** Show a brief toast notification. */
+function showToast(message: string) {
+  const toast = document.createElement('div');
+  toast.className = 'toast-notification';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('toast-fade-out');
+    setTimeout(() => toast.remove(), 500);
+  }, 3000);
 }
 
 /** Update only the live-status badge in the preset table row. */
@@ -220,33 +320,31 @@ function createMonitorStatusSection(): HTMLElement {
   heading.textContent = '監聽狀態';
   section.appendChild(heading);
 
-  // Status row
-  const statusRow = document.createElement('div');
-  statusRow.className = 'monitor-status-row';
+  // ── Twitch status row ──
+  const twitchRow = document.createElement('div');
+  twitchRow.className = 'monitor-status-row';
 
-  // Status indicator dot
-  const dot = document.createElement('span');
-  dot.id = 'twitch-pubsub-status-dot';
-  dot.className = pubsubConnected ? 'status-dot connected' : 'status-dot disconnected';
-  statusRow.appendChild(dot);
+  const twitchDot = document.createElement('span');
+  twitchDot.id = 'twitch-pubsub-status-dot';
+  twitchDot.className = pubsubConnected ? 'status-dot connected' : 'status-dot disconnected';
+  twitchRow.appendChild(twitchDot);
 
-  // Status text
-  const statusText = document.createElement('span');
-  statusText.id = 'twitch-pubsub-status-text';
-  statusText.className = 'monitor-status-text';
-  statusText.textContent = buildStatusLabel();
-  statusRow.appendChild(statusText);
+  const twitchStatusText = document.createElement('span');
+  twitchStatusText.id = 'twitch-pubsub-status-text';
+  twitchStatusText.className = 'monitor-status-text';
+  twitchStatusText.textContent = buildTwitchStatusLabel();
+  twitchRow.appendChild(twitchStatusText);
 
-  section.appendChild(statusRow);
+  section.appendChild(twitchRow);
 
-  // Button row
-  const btnRow = document.createElement('div');
-  btnRow.className = 'monitor-btn-row';
+  // Twitch button row
+  const twitchBtnRow = document.createElement('div');
+  twitchBtnRow.className = 'monitor-btn-row';
 
   const startBtn = document.createElement('button');
   startBtn.className = 'primary-button';
   startBtn.id = 'twitch-pubsub-start-btn';
-  startBtn.textContent = '開始監聽';
+  startBtn.textContent = '開始 Twitch 監聽';
   startBtn.disabled = pubsubConnected;
   startBtn.addEventListener('click', async () => {
     startBtn.disabled = true;
@@ -258,16 +356,16 @@ function createMonitorStatusSection(): HTMLElement {
       updateMonitorStatusUI();
     } catch (error) {
       startBtn.disabled = false;
-      startBtn.textContent = '開始監聽';
-      alert(`無法啟動監聽: ${error}`);
+      startBtn.textContent = '開始 Twitch 監聽';
+      alert(`無法啟動 Twitch 監聽: ${error}`);
     }
   });
-  btnRow.appendChild(startBtn);
+  twitchBtnRow.appendChild(startBtn);
 
   const stopBtn = document.createElement('button');
   stopBtn.className = 'secondary-button';
   stopBtn.id = 'twitch-pubsub-stop-btn';
-  stopBtn.textContent = '停止監聽';
+  stopBtn.textContent = '停止 Twitch 監聽';
   stopBtn.disabled = !pubsubConnected;
   stopBtn.addEventListener('click', async () => {
     stopBtn.disabled = true;
@@ -278,12 +376,75 @@ function createMonitorStatusSection(): HTMLElement {
       updateMonitorStatusUI();
     } catch (error) {
       stopBtn.disabled = false;
-      alert(`無法停止監聽: ${error}`);
+      alert(`無法停止 Twitch 監聽: ${error}`);
     }
   });
-  btnRow.appendChild(stopBtn);
+  twitchBtnRow.appendChild(stopBtn);
 
-  section.appendChild(btnRow);
+  section.appendChild(twitchBtnRow);
+
+  // ── YouTube status row ──
+  const ytRow = document.createElement('div');
+  ytRow.className = 'monitor-status-row';
+
+  const ytDot = document.createElement('span');
+  ytDot.id = 'youtube-polling-status-dot';
+  ytDot.className = youtubePollingActive ? 'status-dot connected' : 'status-dot disconnected';
+  ytRow.appendChild(ytDot);
+
+  const ytStatusText = document.createElement('span');
+  ytStatusText.id = 'youtube-polling-status-text';
+  ytStatusText.className = 'monitor-status-text';
+  ytStatusText.textContent = buildYouTubeStatusLabel();
+  ytRow.appendChild(ytStatusText);
+
+  section.appendChild(ytRow);
+
+  // YouTube button row
+  const ytBtnRow = document.createElement('div');
+  ytBtnRow.className = 'monitor-btn-row';
+
+  const ytStartBtn = document.createElement('button');
+  ytStartBtn.className = 'primary-button';
+  ytStartBtn.id = 'youtube-polling-start-btn';
+  ytStartBtn.textContent = '開始 YouTube 輪詢';
+  ytStartBtn.disabled = youtubePollingActive;
+  ytStartBtn.addEventListener('click', async () => {
+    ytStartBtn.disabled = true;
+    ytStartBtn.textContent = '啟動中…';
+    try {
+      await invoke('start_youtube_polling');
+      youtubePollingActive = true;
+      youtubePollingMessage = '輪詢中';
+      updateMonitorStatusUI();
+    } catch (error) {
+      ytStartBtn.disabled = false;
+      ytStartBtn.textContent = '開始 YouTube 輪詢';
+      alert(`無法啟動 YouTube 輪詢: ${error}`);
+    }
+  });
+  ytBtnRow.appendChild(ytStartBtn);
+
+  const ytStopBtn = document.createElement('button');
+  ytStopBtn.className = 'secondary-button';
+  ytStopBtn.id = 'youtube-polling-stop-btn';
+  ytStopBtn.textContent = '停止 YouTube 輪詢';
+  ytStopBtn.disabled = !youtubePollingActive;
+  ytStopBtn.addEventListener('click', async () => {
+    ytStopBtn.disabled = true;
+    try {
+      await invoke('stop_youtube_polling');
+      youtubePollingActive = false;
+      youtubePollingMessage = '已停止';
+      updateMonitorStatusUI();
+    } catch (error) {
+      ytStopBtn.disabled = false;
+      alert(`無法停止 YouTube 輪詢: ${error}`);
+    }
+  });
+  ytBtnRow.appendChild(ytStopBtn);
+
+  section.appendChild(ytBtnRow);
 
   return section;
 }
@@ -351,9 +512,9 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
   platformTd.appendChild(platformBadge);
   tr.appendChild(platformTd);
 
-  // Live status (Twitch only, shown for all but meaningful only for Twitch)
+  // Live status (Twitch and YouTube), shown when preset is enabled.
   const liveTd = document.createElement('td');
-  if (preset.platform === 'twitch' && preset.enabled) {
+  if ((preset.platform === 'twitch' || preset.platform === 'youtube') && preset.enabled) {
     const currentStatus = liveStatusMap.get(preset.channel_id);
     const liveBadge = document.createElement('span');
     liveBadge.dataset.liveChannel = preset.channel_id;

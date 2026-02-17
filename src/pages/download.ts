@@ -2,6 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { t, resolveLocalizedMessage, type LocalizedMessage } from '../i18n';
+import { ConfigManager } from '../config';
+import { createTemplateEditor, type TemplateEditorInstance } from '../components/template-editor';
+import { PREVIEW_SAMPLE_VARS } from '../filename-template';
+
+/** Module-scoped download page template editor (destroyed on page unmount / re-render). */
+let downloadTemplateEditor: TemplateEditorInstance | null = null;
 
 interface VideoQuality {
   format_id: string;
@@ -138,12 +144,9 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
             </select>
           </div>
 
-          <div class="config-row">
+          <div class="config-row" id="filename-template-row">
             <label class="config-label">${t('download.settings.outputFilename')}</label>
-            <input type="text" id="filename-input" class="config-input" value="{title}_{resolution}" />
-            <div class="filename-help">
-              可用變數: {type}, {id}, {title}, {channel}, {channel_name}, {date}, {resolution}, {duration}
-            </div>
+            <div id="download-template-editor-container"></div>
           </div>
 
           <div class="config-row">
@@ -199,8 +202,23 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
   const contentTypeSelect = container.querySelector('#content-type-select') as HTMLSelectElement;
   const videoCodecRow = container.querySelector('#video-codec-row') as HTMLElement;
   const audioCodecRow = container.querySelector('#audio-codec-row') as HTMLElement;
-  const filenameInput = container.querySelector('#filename-input') as HTMLInputElement;
   const folderInput = container.querySelector('#folder-input') as HTMLInputElement;
+
+  // Initialize the filename template editor
+  const templateEditorContainer = container.querySelector('#download-template-editor-container') as HTMLElement;
+  const globalTemplate = ConfigManager.get().default_filename_template || '[{type}] [{channel_name}] [{date}] {title}';
+  if (downloadTemplateEditor) {
+    downloadTemplateEditor.destroy();
+    downloadTemplateEditor = null;
+  }
+  downloadTemplateEditor = createTemplateEditor({
+    container: templateEditorContainer,
+    initialTemplate: globalTemplate,
+    outputDir: ConfigManager.get().default_download_folder || '~/Tidemark/Downloads',
+    extension: 'mp4',
+    previewVars: PREVIEW_SAMPLE_VARS,
+    deferredVars: [],
+  });
   const folderBtn = container.querySelector('#folder-btn') as HTMLButtonElement;
   const containerSelect = container.querySelector('#container-select') as HTMLSelectElement;
   const startTimeInput = container.querySelector('#start-time-input') as HTMLInputElement;
@@ -318,7 +336,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
       content_type: contentTypeSelect.value,
       video_codec: contentTypeSelect.value !== 'audio_only' ? (container.querySelector('#video-codec-select') as HTMLSelectElement).value : null,
       audio_codec: contentTypeSelect.value !== 'video_only' ? (container.querySelector('#audio-codec-select') as HTMLSelectElement).value : null,
-      output_filename: filenameInput.value,
+      output_filename: downloadTemplateEditor ? downloadTemplateEditor.getValue() : globalTemplate,
       output_folder: folderInput.value,
       container_format: containerSelect.value,
       time_range: timeRange,
@@ -342,7 +360,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
       content_type: contentTypeSelect.value,
       video_codec: contentTypeSelect.value !== 'audio_only' ? (container.querySelector('#video-codec-select') as HTMLSelectElement).value : null,
       audio_codec: contentTypeSelect.value !== 'video_only' ? (container.querySelector('#audio-codec-select') as HTMLSelectElement).value : null,
-      output_filename: filenameInput.value,
+      output_filename: downloadTemplateEditor ? downloadTemplateEditor.getValue() : globalTemplate,
       output_folder: folderInput.value,
       container_format: containerSelect.value,
       time_range: null, // No time range for live recording
@@ -462,6 +480,44 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
 
     populateQualities(info.qualities);
     updateCodecVisibility();
+
+    // Recreate the template editor with actual video metadata for preview
+    if (templateEditorContainer) {
+      const currentTemplate = downloadTemplateEditor ? downloadTemplateEditor.getValue() : globalTemplate;
+      if (downloadTemplateEditor) {
+        downloadTemplateEditor.destroy();
+        downloadTemplateEditor = null;
+      }
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const durSecs = info.duration ?? 0;
+      const durH = Math.floor(durSecs / 3600);
+      const durM = Math.floor((durSecs % 3600) / 60);
+      const durS = durSecs % 60;
+      const durFormatted = durH > 0
+        ? `${String(durH).padStart(2, '0')}h${String(durM).padStart(2, '0')}m${String(durS).padStart(2, '0')}s`
+        : `${String(durM).padStart(2, '0')}m${String(durS).padStart(2, '0')}s`;
+      const videoPreviewVars: Record<string, string> = {
+        title: info.title,
+        id: info.id,
+        channel: info.channel,
+        channel_name: info.channel,
+        platform: info.platform,
+        type: info.content_type || (info.is_live ? 'stream' : 'video'),
+        date: dateStr,
+        datetime: dateStr.replace(/-/g, '') + '_' + now.toTimeString().slice(0, 8).replace(/:/g, ''),
+        resolution: '1080p',
+        duration: info.duration ? durFormatted : '00m00s',
+      };
+      downloadTemplateEditor = createTemplateEditor({
+        container: templateEditorContainer,
+        initialTemplate: currentTemplate,
+        outputDir: folderInput.value || ConfigManager.get().default_download_folder,
+        extension: 'mp4',
+        previewVars: videoPreviewVars,
+        deferredVars: [],
+      });
+    }
 
     videoInfoSection.classList.remove('hidden');
   }

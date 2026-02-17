@@ -1,7 +1,12 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ConfigManager, AppConfig } from '../config';
-import { setLanguage } from '../i18n';
+import { setLanguage, t } from '../i18n';
+import { createTemplateEditor, type TemplateEditorInstance } from '../components/template-editor';
+import { PREVIEW_SAMPLE_VARS, validateTemplate } from '../filename-template';
+
+/** Module-scoped template editor instance (destroyed on re-render). */
+let settingsTemplateEditor: TemplateEditorInstance | null = null;
 
 interface AuthConfig {
   twitch_token: string | null;
@@ -35,6 +40,12 @@ async function loadAppConfig() {
 }
 
 function renderSettingsUI(container: HTMLElement) {
+  // Destroy any existing template editor before re-rendering
+  if (settingsTemplateEditor) {
+    settingsTemplateEditor.destroy();
+    settingsTemplateEditor = null;
+  }
+
   container.innerHTML = '';
 
   const page = document.createElement('div');
@@ -52,6 +63,10 @@ function renderSettingsUI(container: HTMLElement) {
   // Download settings section
   const downloadSection = createDownloadSection();
   page.appendChild(downloadSection);
+
+  // Filename template section
+  const filenameTemplateSection = createFilenameTemplateSection();
+  page.appendChild(filenameTemplateSection);
 
   // Appearance settings section
   const appearanceSection = createAppearanceSection();
@@ -90,6 +105,7 @@ function renderSettingsUI(container: HTMLElement) {
   // Attach event listeners
   attachGeneralEventListeners(container);
   attachDownloadEventListeners(container);
+  attachFilenameTemplateEventListeners(container);
   attachAppearanceEventListeners(container);
   attachRecordsEventListeners(container);
   attachAsrApiKeysEventListeners(container);
@@ -262,6 +278,119 @@ function createDownloadSection(): HTMLElement {
   section.appendChild(codecGroup);
 
   return section;
+}
+
+function createFilenameTemplateSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'settings-section';
+
+  const sectionTitle = document.createElement('h2');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = t('settings.filenameTemplate.title');
+  section.appendChild(sectionTitle);
+
+  const description = document.createElement('p');
+  description.className = 'setting-description';
+  description.textContent = t('settings.filenameTemplate.description');
+  section.appendChild(description);
+
+  // Container for the template editor component
+  const editorContainer = document.createElement('div');
+  editorContainer.id = 'settings-template-editor-container';
+  section.appendChild(editorContainer);
+
+  // Validation error message
+  const errorMsg = document.createElement('p');
+  errorMsg.id = 'settings-template-error';
+  errorMsg.className = 'form-error';
+  errorMsg.style.display = 'none';
+  section.appendChild(errorMsg);
+
+  // Warning message (static-only template)
+  const warnMsg = document.createElement('p');
+  warnMsg.id = 'settings-template-warning';
+  warnMsg.className = 'template-static-warning';
+  warnMsg.style.display = 'none';
+  warnMsg.textContent = t('settings.filenameTemplate.staticWarning');
+  section.appendChild(warnMsg);
+
+  // Save button
+  const saveBtn = document.createElement('button');
+  saveBtn.id = 'settings-template-save-btn';
+  saveBtn.className = 'btn btn-primary';
+  saveBtn.textContent = t('settings.filenameTemplate.save');
+  section.appendChild(saveBtn);
+
+  return section;
+}
+
+function attachFilenameTemplateEventListeners(container: HTMLElement) {
+  const editorContainer = container.querySelector('#settings-template-editor-container') as HTMLElement;
+  const errorMsg = container.querySelector('#settings-template-error') as HTMLElement;
+  const warnMsg = container.querySelector('#settings-template-warning') as HTMLElement;
+  const saveBtn = container.querySelector('#settings-template-save-btn') as HTMLButtonElement;
+
+  if (!editorContainer) return;
+
+  const initialTemplate = currentConfig?.default_filename_template || '[{type}] [{channel_name}] [{date}] {title}';
+
+  // Create the visual template editor
+  settingsTemplateEditor = createTemplateEditor({
+    container: editorContainer,
+    initialTemplate,
+    outputDir: currentConfig?.default_download_folder || '~/Tidemark/Downloads',
+    extension: 'mp4',
+    previewVars: PREVIEW_SAMPLE_VARS,
+    deferredVars: [],
+    onChange: (template) => {
+      // Hide errors on change
+      errorMsg.style.display = 'none';
+      // Show static-only warning if template has no variables
+      const hasVar = /\{[^}]+\}/.test(template);
+      if (template.trim() && !hasVar) {
+        warnMsg.style.display = 'block';
+      } else {
+        warnMsg.style.display = 'none';
+      }
+    },
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    const template = settingsTemplateEditor?.getValue() ?? '';
+
+    // Validate: empty template (E10.5a)
+    if (!template.trim()) {
+      errorMsg.textContent = t('settings.filenameTemplate.emptyError');
+      errorMsg.style.display = 'block';
+      return;
+    }
+
+    // Validate recognized variables
+    try {
+      await validateTemplate(template);
+    } catch (err) {
+      errorMsg.textContent = String(err);
+      errorMsg.style.display = 'block';
+      return;
+    }
+
+    errorMsg.style.display = 'none';
+
+    // Static-only template warning (E10.5b)
+    const hasVar = /\{[^}]+\}/.test(template);
+    if (!hasVar) {
+      warnMsg.style.display = 'block';
+    } else {
+      warnMsg.style.display = 'none';
+    }
+
+    await ConfigManager.update({ default_filename_template: template });
+
+    saveBtn.textContent = t('settings.filenameTemplate.saved');
+    setTimeout(() => {
+      saveBtn.textContent = t('settings.filenameTemplate.save');
+    }, 2000);
+  });
 }
 
 function createAppearanceSection(): HTMLElement {

@@ -2,6 +2,12 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 import { t, resolveLocalizedMessage, type LocalizedMessage } from '../i18n';
+import { ConfigManager } from '../config';
+import { createTemplateEditor, SCHEDULED_DEFERRED_VARS, type TemplateEditorInstance } from '../components/template-editor';
+import { PREVIEW_SAMPLE_VARS } from '../filename-template';
+
+/** Module-scoped scheduled preset modal template editor. Destroyed when modal closes. */
+let presetTemplateEditor: TemplateEditorInstance | null = null;
 
 interface DownloadPreset {
   id: string;
@@ -1041,6 +1047,10 @@ function closePresetModal() {
   editingPresetId = null;
   isNewPreset = false;
   newPresetPrefillChannel = null;
+  if (presetTemplateEditor) {
+    presetTemplateEditor.destroy();
+    presetTemplateEditor = null;
+  }
   if (containerEl) renderPage(containerEl);
 }
 
@@ -1195,10 +1205,24 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
 
   modalBody.appendChild(outputDirSection);
 
-  // Filename template
-  const filenameGroup = createFormGroup(t('scheduled.modal.filenameTemplate'),
-    createTextInput('preset-filename-template',
-      existingPreset?.filename_template || DEFAULT_FILENAME_TEMPLATE));
+  // Filename template — visual template editor with deferred vars
+  const filenameGroup = document.createElement('div');
+  filenameGroup.className = 'form-group';
+
+  const filenameLabel = document.createElement('label');
+  filenameLabel.className = 'form-label';
+  filenameLabel.textContent = t('scheduled.modal.filenameTemplate');
+  filenameGroup.appendChild(filenameLabel);
+
+  const filenameHint = document.createElement('p');
+  filenameHint.className = 'form-hint';
+  filenameHint.textContent = t('scheduled.modal.filenameTemplateHint');
+  filenameGroup.appendChild(filenameHint);
+
+  const presetEditorContainer = document.createElement('div');
+  presetEditorContainer.id = 'preset-template-editor-container';
+  filenameGroup.appendChild(presetEditorContainer);
+
   modalBody.appendChild(filenameGroup);
 
   // Container format
@@ -1229,6 +1253,34 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
 
   modal.appendChild(modalFooter);
   overlay.appendChild(modal);
+
+  // Initialize the visual template editor for the preset
+  {
+    const globalDefault = ConfigManager.get().default_filename_template || DEFAULT_FILENAME_TEMPLATE;
+    const initialTemplate = existingPreset?.filename_template || '';
+    // Build preview vars using the preset's channel info for immediate vars
+    const channelName = existingPreset?.channel_name || newPresetPrefillChannel?.channelName || '';
+    const platform = existingPreset?.platform || newPresetPrefillChannel?.platform || '';
+    const previewVars: Record<string, string> = {
+      ...PREVIEW_SAMPLE_VARS,
+      channel: channelName || PREVIEW_SAMPLE_VARS.channel,
+      channel_name: channelName || PREVIEW_SAMPLE_VARS.channel_name,
+      platform: platform || PREVIEW_SAMPLE_VARS.platform,
+    };
+
+    if (presetTemplateEditor) {
+      presetTemplateEditor.destroy();
+      presetTemplateEditor = null;
+    }
+    presetTemplateEditor = createTemplateEditor({
+      container: presetEditorContainer,
+      initialTemplate: initialTemplate || globalDefault,
+      outputDir: existingPreset?.output_dir || '',
+      extension: 'ts',
+      previewVars,
+      deferredVars: [...SCHEDULED_DEFERRED_VARS],
+    });
+  }
 
   // If editing existing preset, pre-fill channel info
   if (existingPreset) {
@@ -1328,8 +1380,11 @@ async function handleSavePreset(existingPreset: DownloadPreset | null) {
   const qualitySelect = document.getElementById('preset-quality') as HTMLSelectElement;
   const contentTypeSelect = document.getElementById('preset-content-type') as HTMLSelectElement;
   const outputDirInput = document.getElementById('preset-output-dir') as HTMLInputElement;
-  const filenameInput = document.getElementById('preset-filename-template') as HTMLInputElement;
   const containerSelect = document.getElementById('preset-container-format') as HTMLSelectElement;
+
+  // Get template from the visual editor; fall back to global default if empty
+  const globalDefault = ConfigManager.get().default_filename_template || DEFAULT_FILENAME_TEMPLATE;
+  const filenameTemplateValue = presetTemplateEditor ? presetTemplateEditor.getValue().trim() : '';
 
   // Validate channel is resolved
   if (!channelIdInput.value) {
@@ -1374,7 +1429,7 @@ async function handleSavePreset(existingPreset: DownloadPreset | null) {
     quality: qualitySelect.value,
     content_type: contentTypeSelect.value,
     output_dir: outputDirInput.value.trim(),
-    filename_template: filenameInput.value.trim() || DEFAULT_FILENAME_TEMPLATE,
+    filename_template: filenameTemplateValue || globalDefault,
     container_format: containerSelect.value,
     created_at: existingPreset?.created_at || now,
     last_triggered_at: existingPreset?.last_triggered_at ?? null,

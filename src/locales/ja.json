@@ -48,6 +48,21 @@
     "languageLoadFailed": "言語ファイルの読み込みに失敗しました。繁体字中国語に切り替えます",
     "languageLoadFailedTitle": "言語読み込みエラー"
   },
+  "settings": {
+    "filenameTemplate": {
+      "title": "デフォルトファイル名テンプレート",
+      "description": "すべてのダウンロードに適用されるデフォルトのファイル名テンプレートです。ダウンロードページやスケジュールプリセットで個別に上書きできます。",
+      "save": "テンプレートを保存",
+      "saved": "保存しました！",
+      "emptyError": "ファイル名テンプレートを空にすることはできません",
+      "staticWarning": "テンプレートに変数が含まれていません。同名ファイルが上書きされる可能性があります。{title} や {date} などの変数を追加してください。"
+    }
+  },
+  "scheduled": {
+    "modal": {
+      "filenameTemplateHint": "空欄の場合はグローバルデフォルトテンプレートが使用されます。{title}、{id}、{type}、{resolution}、{duration} は遅延変数です。"
+    }
+  },
   "templateEditor": {
     "variablesLabel": "変数：",
     "exampleLabel": "例",

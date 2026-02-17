@@ -470,7 +470,8 @@
       "contentTypeAudioOnly": "僅音訊",
       "outputDir": "輸出資料夾",
       "folderSelect": "選擇",
-      "filenameTemplate": "檔名模板",
+      "filenameTemplate": "檔名範本",
+      "filenameTemplateHint": "留空將使用全域預設範本。{title}、{id}、{type}、{resolution}、{duration} 為延遲變數，觸發時以 unknown 暫代。",
       "container": "容器格式",
       "cancel": "取消",
       "save": "儲存",
@@ -525,6 +526,14 @@
       "languageDesc": "介面語言",
       "timezone": "時區",
       "timezoneDesc": "顯示時間的時區"
+    },
+    "filenameTemplate": {
+      "title": "預設檔名範本",
+      "description": "所有下載的預設檔名範本。可在下載頁面或排程預設中個別覆蓋。",
+      "save": "儲存範本",
+      "saved": "已儲存！",
+      "emptyError": "檔名範本不可為空",
+      "staticWarning": "範本不含任何變數，可能導致重複檔名被覆蓋。建議加入 {title} 或 {date} 等變數。"
     },
     "download": {
       "title": "下載設定",

@@ -48,6 +48,21 @@
     "languageLoadFailed": "Failed to load language file, falling back to Traditional Chinese",
     "languageLoadFailedTitle": "Language Load Failed"
   },
+  "settings": {
+    "filenameTemplate": {
+      "title": "Default Filename Template",
+      "description": "Default filename template applied to all downloads. Can be overridden per download or per scheduled preset.",
+      "save": "Save Template",
+      "saved": "Saved!",
+      "emptyError": "Filename template cannot be empty",
+      "staticWarning": "Template contains no variables. Files with the same name may be overwritten. Consider adding {title} or {date}."
+    }
+  },
+  "scheduled": {
+    "modal": {
+      "filenameTemplateHint": "Leave empty to use the global default template. {title}, {id}, {type}, {resolution}, {duration} are deferred and use 'unknown' at trigger time."
+    }
+  },
   "templateEditor": {
     "variablesLabel": "Variables:",
     "exampleLabel": "Example",

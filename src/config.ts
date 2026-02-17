@@ -48,6 +48,9 @@ export interface AppConfig {
   enable_channel_bookmarks: boolean;
   metadata_refresh_interval_hours: number; // hours, range: 1-168
   video_cache_count: number; // range: 1-20
+
+  // Filename template settings
+  default_filename_template: string;
 }
 
 const defaultConfig: AppConfig = {
@@ -85,6 +88,7 @@ const defaultConfig: AppConfig = {
   enable_channel_bookmarks: false,
   metadata_refresh_interval_hours: 24,
   video_cache_count: 5,
+  default_filename_template: '[{type}] [{channel_name}] [{date}] {title}',
 };
 
 export class ConfigManager {

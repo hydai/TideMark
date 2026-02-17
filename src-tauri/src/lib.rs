@@ -1233,24 +1233,6 @@ fn quality_to_format(quality: &str, content_type: &str) -> String {
     }
 }
 
-/// Expand a filename template using stream metadata (legacy helper, kept for scheduled download trigger path).
-fn expand_filename_template_legacy(template: &str, channel_name: &str, platform: &str) -> String {
-    let now = Utc::now();
-    let date_str = now.format("%Y%m%d").to_string();
-    let datetime_str = now.format("%Y%m%d_%H%M%S").to_string();
-    let stream_type = match platform {
-        "youtube" => "YouTube直播",
-        "twitch"  => "Twitch直播",
-        _         => "直播",
-    };
-    template
-        .replace("{channel_name}", channel_name)
-        .replace("{date}", &date_str)
-        .replace("{datetime}", &datetime_str)
-        .replace("{type}", stream_type)
-        .replace("{title}", &format!("{}_direct_stream", channel_name))
-}
-
 /// Check available disk space on the given path.
 /// Returns `Ok(available_bytes)` or `Err`.
 #[cfg(unix)]
@@ -1676,11 +1658,40 @@ async fn start_scheduled_task(
     };
 
     let format_id = quality_to_format(&preset.quality, &preset.content_type);
-    let filename = expand_filename_template_legacy(
-        &preset.filename_template,
-        &channel_name,
-        &platform,
-    );
+
+    // Determine which template to use: preset template → global default (F10.5, F10.6)
+    let config = load_config(app.clone()).unwrap_or_default();
+    let template = if preset.filename_template.trim().is_empty() {
+        config.default_filename_template.clone()
+    } else {
+        preset.filename_template.clone()
+    };
+
+    // Phase 1 expansion: immediate variables known at trigger time (Pattern 7)
+    let now = Utc::now();
+    let date_str = now.format("%Y-%m-%d").to_string();
+    let datetime_str = now.format("%Y-%m-%d_%H%M%S").to_string();
+    let mut all_vars = HashMap::new();
+    all_vars.insert("channel".to_string(), channel_name.replace(' ', "_"));
+    all_vars.insert("channel_name".to_string(), channel_name.clone());
+    all_vars.insert("platform".to_string(), platform.clone());
+    all_vars.insert("date".to_string(), date_str);
+    all_vars.insert("datetime".to_string(), datetime_str);
+    // Phase 2 deferred vars: use "unknown" as fallback for any missing metadata (E10.6a)
+    all_vars.insert("title".to_string(), "unknown".to_string());
+    all_vars.insert("id".to_string(), sched_task.stream_id.clone());
+    all_vars.insert("type".to_string(), "stream".to_string());
+    all_vars.insert("resolution".to_string(), "unknown".to_string());
+    all_vars.insert("duration".to_string(), "unknown".to_string());
+
+    let expanded = expand_variables(&template, &all_vars);
+    let sanitized = sanitize_filename_str(&expanded);
+    let filename = if sanitized.is_empty() {
+        make_fallback_filename()
+    } else {
+        sanitized
+    };
+
     let ext = match preset.container_format.as_str() {
         "mp4" => "mp4",
         "mkv" => "mkv",
@@ -2149,9 +2160,17 @@ struct AppConfig {
     metadata_refresh_interval_hours: u32,
     #[serde(default = "default_video_cache_count")]
     video_cache_count: u32,
+
+    // Filename template settings
+    #[serde(default = "default_filename_template")]
+    default_filename_template: String,
 }
 
 // Default value functions for serde
+fn default_filename_template() -> String {
+    "[{type}] [{channel_name}] [{date}] {title}".to_string()
+}
+
 fn default_download_folder() -> String {
     "~/Tidemark/Downloads".to_string()
 }
@@ -2449,6 +2468,7 @@ impl Default for AppConfig {
             enable_channel_bookmarks: false,
             metadata_refresh_interval_hours: default_metadata_refresh_interval_hours(),
             video_cache_count: default_video_cache_count(),
+            default_filename_template: default_filename_template(),
         }
     }
 }

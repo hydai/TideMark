@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ConfigManager, AppConfig } from '../config';
-import { setLanguage, t } from '../i18n';
+import { setLanguage, t, resolveLocalizedMessage } from '../i18n';
 import { createTemplateEditor, type TemplateEditorInstance } from '../components/template-editor';
 import { PREVIEW_SAMPLE_VARS, validateTemplate } from '../filename-template';
 
@@ -369,7 +369,7 @@ function attachFilenameTemplateEventListeners(container: HTMLElement) {
     try {
       await validateTemplate(template);
     } catch (err) {
-      errorMsg.textContent = String(err);
+      errorMsg.textContent = resolveLocalizedMessage(String(err));
       errorMsg.style.display = 'block';
       return;
     }
@@ -1505,13 +1505,13 @@ function attachAsrApiKeysEventListeners(container: HTMLElement) {
         });
 
         if (result.success) {
-          let message = result.message;
+          let message = resolveLocalizedMessage(result.message);
           if (result.quota_info) {
-            message += ` (${result.quota_info})`;
+            message += ` (${resolveLocalizedMessage(result.quota_info)})`;
           }
           updateStatusElement(statusDiv, 'verified', `✓ ${message}`);
         } else {
-          updateStatusElement(statusDiv, 'error', result.message);
+          updateStatusElement(statusDiv, 'error', resolveLocalizedMessage(result.message));
         }
       } catch (error) {
         console.error(`${provider} API key test error:`, error);

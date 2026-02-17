@@ -705,7 +705,49 @@
   },
   "errors": {
     "languageLoadFailed": "言語ファイルの読み込みに失敗しました。繁体字中国語に切り替えます",
-    "languageLoadFailedTitle": "言語読み込みエラー"
+    "languageLoadFailedTitle": "言語読み込みエラー",
+    "download": {
+      "not_found": "動画が見つかりません",
+      "end_before_start": "終了時間は開始時間より後にしてください",
+      "time_exceeds_duration": "時間が動画の長さを超えています",
+      "not_livestream": "この動画はライブ配信ではありません",
+      "pause_failed": "ダウンロードの一時停止に失敗しました: {error}"
+    },
+    "asr": {
+      "invalid_api_key": "API Key が無効です。確認してもう一度お試しください",
+      "quota_exhausted": "API クォータが使い切られました。アカウント残高を確認してください",
+      "api_request_failed": "API リクエスト失敗: {status} - {body}",
+      "file_too_large": "ファイルが大きすぎます。自動分割を有効にするか、ローカルエンジンをお試しください",
+      "connection_failed": "接続に失敗しました: {error}",
+      "connection_success": "接続成功",
+      "quota_info": "使用済み {used} / {limit}"
+    },
+    "scheduled": {
+      "no_twitch_presets": "有効な Twitch チャンネルプリセットがありません",
+      "no_youtube_presets": "有効な YouTube チャンネルプリセットがありません",
+      "task_already_ended": "このタスクは既に終了しており、キャンセルできません",
+      "retry_only_failed": "失敗またはキャンセルされたタスクのみ再試行できます",
+      "invalid_output_dir": "出力フォルダが無効です",
+      "preset_not_found": "プリセットが見つかりません"
+    },
+    "channel": {
+      "unrecognized": "このチャンネルを認識できません"
+    },
+    "bookmarks": {
+      "duplicate": "このチャンネルはすでにブックマーク済みです"
+    },
+    "template": {
+      "unknown_variable": "認識できない変数: {{{variable}}}"
+    },
+    "file": {
+      "open_failed": "ファイルを開けませんでした: {error}",
+      "open_folder_failed": "フォルダを開けませんでした: {error}",
+      "app_data_dir_failed": "アプリデータディレクトリの取得に失敗しました: {error}",
+      "create_history_dir_failed": "履歴ディレクトリの作成に失敗しました: {error}",
+      "save_history_failed": "履歴ファイルの保存に失敗しました: {error}",
+      "clear_history_failed": "履歴の削除に失敗しました: {error}",
+      "read_failed": "ファイルの読み取りに失敗しました: {error}"
+    }
   },
   "templateEditor": {
     "variablesLabel": "変数：",

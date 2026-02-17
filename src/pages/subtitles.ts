@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
-import { t } from '../i18n';
+import { t, resolveLocalizedMessage } from '../i18n';
 
 interface AsrModel {
   engine: string;
@@ -619,7 +619,7 @@ async function installAsrEnvironment() {
     await checkAsrEnvironment();
   } catch (error) {
     console.error('Failed to install ASR environment:', error);
-    alert(t('subtitles.error.installFailed', { error: String(error) }));
+    alert(t('subtitles.error.installFailed', { error: resolveLocalizedMessage(String(error)) }));
   } finally {
     if (installProgress && installBtn) {
       installProgress.classList.add('hidden');
@@ -635,7 +635,7 @@ async function downloadModel(engine: string, model: string) {
     await checkAsrEnvironment();
   } catch (error) {
     console.error('Failed to download model:', error);
-    alert(t('subtitles.error.modelDownloadFailed', { error: String(error) }));
+    alert(t('subtitles.error.modelDownloadFailed', { error: resolveLocalizedMessage(String(error)) }));
   }
 }
 
@@ -648,7 +648,7 @@ async function deleteModel(engine: string, model: string) {
     await checkAsrEnvironment();
   } catch (error) {
     console.error('Failed to delete model:', error);
-    alert(t('subtitles.error.modelDeleteFailed', { error: String(error) }));
+    alert(t('subtitles.error.modelDeleteFailed', { error: resolveLocalizedMessage(String(error)) }));
   }
 }
 

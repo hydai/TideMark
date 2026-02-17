@@ -252,6 +252,14 @@ export function resolveLocalizedMessage(msg: string | LocalizedMessage | null | 
         // Not valid JSON — fall through to plain string return
       }
     }
+    // Try to resolve as an i18n key (e.g. "errors.download.not_found").
+    // Backend Err() returns now use dotted i18n keys instead of hardcoded Chinese.
+    if (/^[a-z][a-z0-9]*(\.[a-z_][a-z0-9_]*){1,}$/i.test(msg)) {
+      const resolved = t(msg);
+      if (resolved !== msg) {
+        return resolved;
+      }
+    }
     // Plain string — backward-compatible pass-through
     return msg;
   }

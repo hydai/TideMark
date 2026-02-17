@@ -246,7 +246,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
       currentUrl = url;
       displayVideoInfo(videoInfo);
     } catch (error) {
-      showError(String(error));
+      showError(resolveLocalizedMessage(String(error)));
     } finally {
       fetchBtn.disabled = false;
       fetchBtn.textContent = t('download.urlInput.fetchButton');
@@ -346,7 +346,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
       const taskId = await invoke<string>('start_download', { config });
       console.log('Download started:', taskId);
     } catch (error) {
-      showError(String(error));
+      showError(resolveLocalizedMessage(String(error)));
     }
   });
 
@@ -370,7 +370,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
       const taskId = await invoke<string>('start_recording', { config });
       console.log('Recording started:', taskId);
     } catch (error) {
-      showError(String(error));
+      showError(resolveLocalizedMessage(String(error)));
     }
   });
 

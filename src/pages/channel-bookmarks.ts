@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { ConfigManager } from '../config';
-import { t } from '../i18n';
+import { t, resolveLocalizedMessage } from '../i18n';
 
 interface ChannelBookmark {
   id: string;
@@ -545,8 +545,8 @@ function createAddForm(): HTMLElement {
       saveBtn.style.display = 'inline-block';
 
     } catch (error) {
-      const errStr = String(error);
-      const msg = errStr.includes('無法辨識') ? t('bookmarks.error.unrecognized') : t('bookmarks.error.resolveFailed', { error: errStr });
+      const errStr = resolveLocalizedMessage(String(error));
+      const msg = errStr === t('errors.channel.unrecognized') ? t('bookmarks.error.unrecognized') : t('bookmarks.error.resolveFailed', { error: errStr });
       showFormError('bookmark-url-error', msg);
       channelIdInput.value = '';
       channelNameInput.value = '';
@@ -604,8 +604,8 @@ function createAddForm(): HTMLElement {
         renderPage(containerEl, config.enable_scheduled_downloads);
       }
     } catch (error) {
-      const errStr = String(error);
-      if (errStr.includes('已在書籤中')) {
+      const errStr = resolveLocalizedMessage(String(error));
+      if (errStr === t('errors.bookmarks.duplicate')) {
         showFormError('bookmark-url-error', t('bookmarks.error.alreadyBookmarked'));
       } else {
         showFormError('bookmark-url-error', t('bookmarks.error.saveFailed', { error: errStr }));
@@ -982,7 +982,7 @@ function createBookmarkCard(
         renderPage(containerEl, config.enable_scheduled_downloads);
       }
     } catch (error) {
-      alert(t('bookmarks.error.deleteFailed', { error: String(error) }));
+      alert(t('bookmarks.error.deleteFailed', { error: resolveLocalizedMessage(String(error)) }));
       deleteBtn.disabled = false;
     }
   });

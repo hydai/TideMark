@@ -705,7 +705,49 @@
   },
   "errors": {
     "languageLoadFailed": "語言檔載入失敗，已切換回繁體中文",
-    "languageLoadFailedTitle": "語言載入失敗"
+    "languageLoadFailedTitle": "語言載入失敗",
+    "download": {
+      "not_found": "找不到該影片",
+      "end_before_start": "結束時間必須晚於開始時間",
+      "time_exceeds_duration": "時間超出影片長度",
+      "not_livestream": "此影片不是直播",
+      "pause_failed": "無法暫停下載: {error}"
+    },
+    "asr": {
+      "invalid_api_key": "API Key 無效，請檢查後重試",
+      "quota_exhausted": "API 額度已用盡，請檢查帳戶餘額",
+      "api_request_failed": "API 請求失敗: {status} - {body}",
+      "file_too_large": "檔案過大，請啟用自動分段或嘗試使用本地引擎",
+      "connection_failed": "連線失敗: {error}",
+      "connection_success": "連線成功",
+      "quota_info": "已用 {used} / {limit}"
+    },
+    "scheduled": {
+      "no_twitch_presets": "沒有已啟用的 Twitch 頻道預設",
+      "no_youtube_presets": "沒有已啟用的 YouTube 頻道預設",
+      "task_already_ended": "此任務已結束，無法取消",
+      "retry_only_failed": "只能重試失敗或已取消的任務",
+      "invalid_output_dir": "輸出資料夾無效",
+      "preset_not_found": "找不到此預設"
+    },
+    "channel": {
+      "unrecognized": "無法辨識此頻道"
+    },
+    "bookmarks": {
+      "duplicate": "此頻道已在書籤中"
+    },
+    "template": {
+      "unknown_variable": "無法辨識的變數：{{{variable}}}"
+    },
+    "file": {
+      "open_failed": "無法開啟檔案: {error}",
+      "open_folder_failed": "無法開啟資料夾: {error}",
+      "app_data_dir_failed": "無法取得應用程式資料目錄: {error}",
+      "create_history_dir_failed": "無法建立歷程目錄: {error}",
+      "save_history_failed": "無法儲存歷程檔案: {error}",
+      "clear_history_failed": "無法清空歷程: {error}",
+      "read_failed": "無法讀取檔案: {error}"
+    }
   },
   "templateEditor": {
     "variablesLabel": "可用變數：",

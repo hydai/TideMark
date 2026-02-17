@@ -705,7 +705,49 @@
   },
   "errors": {
     "languageLoadFailed": "Failed to load language file, falling back to Traditional Chinese",
-    "languageLoadFailedTitle": "Language Load Failed"
+    "languageLoadFailedTitle": "Language Load Failed",
+    "download": {
+      "not_found": "Video not found",
+      "end_before_start": "End time must be after start time",
+      "time_exceeds_duration": "Time exceeds video duration",
+      "not_livestream": "This video is not a live stream",
+      "pause_failed": "Failed to pause download: {error}"
+    },
+    "asr": {
+      "invalid_api_key": "API Key is invalid, please check and try again",
+      "quota_exhausted": "API quota exhausted, please check your account balance",
+      "api_request_failed": "API request failed: {status} - {body}",
+      "file_too_large": "File too large, please enable auto-segmentation or try a local engine",
+      "connection_failed": "Connection failed: {error}",
+      "connection_success": "Connection successful",
+      "quota_info": "Used {used} / {limit}"
+    },
+    "scheduled": {
+      "no_twitch_presets": "No enabled Twitch channel presets",
+      "no_youtube_presets": "No enabled YouTube channel presets",
+      "task_already_ended": "This task has already ended and cannot be cancelled",
+      "retry_only_failed": "Only failed or cancelled tasks can be retried",
+      "invalid_output_dir": "Output folder is invalid",
+      "preset_not_found": "Preset not found"
+    },
+    "channel": {
+      "unrecognized": "Cannot recognize this channel"
+    },
+    "bookmarks": {
+      "duplicate": "This channel is already bookmarked"
+    },
+    "template": {
+      "unknown_variable": "Unrecognized variable: {{{variable}}}"
+    },
+    "file": {
+      "open_failed": "Failed to open file: {error}",
+      "open_folder_failed": "Failed to open folder: {error}",
+      "app_data_dir_failed": "Failed to get app data directory: {error}",
+      "create_history_dir_failed": "Failed to create history directory: {error}",
+      "save_history_failed": "Failed to save history file: {error}",
+      "clear_history_failed": "Failed to clear history: {error}",
+      "read_failed": "Failed to read file: {error}"
+    }
   },
   "templateEditor": {
     "variablesLabel": "Variables:",

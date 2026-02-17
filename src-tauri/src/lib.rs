@@ -529,7 +529,7 @@ async fn start_twitch_pubsub(app: AppHandle) -> Result<(), String> {
 
     // Require at least one channel (preset or bookmark).
     if channel_map.is_empty() {
-        return Err("沒有已啟用的 Twitch 頻道預設".to_string());
+        return Err("errors.scheduled.no_twitch_presets".to_string());
     }
 
     // Collect all channel_ids for subscription topics.
@@ -1102,7 +1102,7 @@ async fn start_youtube_polling(app: AppHandle) -> Result<(), String> {
 
     // Require at least one channel (preset or bookmark).
     if all_channels.is_empty() {
-        return Err("沒有已啟用的 YouTube 頻道預設".to_string());
+        return Err("errors.scheduled.no_youtube_presets".to_string());
     }
 
     // Stop any existing polling first.
@@ -1924,10 +1924,10 @@ async fn cancel_scheduled_download(
     let dl_task_id = {
         let mut state = scheduled_download_state().lock().await;
         let task = state.queue.iter_mut().find(|t| t.id == task_id)
-            .ok_or_else(|| "找不到此排程任務".to_string())?;
+            .ok_or_else(|| "errors.scheduled.preset_not_found".to_string())?;
 
         if task.status == "completed" || task.status == "cancelled" {
-            return Err("此任務已結束，無法取消".to_string());
+            return Err("errors.scheduled.task_already_ended".to_string());
         }
 
         let dl_id = task.download_task_id.clone();
@@ -1970,10 +1970,10 @@ async fn retry_scheduled_download(
     let (new_task, tasks_clone) = {
         let mut state = scheduled_download_state().lock().await;
         let old = state.queue.iter_mut().find(|t| t.id == task_id)
-            .ok_or_else(|| "找不到此排程任務".to_string())?;
+            .ok_or_else(|| "errors.scheduled.preset_not_found".to_string())?;
 
         if old.status != "failed" && old.status != "cancelled" {
-            return Err("只能重試失敗或已取消的任務".to_string());
+            return Err("errors.scheduled.retry_only_failed".to_string());
         }
 
         let new_id = Uuid::new_v4().to_string();
@@ -3118,7 +3118,7 @@ async fn fetch_youtube_info(video_id: &str) -> Result<VideoInfo, String> {
             if !result.status.success() {
                 let stderr = String::from_utf8_lossy(&result.stderr);
                 if stderr.contains("Video unavailable") || stderr.contains("Private video") {
-                    return Err("找不到該影片".to_string());
+                    return Err("errors.download.not_found".to_string());
                 }
                 return Err(format!("yt-dlp error: {}", stderr));
             }
@@ -3337,16 +3337,16 @@ fn validate_time_range(config: &DownloadConfig) -> Result<(), String> {
         // Validate end > start
         if let (Some(start), Some(end)) = (start_seconds, end_seconds) {
             if end <= start {
-                return Err("結束時間必須晚於開始時間".to_string());
+                return Err("errors.download.end_before_start".to_string());
             }
 
             // Validate against video duration if available
             if let Some(duration) = config.video_info.duration {
                 if start > duration {
-                    return Err("時間超出影片長度".to_string());
+                    return Err("errors.download.time_exceeds_duration".to_string());
                 }
                 if end > duration {
-                    return Err("時間超出影片長度".to_string());
+                    return Err("errors.download.time_exceeds_duration".to_string());
                 }
             }
         }
@@ -3416,7 +3416,7 @@ async fn start_recording(
     tasks: tauri::State<'_, DownloadTasks>,
 ) -> Result<String, String> {
     if !config.video_info.is_live {
-        return Err("此影片不是直播".to_string());
+        return Err("errors.download.not_livestream".to_string());
     }
 
     let task_id = Uuid::new_v4().to_string();
@@ -3963,7 +3963,7 @@ async fn pause_download(task_id: String, tasks: tauri::State<'_, DownloadTasks>)
     if let Some(task) = tasks_guard.get_mut(&task_id) {
         if let Some(ref mut child) = task.process {
             // Kill the process
-            child.kill().map_err(|e| format!("無法暫停下載: {}", e))?;
+            child.kill().map_err(|e| serde_json::json!({"key": "errors.download.pause_failed", "params": {"error": e.to_string()}}).to_string())?;
             task.paused = true;
             task.progress.status = "paused".to_string();
         }
@@ -4079,7 +4079,7 @@ async fn open_file(path: String) -> Result<(), String> {
         Command::new("open")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("無法開啟檔案: {}", e))?;
+            .map_err(|e| serde_json::json!({"key": "errors.file.open_failed", "params": {"error": e.to_string()}}).to_string())?;
     }
 
     #[cfg(target_os = "windows")]
@@ -4087,7 +4087,7 @@ async fn open_file(path: String) -> Result<(), String> {
         Command::new("explorer")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("無法開啟檔案: {}", e))?;
+            .map_err(|e| serde_json::json!({"key": "errors.file.open_failed", "params": {"error": e.to_string()}}).to_string())?;
     }
 
     #[cfg(target_os = "linux")]
@@ -4095,7 +4095,7 @@ async fn open_file(path: String) -> Result<(), String> {
         Command::new("xdg-open")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("無法開啟檔案: {}", e))?;
+            .map_err(|e| serde_json::json!({"key": "errors.file.open_failed", "params": {"error": e.to_string()}}).to_string())?;
     }
 
     Ok(())
@@ -4111,7 +4111,7 @@ async fn show_in_folder(path: String) -> Result<(), String> {
         Command::new("open")
             .arg(folder)
             .spawn()
-            .map_err(|e| format!("無法開啟資料夾: {}", e))?;
+            .map_err(|e| serde_json::json!({"key": "errors.file.open_folder_failed", "params": {"error": e.to_string()}}).to_string())?;
     }
 
     #[cfg(target_os = "windows")]
@@ -4120,7 +4120,7 @@ async fn show_in_folder(path: String) -> Result<(), String> {
             .arg("/select,")
             .arg(&path)
             .spawn()
-            .map_err(|e| format!("無法開啟資料夾: {}", e))?;
+            .map_err(|e| serde_json::json!({"key": "errors.file.open_folder_failed", "params": {"error": e.to_string()}}).to_string())?;
     }
 
     #[cfg(target_os = "linux")]
@@ -4128,7 +4128,7 @@ async fn show_in_folder(path: String) -> Result<(), String> {
         Command::new("xdg-open")
             .arg(folder)
             .spawn()
-            .map_err(|e| format!("無法開啟資料夾: {}", e))?;
+            .map_err(|e| serde_json::json!({"key": "errors.file.open_folder_failed", "params": {"error": e.to_string()}}).to_string())?;
     }
 
     Ok(())
@@ -4138,11 +4138,11 @@ fn get_history_path(app: &AppHandle) -> Result<PathBuf, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("無法取得應用程式資料目錄: {}", e))?;
+        .map_err(|e| serde_json::json!({"key": "errors.file.app_data_dir_failed", "params": {"error": e.to_string()}}).to_string())?;
 
     let history_dir = app_data_dir.join("tidemark");
     fs::create_dir_all(&history_dir)
-        .map_err(|e| format!("無法建立歷程目錄: {}", e))?;
+        .map_err(|e| serde_json::json!({"key": "errors.file.create_history_dir_failed", "params": {"error": e.to_string()}}).to_string())?;
 
     Ok(history_dir.join("history.json"))
 }
@@ -4168,7 +4168,7 @@ async fn delete_history_entry(app: AppHandle, id: String) -> Result<(), String> 
 
     // Save updated history using versioned wrapper
     write_versioned_array(&history_path, &history)
-        .map_err(|e| format!("無法儲存歷程檔案: {}", e))?;
+        .map_err(|e| serde_json::json!({"key": "errors.file.save_history_failed", "params": {"error": e.to_string()}}).to_string())?;
 
     Ok(())
 }
@@ -4180,7 +4180,7 @@ async fn clear_all_history(app: AppHandle) -> Result<(), String> {
     // Write empty versioned wrapper
     let empty: Vec<DownloadHistoryEntry> = Vec::new();
     write_versioned_array(&history_path, &empty)
-        .map_err(|e| format!("無法清空歷程: {}", e))?;
+        .map_err(|e| serde_json::json!({"key": "errors.file.clear_history_failed", "params": {"error": e.to_string()}}).to_string())?;
 
     Ok(())
 }
@@ -4230,7 +4230,7 @@ async fn validate_twitch_token(token: String) -> Result<bool, String> {
 async fn import_youtube_cookies(path: String) -> Result<bool, String> {
     // Validate cookies.txt format (Netscape format)
     let content = fs::read_to_string(&path)
-        .map_err(|e| format!("無法讀取檔案: {}", e))?;
+        .map_err(|e| serde_json::json!({"key": "errors.file.read_failed", "params": {"error": e.to_string()}}).to_string())?;
 
     // Check for Netscape cookies.txt format
     // Should start with "# Netscape HTTP Cookie File" or have tab-separated cookie lines
@@ -4404,7 +4404,7 @@ async fn test_openai_api_key(api_key: String) -> Result<ApiKeyTestResult, String
             if response.status().is_success() {
                 Ok(ApiKeyTestResult {
                     success: true,
-                    message: "連線成功".to_string(),
+                    message: "errors.asr.connection_success".to_string(),
                     quota_info: None,
                 })
             } else {
@@ -4417,7 +4417,7 @@ async fn test_openai_api_key(api_key: String) -> Result<ApiKeyTestResult, String
         }
         Err(e) => Ok(ApiKeyTestResult {
             success: false,
-            message: format!("連線失敗: {}", e),
+            message: serde_json::json!({"key": "errors.asr.connection_failed", "params": {"error": e.to_string()}}).to_string(),
             quota_info: None,
         }),
     }
@@ -4436,7 +4436,7 @@ async fn test_groq_api_key(api_key: String) -> Result<ApiKeyTestResult, String> 
             if response.status().is_success() {
                 Ok(ApiKeyTestResult {
                     success: true,
-                    message: "連線成功".to_string(),
+                    message: "errors.asr.connection_success".to_string(),
                     quota_info: None,
                 })
             } else {
@@ -4449,7 +4449,7 @@ async fn test_groq_api_key(api_key: String) -> Result<ApiKeyTestResult, String> 
         }
         Err(e) => Ok(ApiKeyTestResult {
             success: false,
-            message: format!("連線失敗: {}", e),
+            message: serde_json::json!({"key": "errors.asr.connection_failed", "params": {"error": e.to_string()}}).to_string(),
             quota_info: None,
         }),
     }
@@ -4472,12 +4472,12 @@ async fn test_elevenlabs_api_key(api_key: String) -> Result<ApiKeyTestResult, St
                     .and_then(|subscription| {
                         let count = subscription.get("character_count")?;
                         let limit = subscription.get("character_limit")?;
-                        Some(format!("已用 {} / {}", count, limit))
+                        Some(serde_json::json!({"key": "errors.asr.quota_info", "params": {"used": count.to_string(), "limit": limit.to_string()}}).to_string())
                     });
 
                 Ok(ApiKeyTestResult {
                     success: true,
-                    message: "連線成功".to_string(),
+                    message: "errors.asr.connection_success".to_string(),
                     quota_info,
                 })
             } else {
@@ -4490,7 +4490,7 @@ async fn test_elevenlabs_api_key(api_key: String) -> Result<ApiKeyTestResult, St
         }
         Err(e) => Ok(ApiKeyTestResult {
             success: false,
-            message: format!("連線失敗: {}", e),
+            message: serde_json::json!({"key": "errors.asr.connection_failed", "params": {"error": e.to_string()}}).to_string(),
             quota_info: None,
         }),
     }
@@ -5045,11 +5045,11 @@ async fn upload_to_openai(
 
     if !status.is_success() {
         if status.as_u16() == 401 {
-            return Err("API Key 無效，請檢查後重試".to_string());
+            return Err("errors.asr.invalid_api_key".to_string());
         } else if status.as_u16() == 429 {
-            return Err("API 額度已用盡，請檢查帳戶餘額".to_string());
+            return Err("errors.asr.quota_exhausted".to_string());
         } else {
-            return Err(format!("API 請求失敗: {} - {}", status, response_text));
+            return Err(serde_json::json!({"key": "errors.asr.api_request_failed", "params": {"status": status.to_string(), "body": response_text}}).to_string());
         }
     }
 
@@ -5101,11 +5101,11 @@ async fn upload_to_groq(
 
     if !status.is_success() {
         if status.as_u16() == 401 {
-            return Err("API Key 無效，請檢查後重試".to_string());
+            return Err("errors.asr.invalid_api_key".to_string());
         } else if status.as_u16() == 429 {
-            return Err("API 額度已用盡，請檢查帳戶餘額".to_string());
+            return Err("errors.asr.quota_exhausted".to_string());
         } else {
-            return Err(format!("API 請求失敗: {} - {}", status, response_text));
+            return Err(serde_json::json!({"key": "errors.asr.api_request_failed", "params": {"status": status.to_string(), "body": response_text}}).to_string());
         }
     }
 
@@ -5156,11 +5156,11 @@ async fn upload_to_elevenlabs(
 
     if !status.is_success() {
         if status.as_u16() == 401 {
-            return Err("API Key 無效，請檢查後重試".to_string());
+            return Err("errors.asr.invalid_api_key".to_string());
         } else if status.as_u16() == 429 {
-            return Err("API 額度已用盡，請檢查帳戶餘額".to_string());
+            return Err("errors.asr.quota_exhausted".to_string());
         } else {
-            return Err(format!("API 請求失敗: {} - {}", status, response_text));
+            return Err(serde_json::json!({"key": "errors.asr.api_request_failed", "params": {"status": status.to_string(), "body": response_text}}).to_string());
         }
     }
 
@@ -5341,7 +5341,7 @@ async fn start_cloud_transcription(config: TranscriptionConfig, app: AppHandle) 
         let file_size_mb = metadata.len() / (1024 * 1024);
 
         if file_size_mb > max_size_mb {
-            return Err("檔案過大，請啟用自動分段或嘗試使用本地引擎".to_string());
+            return Err("errors.asr.file_too_large".to_string());
         }
 
         vec![config.input_file.clone()]
@@ -5790,7 +5790,7 @@ fn save_scheduled_preset(app: AppHandle, preset: DownloadPreset) -> Result<(), S
         };
         let output_path = Path::new(&expanded);
         if !output_path.exists() {
-            return Err("輸出資料夾無效".to_string());
+            return Err("errors.scheduled.invalid_output_dir".to_string());
         }
     }
 
@@ -5825,7 +5825,7 @@ fn toggle_preset_enabled(app: AppHandle, id: String, enabled: bool) -> Result<()
     if let Some(preset) = presets.iter_mut().find(|p| p.id == id) {
         preset.enabled = enabled;
     } else {
-        return Err("找不到此預設".to_string());
+        return Err("errors.scheduled.preset_not_found".to_string());
     }
 
     let presets_path = get_scheduled_presets_path(&app)?;
@@ -5855,7 +5855,7 @@ async fn resolve_channel_info(url: String) -> Result<ChannelInfo, String> {
     } else if twitch_ch.is_match(url) || url.contains("twitch.tv") {
         ("twitch", url.to_string())
     } else {
-        return Err("無法辨識此頻道".to_string());
+        return Err("errors.channel.unrecognized".to_string());
     };
 
     // Use yt-dlp to get channel metadata
@@ -5894,7 +5894,7 @@ async fn resolve_channel_info(url: String) -> Result<ChannelInfo, String> {
                         });
                     }
                 }
-                return Err("無法辨識此頻道".to_string());
+                return Err("errors.channel.unrecognized".to_string());
             }
 
             let json_str = stdout.trim();
@@ -5920,7 +5920,7 @@ async fn resolve_channel_info(url: String) -> Result<ChannelInfo, String> {
                     .to_string();
 
                 if channel_id.is_empty() {
-                    return Err("無法辨識此頻道".to_string());
+                    return Err("errors.channel.unrecognized".to_string());
                 }
 
                 Ok(ChannelInfo {
@@ -5953,7 +5953,7 @@ async fn resolve_channel_info(url: String) -> Result<ChannelInfo, String> {
                     if let Some(login) = url_login {
                         login
                     } else {
-                        return Err("無法辨識此頻道".to_string());
+                        return Err("errors.channel.unrecognized".to_string());
                     }
                 } else {
                     channel_id
@@ -6547,7 +6547,7 @@ fn save_channel_bookmark(app: AppHandle, bookmark: ChannelBookmark) -> Result<()
             b.channel_id == bookmark.channel_id && b.platform == bookmark.platform
         });
         if duplicate {
-            return Err("此頻道已在書籤中".to_string());
+            return Err("errors.bookmarks.duplicate".to_string());
         }
     }
 
@@ -7270,7 +7270,7 @@ fn validate_template(template: &str) -> Result<(), String> {
     let vars = parse_template_variables(template);
     for var in vars {
         if !KNOWN_VARIABLES.contains(&var.as_str()) {
-            return Err(format!("無法辨識的變數：{{{}}}", var));
+            return Err(serde_json::json!({"key": "errors.template.unknown_variable", "params": {"variable": var}}).to_string());
         }
     }
     Ok(())

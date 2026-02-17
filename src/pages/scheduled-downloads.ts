@@ -650,7 +650,7 @@ function createQueueTaskRow(
         await invoke('cancel_scheduled_download', { taskId: task.id });
         showToast(t('scheduled.toast.cancelled'));
       } catch (err) {
-        showToast(t('scheduled.error.cancelTaskFailed', { error: String(err) }));
+        showToast(t('scheduled.error.cancelTaskFailed', { error: resolveLocalizedMessage(String(err)) }));
         cancelBtn.disabled = false;
       }
     });
@@ -683,7 +683,7 @@ function createQueueTaskRow(
         await invoke('retry_scheduled_download', { taskId: task.id });
         showToast(t('scheduled.toast.requeued'));
       } catch (err) {
-        showToast(t('scheduled.error.retryFailed', { error: String(err) }));
+        showToast(t('scheduled.error.retryFailed', { error: resolveLocalizedMessage(String(err)) }));
         retryBtn.disabled = false;
       }
     });
@@ -741,7 +741,7 @@ function createMonitorStatusSection(): HTMLElement {
     } catch (error) {
       startBtn.disabled = false;
       startBtn.textContent = t('scheduled.monitoring.startTwitch');
-      alert(t('scheduled.error.startTwitchFailed', { error: String(error) }));
+      alert(t('scheduled.error.startTwitchFailed', { error: resolveLocalizedMessage(String(error)) }));
     }
   });
   twitchBtnRow.appendChild(startBtn);
@@ -760,7 +760,7 @@ function createMonitorStatusSection(): HTMLElement {
       updateMonitorStatusUI();
     } catch (error) {
       stopBtn.disabled = false;
-      alert(t('scheduled.error.stopTwitchFailed', { error: String(error) }));
+      alert(t('scheduled.error.stopTwitchFailed', { error: resolveLocalizedMessage(String(error)) }));
     }
   });
   twitchBtnRow.appendChild(stopBtn);
@@ -804,7 +804,7 @@ function createMonitorStatusSection(): HTMLElement {
     } catch (error) {
       ytStartBtn.disabled = false;
       ytStartBtn.textContent = t('scheduled.monitoring.startYoutube');
-      alert(t('scheduled.error.startYoutubeFailed', { error: String(error) }));
+      alert(t('scheduled.error.startYoutubeFailed', { error: resolveLocalizedMessage(String(error)) }));
     }
   });
   ytBtnRow.appendChild(ytStartBtn);
@@ -823,7 +823,7 @@ function createMonitorStatusSection(): HTMLElement {
       updateMonitorStatusUI();
     } catch (error) {
       ytStopBtn.disabled = false;
-      alert(t('scheduled.error.stopYoutubeFailed', { error: String(error) }));
+      alert(t('scheduled.error.stopYoutubeFailed', { error: resolveLocalizedMessage(String(error)) }));
     }
   });
   ytBtnRow.appendChild(ytStopBtn);
@@ -1002,7 +1002,7 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
       preset.enabled = !preset.enabled;
       if (containerEl) renderPage(containerEl);
     } catch (error) {
-      alert(t('scheduled.error.toggleFailed', { error: String(error) }));
+      alert(t('scheduled.error.toggleFailed', { error: resolveLocalizedMessage(String(error)) }));
     }
   });
 
@@ -1024,7 +1024,7 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
         presets = presets.filter(p => p.id !== id);
         if (containerEl) renderPage(containerEl);
       } catch (error) {
-        alert(t('scheduled.error.deletePresetFailed', { error: String(error) }));
+        alert(t('scheduled.error.deletePresetFailed', { error: resolveLocalizedMessage(String(error)) }));
       }
     }
   });
@@ -1334,8 +1334,8 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
       channelInfoPlatform.textContent = info.platform === 'youtube' ? 'YT' : 'TW';
 
     } catch (error) {
-      const errorMsg = String(error);
-      showError('url-error', errorMsg.includes('無法辨識') ? t('scheduled.error.unrecognized') : t('scheduled.error.resolveFailed', { error: errorMsg }));
+      const errorMsg = resolveLocalizedMessage(String(error));
+      showError('url-error', errorMsg === t('errors.channel.unrecognized') ? t('scheduled.error.unrecognized') : t('scheduled.error.resolveFailed', { error: errorMsg }));
       channelInfoDiv.style.display = 'none';
       channelIdInput.value = '';
       channelNameInput.value = '';
@@ -1413,7 +1413,7 @@ async function handleSavePreset(existingPreset: DownloadPreset | null) {
         await invoke('delete_scheduled_preset', { id: duplicate.id });
         presets = presets.filter(p => p.id !== duplicate.id);
       } catch (error) {
-        alert(t('scheduled.error.overwriteFailed', { error: String(error) }));
+        alert(t('scheduled.error.overwriteFailed', { error: resolveLocalizedMessage(String(error)) }));
         return;
       }
     }
@@ -1449,11 +1449,11 @@ async function handleSavePreset(existingPreset: DownloadPreset | null) {
 
     closePresetModal();
   } catch (error) {
-    const errStr = String(error);
-    if (errStr.includes('輸出資料夾無效')) {
+    const errStr = resolveLocalizedMessage(String(error));
+    if (errStr === t('errors.scheduled.invalid_output_dir')) {
       showError('output-dir-error', t('scheduled.error.invalidOutputDir'));
     } else {
-      alert(t('scheduled.error.savePresetFailed', { error: String(error) }));
+      alert(t('scheduled.error.savePresetFailed', { error: errStr }));
     }
   }
 }

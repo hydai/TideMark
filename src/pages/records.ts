@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import * as CloudSync from '../sync';
 import { navigateToDownload } from '../app';
 import { ConfigManager } from '../config';
-import { t } from '../i18n';
+import { t, resolveLocalizedMessage } from '../i18n';
 
 interface Record {
   id: string;
@@ -83,7 +83,7 @@ async function loadRecords() {
     currentData = await invoke<RecordsData>('get_local_records');
   } catch (error) {
     console.error('Failed to load records:', error);
-    alert(t('records.error.loadFailed', { error: String(error) }));
+    alert(t('records.error.loadFailed', { error: resolveLocalizedMessage(String(error)) }));
   }
 }
 
@@ -624,7 +624,7 @@ function attachEventListeners(container: HTMLElement) {
 
       renderPage(container);
     } catch (error) {
-      alert(t('records.error.createFolderFailed', { error: String(error) }));
+      alert(t('records.error.createFolderFailed', { error: resolveLocalizedMessage(String(error)) }));
     }
   });
 
@@ -689,7 +689,7 @@ function attachEventListeners(container: HTMLElement) {
             editingFolderId = null;
             renderPage(container);
           } catch (error) {
-            alert(t('records.error.renameFolderFailed', { error: String(error) }));
+            alert(t('records.error.renameFolderFailed', { error: resolveLocalizedMessage(String(error)) }));
           }
         }
       } else {
@@ -741,7 +741,7 @@ function attachEventListeners(container: HTMLElement) {
           }
           renderPage(container);
         } catch (error) {
-          alert(t('records.error.deleteFolderFailed', { error: String(error) }));
+          alert(t('records.error.deleteFolderFailed', { error: resolveLocalizedMessage(String(error)) }));
         }
       }
     });
@@ -800,7 +800,7 @@ function attachEventListeners(container: HTMLElement) {
 
           renderPage(container);
         } catch (error) {
-          alert(t('records.error.reorderFolderFailed', { error: String(error) }));
+          alert(t('records.error.reorderFolderFailed', { error: resolveLocalizedMessage(String(error)) }));
         }
       }
     });
@@ -867,7 +867,7 @@ function attachEventListeners(container: HTMLElement) {
             editingRecordId = null;
             renderPage(container);
           } catch (error) {
-            alert(t('records.error.updateRecordFailed', { error: String(error) }));
+            alert(t('records.error.updateRecordFailed', { error: resolveLocalizedMessage(String(error)) }));
           }
         }
       } else {
@@ -902,7 +902,7 @@ function attachEventListeners(container: HTMLElement) {
           currentData.records = currentData.records.filter(r => r.id !== recordId);
           renderPage(container);
         } catch (error) {
-          alert(t('records.error.deleteRecordFailed', { error: String(error) }));
+          alert(t('records.error.deleteRecordFailed', { error: resolveLocalizedMessage(String(error)) }));
         }
       }
     });
@@ -948,7 +948,7 @@ function attachEventListeners(container: HTMLElement) {
         });
       } catch (error) {
         console.error('Failed to prepare download:', error);
-        alert(t('records.error.cannotPrepareDownload', { error: String(error) }));
+        alert(t('records.error.cannotPrepareDownload', { error: resolveLocalizedMessage(String(error)) }));
       }
     });
   });

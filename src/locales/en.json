@@ -23,7 +23,7 @@
       "off": "Off",
       "enabled": "Enabled",
       "disabled": "Disabled",
-      "verified": "✓ Verified",
+      "verified": "\u2713 Verified",
       "unverified": "Not set",
       "validating": "Validating...",
       "error": "Error"
@@ -44,9 +44,471 @@
       "settings": "Settings"
     }
   },
-  "errors": {
-    "languageLoadFailed": "Failed to load language file, falling back to Traditional Chinese",
-    "languageLoadFailedTitle": "Language Load Failed"
+  "download": {
+    "title": "Download",
+    "urlInput": {
+      "placeholder": "Paste a YouTube or Twitch link...",
+      "fetchButton": "Paste & Fetch",
+      "fetching": "Fetching..."
+    },
+    "liveBadge": "LIVE",
+    "settings": {
+      "title": "Download Settings",
+      "quality": "Video Quality",
+      "qualityLoading": "Loading...",
+      "contentType": "Content Type",
+      "contentTypeVideoAudio": "Video + Audio",
+      "contentTypeVideoOnly": "Video Only",
+      "contentTypeAudioOnly": "Audio Only",
+      "videoCodec": "Video Codec",
+      "audioCodec": "Audio Codec",
+      "outputFilename": "Output Filename",
+      "outputFolder": "Output Folder",
+      "container": "Output Container Format",
+      "containerAuto": "Auto",
+      "timeRange": "Time Range (optional)",
+      "startTime": "Start Time (HH:MM:SS)",
+      "endTime": "End Time (HH:MM:SS)",
+      "timeRangeHelp": "Supported formats: HH:MM:SS (e.g. 01:30:45), MM:SS (e.g. 90:45), seconds (e.g. 5445)",
+      "timeSeparator": "to",
+      "noQuality": "No available quality"
+    },
+    "actions": {
+      "startDownload": "Start Download",
+      "startDownloadVodOnly": "Start Download (VOD only)",
+      "recordStream": "Record Stream",
+      "folderSelect": "Select"
+    },
+    "progress": {
+      "title": "Download Progress",
+      "empty": "No active downloads",
+      "eta": "{eta} remaining",
+      "recordedDuration": "Recorded Duration",
+      "fileSize": "File Size",
+      "bitrate": "Stream Bitrate",
+      "liveRecording": "\ud83d\udd34 Live Recording",
+      "postProcessing": "Post-processing...",
+      "streamInterrupted": "Stream interrupted \u2014 recorded content preserved",
+      "actions": {
+        "pause": "Pause",
+        "resume": "Resume",
+        "cancel": "Cancel",
+        "stopRecording": "Stop Recording",
+        "openFile": "Open File",
+        "showFolder": "Show Folder",
+        "sendToTranscription": "Send to Transcription"
+      }
+    },
+    "status": {
+      "queued": "Queued",
+      "downloading": "Downloading",
+      "recording": "Recording",
+      "processing": "Processing",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "paused": "Paused",
+      "stream_interrupted": "Stream Interrupted"
+    },
+    "duration": {
+      "live": "LIVE",
+      "unknown": "Duration unknown"
+    },
+    "error": {
+      "enterUrl": "Please enter a URL",
+      "invalidTime": "Please enter a valid time format",
+      "endBeforeStart": "End time must be after start time",
+      "timeExceedsDuration": "Time exceeds video duration"
+    }
+  },
+  "history": {
+    "title": "History",
+    "search": {
+      "placeholder": "Search by title or channel..."
+    },
+    "filter": {
+      "allStatus": "All Status",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "sort": {
+      "byDate": "Sort by Date",
+      "byTitle": "Sort by Title",
+      "byChannel": "Sort by Channel"
+    },
+    "actions": {
+      "clearAll": "Clear All",
+      "openFile": "Open File",
+      "showInFolder": "Show in Folder",
+      "deleteRecord": "Delete Record"
+    },
+    "metadata": {
+      "downloadDate": "Download Date:",
+      "fileSize": "File Size:",
+      "resolution": "Resolution:",
+      "filePath": "File Path:"
+    },
+    "status": {
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled",
+      "streamInterrupted": "Stream Interrupted"
+    },
+    "empty": "No download history",
+    "loading": "Loading...",
+    "error": {
+      "loadFailed": "Failed to load history",
+      "openFileFailed": "Failed to open file",
+      "showFolderFailed": "Failed to open folder",
+      "deleteEntryFailed": "Failed to delete record",
+      "clearAllFailed": "Failed to clear history",
+      "fileNotFound": "File not found",
+      "errorMessage": "Error message:"
+    }
+  },
+  "subtitles": {
+    "title": "Subtitles",
+    "fileInput": {
+      "dropzoneText": "Drop media files here",
+      "dropzoneHint": "or",
+      "selectFile": "Select File",
+      "clearFile": "Clear File"
+    },
+    "engine": {
+      "title": "ASR Engine",
+      "localEngine": "Local Engine",
+      "cloudEngine": "Cloud Engine (BYOK)"
+    },
+    "config": {
+      "language": "Language",
+      "languageAuto": "Auto Detect",
+      "languageZh": "Chinese",
+      "languageEn": "English",
+      "languageJa": "Japanese",
+      "languageKo": "Korean",
+      "modelSize": "Model Size",
+      "modelTiny": "Tiny (fastest, low accuracy)",
+      "modelBase": "Base",
+      "modelSmall": "Small",
+      "modelMedium": "Medium (recommended)",
+      "modelLarge": "Large (most accurate, slow)",
+      "hardwareMode": "Hardware Mode",
+      "hardwareAuto": "Auto",
+      "hardwareGpu": "GPU",
+      "hardwareCpu": "CPU",
+      "outputFormat": "Output Format",
+      "outputSrt": "SRT Subtitles",
+      "outputTxt": "Plain Text",
+      "outputBoth": "Both Formats",
+      "enableVad": "Enable VAD (Voice Activity Detection)",
+      "enableDemucs": "Enable Demucs (Vocal Separation)",
+      "enablePunctuation": "Enable Punctuation",
+      "traditionalChinese": "Traditional Chinese Output",
+      "maxSeconds": "Max Seconds",
+      "maxChars": "Max Characters",
+      "modelQwen": "Model",
+      "autoSegment": "Auto Segment (large files)",
+      "apiKeyWarning": "Please set up the API Key in Settings first",
+      "apiKeyWarningProvider": "Please set up the {provider} API Key in Settings first"
+    },
+    "environment": {
+      "title": "Environment Status",
+      "python": "Python Environment",
+      "gpu": "GPU Availability",
+      "install": "Install Environment",
+      "installing": "Installing...",
+      "installedModels": "Installed Models",
+      "noModels": "No installed models",
+      "checkFailed": "Check failed",
+      "checking": "Checking...",
+      "pythonInstalled": "\u2713 Installed ({version})",
+      "pythonNotInstalled": "\u2717 Not installed",
+      "gpuAvailable": "\u2713 Available ({name})",
+      "gpuNotAvailable": "\u2717 Not available (using CPU)",
+      "downloadModel": "Download",
+      "deleteModel": "Delete",
+      "downloading": "Downloading {progress}%"
+    },
+    "progress": {
+      "title": "Transcription Progress",
+      "preparing": "Preparing...",
+      "transcribing": "Transcribing...",
+      "uploading": "Uploading ({current}/{total})...",
+      "segments": "{current} / {total} segments"
+    },
+    "result": {
+      "title": "Transcription Complete",
+      "outputFile": "Output file: {path}",
+      "openFile": "Open File",
+      "showInFolder": "Show in Folder"
+    },
+    "actions": {
+      "start": "Start Transcription",
+      "cancel": "Cancel Transcription",
+      "inProgress": "Transcribing..."
+    },
+    "error": {
+      "noFileSelected": "Please select a file first",
+      "cannotReadFile": "Cannot read file info",
+      "cannotOpenFile": "Cannot open file",
+      "cannotOpenFolder": "Cannot open folder",
+      "installFailed": "Environment installation failed: {error}",
+      "installSuccess": "Environment installed successfully!",
+      "modelDownloadStarted": "Model download started",
+      "modelDownloadFailed": "Model download failed: {error}",
+      "modelDeleted": "Model deleted",
+      "modelDeleteFailed": "Model deletion failed: {error}",
+      "confirmDeleteModel": "Delete this model?",
+      "transcriptionFailed": "Transcription failed: {error}",
+      "transcriptionComplete": "Transcription complete!"
+    }
+  },
+  "records": {
+    "sidebar": {
+      "folders": "Folders",
+      "allRecords": "All Records",
+      "uncategorized": "Uncategorized",
+      "newFolder": "New Folder",
+      "folderNamePlaceholder": "New folder name"
+    },
+    "search": {
+      "placeholder": "Search by title, topic or channel..."
+    },
+    "empty": "No records",
+    "sync": {
+      "localMode": "Local Mode (not synced)",
+      "loginWithGoogle": "Login with Google",
+      "logout": "Logout",
+      "status": {
+        "synced": "Synced",
+        "syncing": "Syncing...",
+        "error": "Sync Error",
+        "offline": "Offline"
+      }
+    },
+    "actions": {
+      "download": "Download Clip",
+      "openVod": "Go to VOD",
+      "deleteRecord": "Delete Record",
+      "deleteFolder": "Delete Folder"
+    },
+    "currentFolder": {
+      "allRecords": "All Records",
+      "uncategorized": "Uncategorized",
+      "default": "Records"
+    },
+    "error": {
+      "loadFailed": "Failed to load records: {error}",
+      "createFolderFailed": "Failed to create folder: {error}",
+      "renameFolderFailed": "Failed to rename folder: {error}",
+      "deleteFolderFailed": "Failed to delete folder: {error}",
+      "reorderFolderFailed": "Failed to reorder folders: {error}",
+      "updateRecordFailed": "Failed to update record: {error}",
+      "deleteRecordFailed": "Failed to delete record: {error}",
+      "cannotParseUrl": "Cannot parse the URL of this record",
+      "cannotPrepareDownload": "Cannot prepare download: {error}"
+    },
+    "confirm": {
+      "deleteFolder": "Delete folder \"{name}\"? Records will be moved to \"Uncategorized\".",
+      "deleteRecord": "Delete record \"{title}\"?",
+      "logout": "Are you sure you want to log out? Local data will be kept but will no longer sync to cloud."
+    }
+  },
+  "bookmarks": {
+    "title": "Channel Bookmarks",
+    "add": "Add Bookmark",
+    "empty": "No channel bookmarks yet",
+    "scheduledBanner": "Enable scheduled downloads for live stream status",
+    "urlInput": {
+      "placeholder": "https://twitch.tv/channelname or https://youtube.com/@handle",
+      "resolve": "Resolve",
+      "resolving": "Resolving..."
+    },
+    "modal": {
+      "saveButton": "Add Bookmark",
+      "cancelButton": "Cancel"
+    },
+    "card": {
+      "liveBadge": "LIVE",
+      "presetEnabled": "\ud83d\udce1 Schedule Active",
+      "presetEnabledTitle": "This channel has a scheduled download preset (active)",
+      "presetDisabled": "\ud83d\udce1 Schedule Disabled",
+      "presetDisabledTitle": "This channel has a scheduled download preset (disabled)",
+      "notesPlaceholder": "Enter notes...",
+      "notesEmpty": "(Click to add notes)",
+      "subscribers": "Subscribers",
+      "followers": "Followers",
+      "streamedAgo": "Streamed {time}",
+      "refresh": "Refresh channel info",
+      "delete": "Delete",
+      "deleteTitle": "Delete this bookmark",
+      "expand": "Expand",
+      "expandTitle": "Expand recent videos list",
+      "collapse": "Collapse",
+      "collapseTitle": "Collapse video list",
+      "downloadVod": "Download Latest VOD",
+      "downloadVodTitle": "Fetch the latest VOD from this channel and go to download",
+      "downloadVodLoading": "Fetching\u2026",
+      "addScheduled": "Add Scheduled Preset",
+      "addScheduledTitle": "Add a scheduled download preset for this channel",
+      "openChannel": "Open Channel",
+      "openChannelTitle": "Open this channel page in browser",
+      "copyUrl": "Copy URL",
+      "copyUrlTitle": "Copy channel URL to clipboard",
+      "dragHandle": "Drag to reorder"
+    },
+    "videos": {
+      "loading": "Loading\u2026",
+      "loadError": "Failed to load video list, please try again later",
+      "retry": "Retry",
+      "empty": "This channel has no public videos"
+    },
+    "relativeTime": {
+      "justNow": "just now",
+      "minutesAgo": "{minutes} minutes ago",
+      "hoursAgo": "{hours} hours ago",
+      "daysAgo": "{days} days ago",
+      "weeksAgo": "{weeks} weeks ago",
+      "monthsAgo": "{months} months ago",
+      "yearsAgo": "{years} years ago"
+    },
+    "viewCount": {
+      "millions": "{count}M views",
+      "thousands": "{count}K views",
+      "exact": "{count} views"
+    },
+    "error": {
+      "resolveFailed": "Resolve failed: {error}",
+      "unrecognized": "Cannot recognize this channel",
+      "enterUrl": "Please enter a channel URL",
+      "resolveFirst": "Please resolve the channel URL first",
+      "alreadyBookmarked": "This channel is already bookmarked",
+      "saveFailed": "Save failed: {error}",
+      "deleteFailed": "Delete failed: {error}",
+      "noVod": "This channel has no downloadable VOD",
+      "getVodFailed": "Failed to fetch latest VOD, please try again later",
+      "copyFailed": "Copy failed, please copy manually"
+    },
+    "toast": {
+      "copied": "Copied",
+      "hasPreset": "This channel already has a scheduled preset. Go to view?"
+    },
+    "confirm": {
+      "deleteBookmark": "Delete bookmark for channel \"{name}\"?"
+    }
+  },
+  "scheduled": {
+    "title": "Scheduled Downloads",
+    "addPreset": "Add Preset",
+    "queue": {
+      "title": "Download Queue",
+      "empty": "No scheduled download tasks.",
+      "running": "Downloading",
+      "queued": "Queued",
+      "completed": "Completed",
+      "failed": "Failed / Cancelled",
+      "cancelTask": "Cancel",
+      "openFile": "Open File",
+      "retry": "Retry",
+      "queuePosition": "Queue position #{position}",
+      "triggeredAt": "Triggered at {time}",
+      "completedAt": "Completed at {time}",
+      "alreadyCompleted": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "monitoring": {
+      "title": "Monitoring Status",
+      "startTwitch": "Start Twitch Monitoring",
+      "stopTwitch": "Stop Twitch Monitoring",
+      "connecting": "Connecting\u2026",
+      "stopped": "Monitoring stopped",
+      "startYoutube": "Start YouTube Polling",
+      "stopYoutube": "Stop YouTube Polling",
+      "starting": "Starting\u2026",
+      "pollingActive": "Polling",
+      "pollingStopped": "Stopped"
+    },
+    "twitchStatus": {
+      "connected": "Twitch: Connected ({count} channels)",
+      "disconnected": "Twitch: Disconnected"
+    },
+    "youtubeStatus": {
+      "polling": "YouTube: Polling ({count} channels, every {interval}s)",
+      "stopped": "YouTube: Stopped"
+    },
+    "preset": {
+      "title": "Channel Presets",
+      "empty": "No presets. Click \"Add Preset\" to add a channel.",
+      "headers": {
+        "channelName": "Channel Name",
+        "platform": "Platform",
+        "status": "Status",
+        "enabled": "Enabled",
+        "lastTriggered": "Last Triggered",
+        "totalDownloads": "Total Downloads",
+        "actions": "Actions"
+      },
+      "liveBadge": "LIVE",
+      "offlineBadge": "Offline",
+      "neverTriggered": "Never",
+      "bookmarkTitle": "Go to channel bookmark",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "modal": {
+      "addTitle": "Add Channel Preset",
+      "editTitle": "Edit Channel Preset",
+      "urlLabel": "Channel URL",
+      "urlPlaceholder": "https://twitch.tv/channelname or https://youtube.com/@handle",
+      "resolve": "Resolve",
+      "resolving": "Resolving...",
+      "quality": "Quality",
+      "qualityBest": "Best",
+      "contentType": "Content Type",
+      "contentTypeVideoAudio": "Video + Audio",
+      "contentTypeAudioOnly": "Audio Only",
+      "outputDir": "Output Folder",
+      "folderSelect": "Select",
+      "filenameTemplate": "Filename Template",
+      "filenameTemplateHint": "Leave empty to use the global default template. {title}, {id}, {type}, {resolution}, {duration} are deferred and use 'unknown' at trigger time.",
+      "container": "Container Format",
+      "cancel": "Cancel",
+      "save": "Save",
+      "overwriteConfirm": "This channel already has a preset. Overwrite?"
+    },
+    "task": {
+      "recordingStats": "Recording {duration} | {bitrate} | {speed}",
+      "recordingWaiting": "Recording..."
+    },
+    "error": {
+      "toggleFailed": "Failed to toggle state: {error}",
+      "deletePreset": "Delete preset for channel \"{name}\"?",
+      "deletePresetFailed": "Failed to delete preset: {error}",
+      "overwriteFailed": "Failed to overwrite preset: {error}",
+      "savePresetFailed": "Failed to save preset: {error}",
+      "invalidOutputDir": "Output folder is invalid",
+      "enterUrl": "Please enter a channel URL",
+      "resolveFirst": "Please resolve the channel URL first",
+      "selectFolder": "Please select an output folder",
+      "resolveFailed": "Resolve failed: {error}",
+      "unrecognized": "Cannot recognize this channel",
+      "startTwitchFailed": "Failed to start Twitch monitoring: {error}",
+      "stopTwitchFailed": "Failed to stop Twitch monitoring: {error}",
+      "startYoutubeFailed": "Failed to start YouTube polling: {error}",
+      "stopYoutubeFailed": "Failed to stop YouTube polling: {error}",
+      "cancelTaskFailed": "Failed to cancel: {error}",
+      "retryFailed": "Retry failed: {error}"
+    },
+    "toast": {
+      "cancelled": "Scheduled download cancelled",
+      "requeued": "Re-added to queue",
+      "triggered": "Scheduled download triggered: {channelName} ({platform})",
+      "completed": "Scheduled download completed: {channelName} ({sizeMb} MB)",
+      "failed": "Scheduled download failed: {channelName} \u2014 {error}",
+      "diskFull": "Disk space low ({freeMb} MB remaining), pausing scheduled download: {channelName}",
+      "youtubeError": "YouTube channel error ({channelId}): {error}"
+    }
   },
   "migration": {
     "configCorrupted": "Config file corrupted, reset to default values",
@@ -55,6 +517,22 @@
     "historyCorrupted": "Download history file corrupted, reset to empty"
   },
   "settings": {
+    "title": "Settings",
+    "general": {
+      "title": "General",
+      "downloadFolder": "Default Download Folder",
+      "downloadFolderDesc": "Default output path for downloaded files",
+      "subtitleFolder": "Default Subtitle Output Folder",
+      "subtitleFolderDesc": "Default output path for transcribed subtitles",
+      "launchOnStartup": "Launch on Startup",
+      "launchOnStartupDesc": "Run automatically when system starts",
+      "desktopNotifications": "Desktop Notifications",
+      "desktopNotificationsDesc": "Send system notifications when download/transcription completes",
+      "language": "Language",
+      "languageDesc": "Interface language",
+      "timezone": "Timezone",
+      "timezoneDesc": "Timezone for displayed times"
+    },
     "filenameTemplate": {
       "title": "Default Filename Template",
       "description": "Default filename template applied to all downloads. Can be overridden per download or per scheduled preset.",
@@ -62,12 +540,172 @@
       "saved": "Saved!",
       "emptyError": "Filename template cannot be empty",
       "staticWarning": "Template contains no variables. Files with the same name may be overwritten. Consider adding {title} or {date}."
+    },
+    "download": {
+      "title": "Download Settings",
+      "enableTranscoder": "Enable Transcoder",
+      "enableTranscoderDesc": "Transcode after download",
+      "videoQuality": "Default Video Quality",
+      "videoQualityDesc": "Default quality selection",
+      "outputContainer": "Output Container",
+      "outputContainerDesc": "Default output format",
+      "maxConcurrent": "Max Concurrent Downloads",
+      "maxConcurrentDesc": "Number of parallel download tasks",
+      "autoRetry": "Auto Retry",
+      "autoRetryDesc": "Automatically retry failed downloads",
+      "maxRetryCount": "Max Retry Count",
+      "maxRetryCountDesc": "Maximum number of automatic retries",
+      "speedLimit": "Download Speed Limit (MB/s)",
+      "speedLimitDesc": "0 = Unlimited",
+      "showCodecOptions": "Show Codec Options",
+      "showCodecOptionsDesc": "Show advanced codec fields on download page"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "theme": "Theme",
+      "themeDark": "Dark",
+      "themeLight": "Light",
+      "themeSystem": "Follow System",
+      "animation": "Animations",
+      "animationDesc": "Enable/disable UI animations",
+      "compact": "Compact Mode",
+      "compactDesc": "Reduce UI spacing"
+    },
+    "records": {
+      "title": "Records Settings",
+      "showAllRecords": "Show \"All Records\" Folder",
+      "showAllRecordsDesc": "Show the virtual folder that merges all folders",
+      "showUncategorized": "Show \"Uncategorized\" Folder",
+      "showUncategorizedDesc": "Show the uncategorized folder",
+      "clipBeforeOffset": "Clip Before Offset (seconds)",
+      "clipBeforeOffsetDesc": "Offset start time backwards when downloading from a record",
+      "clipAfterOffset": "Clip After Offset (seconds)",
+      "clipAfterOffsetDesc": "Offset end time forwards when downloading from a record"
+    },
+    "asr": {
+      "title": "ASR API Keys (BYOK)",
+      "description": "For cloud ASR transcription services. API Keys are stored securely on your device.",
+      "placeholder": "Enter API Key",
+      "show": "Show",
+      "hide": "Hide",
+      "test": "Test Connection",
+      "save": "Save",
+      "remove": "Remove",
+      "testing": "Testing...",
+      "enterApiKey": "Please enter an API Key",
+      "saved": "\u2713 Saved",
+      "set": "\u2713 Set",
+      "notSet": "Not set",
+      "removed": "Removed",
+      "saveFailed": "Save failed",
+      "removeFailed": "Remove failed",
+      "loadFailed": "Load failed",
+      "testFailed": "Test failed, please try again later",
+      "confirmRemove": "Remove {provider} API Key?",
+      "groqDescription": "Groq Whisper API (ultra-fast)"
+    },
+    "scheduled": {
+      "title": "Scheduled Download Settings",
+      "enable": "Enable Scheduled Downloads",
+      "enableDesc": "The \"Scheduled\" tab will appear in the sidebar when enabled",
+      "closeBehavior": "Close Behavior",
+      "closeBehaviorDesc": "Behavior when closing the window",
+      "closeBehaviorMinimize": "Minimize to System Tray",
+      "closeBehaviorQuit": "Quit Completely",
+      "pollingInterval": "YouTube Polling Interval (seconds)",
+      "pollingIntervalDesc": "Interval for checking if channels are live, range 30\u2013300 seconds",
+      "triggerCooldown": "Trigger Cooldown (seconds)",
+      "triggerCooldownDesc": "Cooldown period after a channel triggers a download",
+      "notification": "Scheduled Download Notification",
+      "notificationDesc": "Notification method when scheduled download starts",
+      "notificationOs": "OS Notification",
+      "notificationToast": "In-App Toast",
+      "notificationBoth": "Both",
+      "notificationNone": "Off",
+      "notificationPermissionDenied": "System notification permission denied. Please allow Tidemark to send notifications in system settings, otherwise only Toast notifications will work.",
+      "autoTranscribe": "Auto Transcribe Scheduled Downloads",
+      "autoTranscribeDesc": "Automatically transcribe after scheduled download completes",
+      "autoStart": "Auto Start Monitoring on Launch",
+      "autoStartDesc": "Automatically start monitoring when the app launches"
+    },
+    "channelBookmarks": {
+      "title": "Channel Bookmark Settings",
+      "enable": "Enable Channel Bookmarks",
+      "enableDesc": "The \"Bookmarks\" tab will appear in the sidebar when enabled",
+      "metadataRefresh": "Metadata Auto-Refresh Interval (hours)",
+      "metadataRefreshDesc": "Interval for auto-refreshing channel metadata, range 1\u2013168 hours",
+      "videoCache": "Video Cache Count",
+      "videoCacheDesc": "Number of latest videos cached per channel, range 1\u201320"
+    },
+    "gpu": {
+      "title": "GPU Acceleration",
+      "hardwareEncoding": "Download Hardware Encoding",
+      "hardwareEncodingDesc": "Enable GPU hardware encoding to accelerate downloads",
+      "encoder": "Hardware Encoder",
+      "encoderDesc": "Select hardware encoder (auto-detect or manual)",
+      "encoderAuto": "Auto",
+      "frontendAcceleration": "Frontend Rendering Acceleration",
+      "frontendAccelerationDesc": "Tauri WebView hardware acceleration (restart required after change)",
+      "restartConfirm": "Frontend rendering acceleration changed. Restart required to take effect. Restart now?",
+      "restartManual": "Please restart the app manually to apply the change."
+    },
+    "auth": {
+      "title": "Platform Authentication",
+      "twitchTitle": "Twitch OAuth Token",
+      "twitchDesc": "For downloading subscriber-only content. To obtain: log in to Twitch, open browser developer tools, find the Authorization token in request headers under the Network tab.",
+      "twitchPlaceholder": "Enter Twitch OAuth Token",
+      "twitchValidate": "Validate",
+      "twitchValidated": "\u2713 Validated",
+      "twitchNotSet": "Not set",
+      "twitchValidating": "Validating...",
+      "twitchEnterToken": "Please enter a token",
+      "twitchInvalid": "Token is invalid, please obtain a new one",
+      "twitchValidationFailed": "Validation failed, please try again later",
+      "youtubeTitle": "YouTube Cookies",
+      "youtubeDesc": "For downloading membership or private videos. Export cookies.txt (Netscape format) using a browser extension.",
+      "youtubePlaceholder": "No cookies.txt imported",
+      "youtubeImport": "Import cookies.txt",
+      "youtubeImported": "\u2713 Imported",
+      "youtubeNotImported": "Not imported",
+      "youtubeValidating": "Validating...",
+      "youtubeInvalidFormat": "Cookies file format is incorrect, please use Netscape format",
+      "youtubeImportFailed": "Import failed, please try again later",
+      "clearAll": "Clear All Authentication",
+      "clearConfirm": "Clear all authentication info?",
+      "clearFailed": "Clear failed"
+    },
+    "about": {
+      "title": "About Tidemark",
+      "version": "Version Info",
+      "versionLoading": "Loading...",
+      "versionText": "Version: {version}",
+      "versionUnknown": "Version: Unknown",
+      "checkUpdate": "Check for Updates",
+      "checkingUpdate": "Checking...",
+      "updateAvailable": "New version available: {version}",
+      "upToDate": "\u2713 Already up to date",
+      "updateCheckFailed": "Failed to check for updates",
+      "goToDownload": "Go to download page?",
+      "toolVersions": "Core Tool Versions",
+      "toolVersionsLoading": "Loading...",
+      "toolVersionsError": "Cannot get tool version info",
+      "ytdlpNotInstalled": "yt-dlp: Not installed",
+      "ffmpegNotInstalled": "FFmpeg: Not installed",
+      "license": "Open Source License",
+      "licenseDesc": "Tidemark is open-source software, licensed under MIT License.",
+      "viewLicense": "View License",
+      "licenseOpenFailed": "Cannot open license page"
     }
   },
-  "scheduled": {
-    "modal": {
-      "filenameTemplateHint": "Leave empty to use the global default template. {title}, {id}, {type}, {resolution}, {duration} are deferred and use 'unknown' at trigger time."
-    }
+  "tray": {
+    "show": "Show Tidemark",
+    "hide": "Hide Tidemark",
+    "monitoring": "Monitoring scheduled...",
+    "quit": "Quit"
+  },
+  "errors": {
+    "languageLoadFailed": "Failed to load language file, falling back to Traditional Chinese",
+    "languageLoadFailedTitle": "Language Load Failed"
   },
   "templateEditor": {
     "variablesLabel": "Variables:",

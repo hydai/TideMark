@@ -6,9 +6,10 @@ import { renderSettingsPage as renderSettingsPageNew } from './pages/settings';
 import { renderSubtitlesPage } from './pages/subtitles';
 import { renderRecordsPage } from './pages/records';
 import { renderScheduledDownloadsPage } from './pages/scheduled-downloads';
+import { renderChannelBookmarksPage } from './pages/channel-bookmarks';
 import { listen } from '@tauri-apps/api/event';
 
-type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings' | 'scheduled-downloads';
+type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings' | 'scheduled-downloads' | 'channel-bookmarks';
 
 let currentTab: TabId = 'download';
 
@@ -47,11 +48,15 @@ export function renderApp() {
     { id: 'subtitles', icon: '💬', label: '字幕' },
     { id: 'records', icon: '🔖', label: '記錄' },
     { id: 'scheduled-downloads', icon: '🗓️', label: '排程下載', conditional: true },
+    { id: 'channel-bookmarks', icon: '🔔', label: '頻道書籤', conditional: true },
     { id: 'settings', icon: '⚙️', label: '設定' },
   ];
 
   tabs.forEach(tab => {
     if (tab.conditional && tab.id === 'scheduled-downloads' && !config.enable_scheduled_downloads) {
+      return;
+    }
+    if (tab.conditional && tab.id === 'channel-bookmarks' && !config.enable_channel_bookmarks) {
       return;
     }
 
@@ -201,6 +206,9 @@ function switchTab(tabId: TabId) {
       break;
     case 'scheduled-downloads':
       renderScheduledDownloadsPage(container);
+      break;
+    case 'channel-bookmarks':
+      renderChannelBookmarksPage(container);
       break;
     case 'settings':
       renderSettingsPageNew(container);

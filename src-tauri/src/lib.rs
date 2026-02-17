@@ -1928,6 +1928,14 @@ struct AppConfig {
     scheduled_download_auto_transcribe: bool,
     #[serde(default = "default_true")]
     auto_start_monitoring: bool,
+
+    // Channel bookmarks settings
+    #[serde(default)]
+    enable_channel_bookmarks: bool,
+    #[serde(default = "default_metadata_refresh_interval_hours")]
+    metadata_refresh_interval_hours: u32,
+    #[serde(default = "default_video_cache_count")]
+    video_cache_count: u32,
 }
 
 // Default value functions for serde
@@ -1993,6 +2001,14 @@ fn default_trigger_cooldown() -> u32 {
 
 fn default_scheduled_download_notification() -> String {
     "both".to_string()
+}
+
+fn default_metadata_refresh_interval_hours() -> u32 {
+    24
+}
+
+fn default_video_cache_count() -> u32 {
+    5
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -2171,6 +2187,9 @@ impl Default for AppConfig {
             scheduled_download_notification: default_scheduled_download_notification(),
             scheduled_download_auto_transcribe: false,
             auto_start_monitoring: true,
+            enable_channel_bookmarks: false,
+            metadata_refresh_interval_hours: default_metadata_refresh_interval_hours(),
+            video_cache_count: default_video_cache_count(),
         }
     }
 }

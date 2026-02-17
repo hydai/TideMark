@@ -68,6 +68,10 @@ function renderSettingsUI(container: HTMLElement) {
   const scheduledSection = createScheduledDownloadsSection();
   page.appendChild(scheduledSection);
 
+  // Channel bookmarks settings section
+  const channelBookmarksSection = createChannelBookmarksSection();
+  page.appendChild(channelBookmarksSection);
+
   // GPU acceleration section
   const gpuSection = createGpuSection();
   page.appendChild(gpuSection);
@@ -89,6 +93,7 @@ function renderSettingsUI(container: HTMLElement) {
   attachRecordsEventListeners(container);
   attachAsrApiKeysEventListeners(container);
   attachScheduledDownloadsEventListeners(container);
+  attachChannelBookmarksEventListeners(container);
   attachGpuEventListeners(container);
   attachAuthEventListeners(container);
   attachAboutEventListeners(container);
@@ -568,6 +573,49 @@ function createScheduledDownloadsSection(): HTMLElement {
     currentConfig?.auto_start_monitoring !== false
   );
   section.appendChild(autoStartGroup);
+
+  return section;
+}
+
+function createChannelBookmarksSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'settings-section';
+
+  const sectionTitle = document.createElement('h2');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = '頻道書籤設定';
+  section.appendChild(sectionTitle);
+
+  // Enable channel bookmarks
+  const enableGroup = createToggleGroup(
+    'enable-channel-bookmarks',
+    '啟用頻道書籤',
+    '啟用後側邊欄將顯示「頻道書籤」頁籤',
+    currentConfig?.enable_channel_bookmarks || false
+  );
+  section.appendChild(enableGroup);
+
+  // Metadata refresh interval
+  const metadataRefreshGroup = createNumberInputGroup(
+    'metadata-refresh-interval-hours',
+    '元資料自動刷新間隔（小時）',
+    '自動刷新頻道元資料的間隔，範圍 1–168 小時',
+    currentConfig?.metadata_refresh_interval_hours ?? 24,
+    1,
+    168
+  );
+  section.appendChild(metadataRefreshGroup);
+
+  // Video cache count
+  const videoCacheGroup = createNumberInputGroup(
+    'video-cache-count',
+    '影片快取數量',
+    '每個頻道快取的最新影片數量，範圍 1–20',
+    currentConfig?.video_cache_count ?? 5,
+    1,
+    20
+  );
+  section.appendChild(videoCacheGroup);
 
   return section;
 }
@@ -1217,6 +1265,17 @@ function attachScheduledDownloadsEventListeners(container: HTMLElement) {
 
   // Auto start monitoring
   attachToggleListener(container, 'auto-start-monitoring', 'auto_start_monitoring');
+}
+
+function attachChannelBookmarksEventListeners(container: HTMLElement) {
+  // Enable channel bookmarks
+  attachToggleListener(container, 'enable-channel-bookmarks', 'enable_channel_bookmarks');
+
+  // Metadata refresh interval
+  attachNumberInputListener(container, 'metadata-refresh-interval-hours', 'metadata_refresh_interval_hours');
+
+  // Video cache count
+  attachNumberInputListener(container, 'video-cache-count', 'video_cache_count');
 }
 
 function attachGpuEventListeners(container: HTMLElement) {

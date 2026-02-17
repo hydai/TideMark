@@ -43,6 +43,11 @@ export interface AppConfig {
   scheduled_download_notification: string; // 'os' | 'toast' | 'both' | 'none'
   scheduled_download_auto_transcribe: boolean;
   auto_start_monitoring: boolean;
+
+  // Channel bookmarks settings
+  enable_channel_bookmarks: boolean;
+  metadata_refresh_interval_hours: number; // hours, range: 1-168
+  video_cache_count: number; // range: 1-20
 }
 
 const defaultConfig: AppConfig = {
@@ -77,6 +82,9 @@ const defaultConfig: AppConfig = {
   scheduled_download_notification: 'both',
   scheduled_download_auto_transcribe: false,
   auto_start_monitoring: true,
+  enable_channel_bookmarks: false,
+  metadata_refresh_interval_hours: 24,
+  video_cache_count: 5,
 };
 
 export class ConfigManager {

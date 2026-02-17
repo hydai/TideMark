@@ -1215,8 +1215,8 @@ fn quality_to_format(quality: &str, content_type: &str) -> String {
     }
 }
 
-/// Expand a filename template using stream metadata.
-fn expand_filename_template(template: &str, channel_name: &str, platform: &str) -> String {
+/// Expand a filename template using stream metadata (legacy helper, kept for scheduled download trigger path).
+fn expand_filename_template_legacy(template: &str, channel_name: &str, platform: &str) -> String {
     let now = Utc::now();
     let date_str = now.format("%Y%m%d").to_string();
     let datetime_str = now.format("%Y%m%d_%H%M%S").to_string();
@@ -1634,7 +1634,7 @@ async fn start_scheduled_task(
     };
 
     let format_id = quality_to_format(&preset.quality, &preset.content_type);
-    let filename = expand_filename_template(
+    let filename = expand_filename_template_legacy(
         &preset.filename_template,
         &channel_name,
         &platform,
@@ -6763,6 +6763,272 @@ fn set_monitoring_paused(paused: bool) {
     MONITORING_PAUSED.store(paused, Ordering::SeqCst);
 }
 
+// ── Filename Template Engine (F10.1, F10.4) ─────────────────────────────────
+
+/// All recognized template variables.
+const KNOWN_VARIABLES: &[&str] = &[
+    "title", "id", "channel", "channel_name", "platform",
+    "type", "date", "datetime", "resolution", "duration",
+];
+
+/// Variables expanded in Phase 1 (immediate, known at trigger time).
+const PHASE1_VARIABLES: &[&str] = &[
+    "channel", "channel_name", "platform", "date", "datetime",
+];
+
+/// Windows-reserved filenames (case-insensitive).
+const WINDOWS_RESERVED: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+/// Maximum filename length (excluding extension), in bytes.
+const MAX_FILENAME_BYTES: usize = 200;
+
+/// Path length limits by OS.
+#[cfg(target_os = "windows")]
+const MAX_PATH_BYTES: usize = 260;
+#[cfg(not(target_os = "windows"))]
+const MAX_PATH_BYTES: usize = 4096;
+
+/// Parse a template string and return all variable names found within `{...}`.
+fn parse_template_variables(template: &str) -> Vec<String> {
+    let re = Regex::new(r"\{([^{}]+)\}").unwrap();
+    re.captures_iter(template)
+        .map(|c| c[1].to_string())
+        .collect()
+}
+
+/// Validate that all `{variable}` references in the template are recognized.
+/// Returns Ok(()) if valid, Err with a message listing the first unrecognized variable.
+fn validate_template(template: &str) -> Result<(), String> {
+    let vars = parse_template_variables(template);
+    for var in vars {
+        if !KNOWN_VARIABLES.contains(&var.as_str()) {
+            return Err(format!("無法辨識的變數：{{{}}}", var));
+        }
+    }
+    Ok(())
+}
+
+/// Expand all `{variable}` placeholders found in `variables` map within the template.
+/// Variables not present in the map are left as-is (as `{variable}`).
+fn expand_variables(template: &str, variables: &HashMap<String, String>) -> String {
+    let re = Regex::new(r"\{([^{}]+)\}").unwrap();
+    re.replace_all(template, |caps: &regex::Captures| {
+        let key = &caps[1];
+        if let Some(val) = variables.get(key) {
+            val.clone()
+        } else {
+            caps[0].to_string()
+        }
+    })
+    .to_string()
+}
+
+/// Apply filename sanitization rules (F10.4).
+/// - Replace forbidden characters with `_`
+/// - Remove control characters (ASCII 0-31, DEL 127)
+/// - Strip leading/trailing spaces and dots
+/// - Normalize consecutive spaces to single space
+/// - Truncate to MAX_FILENAME_BYTES bytes
+/// - Prefix Windows reserved names with `_`
+/// - If empty after sanitization, return empty string (caller handles fallback)
+fn sanitize_filename_str(filename: &str) -> String {
+    // Step 1: Remove control characters (ASCII 0-31 and DEL 127)
+    let s: String = filename
+        .chars()
+        .filter(|&c| !(c as u32 <= 31 || c as u32 == 127))
+        .collect();
+
+    // Step 2: Replace forbidden characters with `_`
+    let forbidden = &['/', '\\', ':', '*', '?', '"', '<', '>', '|'];
+    let s: String = s
+        .chars()
+        .map(|c| if forbidden.contains(&c) { '_' } else { c })
+        .collect();
+
+    // Step 3: Normalize consecutive spaces to single space
+    let re_spaces = Regex::new(r" {2,}").unwrap();
+    let s = re_spaces.replace_all(&s, " ").to_string();
+
+    // Step 4: Strip leading/trailing spaces and dots
+    let s = s.trim_matches(|c| c == ' ' || c == '.').to_string();
+
+    // Step 5: Truncate to MAX_FILENAME_BYTES bytes (UTF-8 aware)
+    let s = if s.len() > MAX_FILENAME_BYTES {
+        // Truncate on char boundary
+        let mut byte_count = 0;
+        let mut result = String::new();
+        for ch in s.chars() {
+            let ch_len = ch.len_utf8();
+            if byte_count + ch_len > MAX_FILENAME_BYTES {
+                break;
+            }
+            byte_count += ch_len;
+            result.push(ch);
+        }
+        // Strip any trailing spaces/dots left by truncation
+        result.trim_matches(|c| c == ' ' || c == '.').to_string()
+    } else {
+        s
+    };
+
+    // Step 6: Prefix Windows reserved names with `_`
+    let upper = s.to_uppercase();
+    if WINDOWS_RESERVED.contains(&upper.as_str()) {
+        return format!("_{}", s);
+    }
+
+    s
+}
+
+/// Generate a fallback filename using untitled + current datetime.
+fn make_fallback_filename() -> String {
+    let now = Utc::now();
+    format!("untitled_{}", now.format("%Y-%m-%d_%H%M%S"))
+}
+
+// ── Tauri Commands ────────────────────────────────────────────────────────────
+
+/// Validate that a filename template contains only recognized variables.
+/// Returns Ok(()) for valid templates, Err with "無法辨識的變數：{var}" for invalid ones.
+#[tauri::command]
+fn validate_filename_template(template: String) -> Result<(), String> {
+    validate_template(&template)
+}
+
+/// Fully expand all variables in the template.
+/// Variables with no value in `variables` map remain as `{variable}`.
+/// If the result (after sanitization) is empty, returns a fallback `untitled_{datetime}`.
+#[tauri::command]
+fn expand_filename_template(template: String, variables: HashMap<String, String>) -> String {
+    let expanded = expand_variables(&template, &variables);
+    let sanitized = sanitize_filename_str(&expanded);
+    if sanitized.is_empty() {
+        make_fallback_filename()
+    } else {
+        sanitized
+    }
+}
+
+/// Phase 1 expansion: only expand immediate variables.
+/// Deferred variables ({title}, {id}, {type}, {resolution}, {duration}) remain as placeholders.
+#[tauri::command]
+fn expand_filename_template_phase1(template: String, variables: HashMap<String, String>) -> String {
+    // Only allow phase-1 variables through; mask deferred ones temporarily
+    let phase1_vars: HashMap<String, String> = variables
+        .into_iter()
+        .filter(|(k, _)| PHASE1_VARIABLES.contains(&k.as_str()))
+        .collect();
+    expand_variables(&template, &phase1_vars)
+}
+
+/// Apply filename sanitization to a given filename string.
+#[tauri::command]
+fn sanitize_filename(filename: String) -> String {
+    let sanitized = sanitize_filename_str(&filename);
+    if sanitized.is_empty() {
+        make_fallback_filename()
+    } else {
+        sanitized
+    }
+}
+
+/// Sanitize filename, resolve conflicts in output_dir, and check path length.
+/// Returns the full resolved path (output_dir + final_filename + "." + extension).
+#[tauri::command]
+fn resolve_output_filename(output_dir: String, filename: String, extension: String) -> String {
+    let sanitized = sanitize_filename_str(&filename);
+    let base = if sanitized.is_empty() {
+        make_fallback_filename()
+    } else {
+        sanitized
+    };
+
+    let ext_suffix = if extension.is_empty() {
+        String::new()
+    } else if extension.starts_with('.') {
+        extension.clone()
+    } else {
+        format!(".{}", extension)
+    };
+
+    let dir_path = Path::new(&output_dir);
+
+    // Try the base name first, then (1), (2), ... up to 99
+    let mut candidate_name = format!("{}{}", base, ext_suffix);
+    let mut candidate_path = dir_path.join(&candidate_name);
+
+    if !candidate_path.exists() {
+        // Check path length
+        let full_path_str = candidate_path.to_string_lossy().to_string();
+        if full_path_str.len() <= MAX_PATH_BYTES {
+            return full_path_str;
+        }
+        // Path too long: truncate filename
+        let excess = full_path_str.len() - MAX_PATH_BYTES;
+        let base_bytes = base.len();
+        if excess < base_bytes {
+            let new_base = &base[..base_bytes - excess];
+            let new_base = new_base.trim_matches(|c| c == ' ' || c == '.').to_string();
+            candidate_name = format!("{}{}", new_base, ext_suffix);
+            candidate_path = dir_path.join(&candidate_name);
+        }
+        return candidate_path.to_string_lossy().to_string();
+    }
+
+    // Try numbered suffixes (1)...(99)
+    for i in 1u32..=99 {
+        candidate_name = format!("{} ({}){}", base, i, ext_suffix);
+        candidate_path = dir_path.join(&candidate_name);
+        if !candidate_path.exists() {
+            let full_path_str = candidate_path.to_string_lossy().to_string();
+            if full_path_str.len() <= MAX_PATH_BYTES {
+                return full_path_str;
+            }
+            // Path too long: truncate and return
+            let excess = full_path_str.len() - MAX_PATH_BYTES;
+            let base_bytes = base.len();
+            if excess < base_bytes {
+                let new_base = &base[..base_bytes - excess];
+                let new_base = new_base.trim_matches(|c| c == ' ' || c == '.').to_string();
+                candidate_name = format!("{} ({}){}", new_base, i, ext_suffix);
+                candidate_path = dir_path.join(&candidate_name);
+            }
+            return candidate_path.to_string_lossy().to_string();
+        }
+    }
+
+    // Exceeded 99 conflicts: use {filename}_{datetime}.{ext} format (E10.4c)
+    let now = Utc::now();
+    let datetime_str = now.format("%Y-%m-%d_%H%M%S").to_string();
+    candidate_name = format!("{}_{}{}", base, datetime_str, ext_suffix);
+    candidate_path = dir_path.join(&candidate_name);
+
+    let full_path_str = candidate_path.to_string_lossy().to_string();
+    if full_path_str.len() <= MAX_PATH_BYTES {
+        return full_path_str;
+    }
+    // Still too long: truncate further
+    let excess = full_path_str.len() - MAX_PATH_BYTES;
+    let base_bytes = base.len();
+    if excess < base_bytes {
+        let new_base = &base[..base_bytes - excess];
+        let new_base = new_base.trim_matches(|c| c == ' ' || c == '.').to_string();
+        candidate_name = format!("{}_{}{}", new_base, datetime_str, ext_suffix);
+        candidate_path = dir_path.join(&candidate_name);
+    }
+    candidate_path.to_string_lossy().to_string()
+}
+
+/// Escape `%` to `%%` in an expanded filename for safe use with yt-dlp's -o parameter (E10.6b).
+#[tauri::command]
+fn escape_filename_for_ytdlp(filename: String) -> String {
+    filename.replace('%', "%%")
+}
+
 /// Update tray menu item text for pause/resume state.
 /// Returns ("暫停所有監聽", false) when monitoring is active,
 /// or ("恢復所有監聽", false) when monitoring is paused.
@@ -6988,7 +7254,13 @@ pub fn run() {
             get_channel_metadata_cache,
             save_channel_metadata_cache,
             fetch_channel_metadata,
-            fetch_channel_videos
+            fetch_channel_videos,
+            validate_filename_template,
+            expand_filename_template,
+            expand_filename_template_phase1,
+            sanitize_filename,
+            resolve_output_filename,
+            escape_filename_for_ytdlp
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

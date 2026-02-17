@@ -39,10 +39,655 @@
       "history": "履歴",
       "subtitles": "字幕",
       "records": "レコード",
-      "scheduled": "スケジュール",
-      "bookmarks": "ブックマーク",
+      "scheduled": "スケジュールダウンロード",
+      "bookmarks": "チャンネルブックマーク",
       "settings": "設定"
     }
+  },
+  "download": {
+    "title": "ダウンロード",
+    "urlInput": {
+      "placeholder": "YouTube または Twitch のリンクを貼り付け...",
+      "fetchButton": "貼り付けて取得",
+      "fetching": "取得中..."
+    },
+    "liveBadge": "配信中",
+    "settings": {
+      "title": "ダウンロード設定",
+      "quality": "動画品質",
+      "qualityLoading": "読み込み中...",
+      "contentType": "コンテンツタイプ",
+      "contentTypeVideoAudio": "動画＋音声",
+      "contentTypeVideoOnly": "動画のみ",
+      "contentTypeAudioOnly": "音声のみ",
+      "videoCodec": "動画コーデック",
+      "audioCodec": "音声コーデック",
+      "outputFilename": "出力ファイル名",
+      "outputFolder": "出力フォルダ",
+      "container": "出力コンテナ形式",
+      "containerAuto": "自動",
+      "timeRange": "時間範囲（任意）",
+      "startTime": "開始時間 (HH:MM:SS)",
+      "endTime": "終了時間 (HH:MM:SS)",
+      "timeRangeHelp": "対応形式: HH:MM:SS（例: 01:30:45）、MM:SS（例: 90:45）、秒数（例: 5445）",
+      "timeSeparator": "〜",
+      "noQuality": "利用可能な画質がありません"
+    },
+    "actions": {
+      "startDownload": "ダウンロード開始",
+      "startDownloadVodOnly": "ダウンロード開始（VODのみ）",
+      "recordStream": "配信を録画",
+      "folderSelect": "選択"
+    },
+    "progress": {
+      "title": "ダウンロード進捗",
+      "empty": "現在ダウンロード中のタスクはありません",
+      "eta": "残り {eta}",
+      "recordedDuration": "録画時間",
+      "fileSize": "ファイルサイズ",
+      "bitrate": "ストリームビットレート",
+      "liveRecording": "🔴 ライブ録画",
+      "postProcessing": "後処理中...",
+      "streamInterrupted": "ストリームが中断されました — 録画済みのデータは保持されています",
+      "actions": {
+        "pause": "一時停止",
+        "resume": "再開",
+        "cancel": "キャンセル",
+        "stopRecording": "録画停止",
+        "openFile": "ファイルを開く",
+        "showFolder": "フォルダで表示",
+        "sendToTranscription": "文字起こしへ送る"
+      }
+    },
+    "status": {
+      "queued": "待機中",
+      "downloading": "ダウンロード中",
+      "recording": "録画中",
+      "processing": "処理中",
+      "completed": "完了",
+      "failed": "失敗",
+      "cancelled": "キャンセル済み",
+      "paused": "一時停止中",
+      "stream_interrupted": "ストリーム中断"
+    },
+    "duration": {
+      "live": "配信中",
+      "unknown": "時間不明"
+    },
+    "error": {
+      "enterUrl": "URLを入力してください",
+      "invalidTime": "有効な時間形式を入力してください",
+      "endBeforeStart": "終了時間は開始時間より後にしてください",
+      "timeExceedsDuration": "時間が動画の長さを超えています"
+    }
+  },
+  "history": {
+    "title": "履歴",
+    "search": {
+      "placeholder": "タイトルまたはチャンネルで検索..."
+    },
+    "filter": {
+      "allStatus": "すべての状態",
+      "completed": "完了",
+      "failed": "失敗",
+      "cancelled": "キャンセル済み"
+    },
+    "sort": {
+      "byDate": "日付順",
+      "byTitle": "タイトル順",
+      "byChannel": "チャンネル順"
+    },
+    "actions": {
+      "clearAll": "すべて削除",
+      "openFile": "ファイルを開く",
+      "showInFolder": "フォルダで表示",
+      "deleteRecord": "レコードを削除"
+    },
+    "metadata": {
+      "downloadDate": "ダウンロード日:",
+      "fileSize": "ファイルサイズ:",
+      "resolution": "解像度:",
+      "filePath": "ファイルパス:"
+    },
+    "status": {
+      "completed": "完了",
+      "failed": "失敗",
+      "cancelled": "キャンセル済み",
+      "streamInterrupted": "ストリーム中断"
+    },
+    "empty": "ダウンロード履歴はありません",
+    "loading": "読み込み中...",
+    "error": {
+      "loadFailed": "履歴の読み込みに失敗しました",
+      "openFileFailed": "ファイルを開けませんでした",
+      "showFolderFailed": "フォルダを開けませんでした",
+      "deleteEntryFailed": "レコードの削除に失敗しました",
+      "clearAllFailed": "履歴の削除に失敗しました",
+      "fileNotFound": "ファイルが見つかりません",
+      "errorMessage": "エラー:"
+    }
+  },
+  "subtitles": {
+    "title": "字幕",
+    "fileInput": {
+      "dropzoneText": "メディアファイルをここにドロップ",
+      "dropzoneHint": "または",
+      "selectFile": "ファイルを選択",
+      "clearFile": "ファイルをクリア"
+    },
+    "engine": {
+      "title": "ASR エンジン",
+      "localEngine": "ローカルエンジン",
+      "cloudEngine": "クラウドエンジン（BYOK）"
+    },
+    "config": {
+      "language": "言語",
+      "languageAuto": "自動検出",
+      "languageZh": "中国語",
+      "languageEn": "英語",
+      "languageJa": "日本語",
+      "languageKo": "韓国語",
+      "modelSize": "モデルサイズ",
+      "modelTiny": "Tiny（最速、精度低め）",
+      "modelBase": "Base",
+      "modelSmall": "Small",
+      "modelMedium": "Medium（推奨）",
+      "modelLarge": "Large（最高精度、低速）",
+      "hardwareMode": "ハードウェアモード",
+      "hardwareAuto": "自動",
+      "hardwareGpu": "GPU",
+      "hardwareCpu": "CPU",
+      "outputFormat": "出力形式",
+      "outputSrt": "SRT 字幕",
+      "outputTxt": "テキスト",
+      "outputBoth": "両形式",
+      "enableVad": "VAD を有効にする（音声活動検出）",
+      "enableDemucs": "Demucs を有効にする（ボーカル分離）",
+      "enablePunctuation": "句読点を有効にする",
+      "traditionalChinese": "繁体字中国語出力",
+      "maxSeconds": "最大秒数",
+      "maxChars": "最大文字数",
+      "modelQwen": "モデル",
+      "autoSegment": "自動分割（大きいファイル）",
+      "apiKeyWarning": "先に設定ページで API Key を設定してください",
+      "apiKeyWarningProvider": "先に設定ページで {provider} の API Key を設定してください"
+    },
+    "environment": {
+      "title": "環境状態",
+      "python": "Python 環境",
+      "gpu": "GPU 利用可能性",
+      "install": "環境をインストール",
+      "installing": "インストール中...",
+      "installedModels": "インストール済みモデル",
+      "noModels": "インストール済みモデルなし",
+      "checkFailed": "チェック失敗",
+      "checking": "確認中...",
+      "pythonInstalled": "✓ インストール済み（{version}）",
+      "pythonNotInstalled": "✗ 未インストール",
+      "gpuAvailable": "✓ 利用可能（{name}）",
+      "gpuNotAvailable": "✗ 利用不可（CPU使用）",
+      "downloadModel": "ダウンロード",
+      "deleteModel": "削除",
+      "downloading": "ダウンロード中 {progress}%"
+    },
+    "progress": {
+      "title": "文字起こし進捗",
+      "preparing": "準備中...",
+      "transcribing": "文字起こし中...",
+      "uploading": "アップロード中（{current}/{total}）...",
+      "segments": "{current} / {total} セグメント"
+    },
+    "result": {
+      "title": "文字起こし完了",
+      "outputFile": "出力ファイル: {path}",
+      "openFile": "ファイルを開く",
+      "showInFolder": "フォルダで表示"
+    },
+    "actions": {
+      "start": "文字起こし開始",
+      "cancel": "文字起こしをキャンセル",
+      "inProgress": "文字起こし中..."
+    },
+    "error": {
+      "noFileSelected": "先にファイルを選択してください",
+      "cannotReadFile": "ファイル情報を読み取れません",
+      "cannotOpenFile": "ファイルを開けません",
+      "cannotOpenFolder": "フォルダを開けません",
+      "installFailed": "環境インストールに失敗しました: {error}",
+      "installSuccess": "環境のインストールが完了しました！",
+      "modelDownloadStarted": "モデルのダウンロードを開始しました",
+      "modelDownloadFailed": "モデルのダウンロードに失敗しました: {error}",
+      "modelDeleted": "モデルを削除しました",
+      "modelDeleteFailed": "モデルの削除に失敗しました: {error}",
+      "confirmDeleteModel": "このモデルを削除しますか？",
+      "transcriptionFailed": "文字起こしに失敗しました: {error}",
+      "transcriptionComplete": "文字起こしが完了しました！"
+    }
+  },
+  "records": {
+    "sidebar": {
+      "folders": "フォルダ",
+      "allRecords": "すべてのレコード",
+      "uncategorized": "未分類",
+      "newFolder": "新しいフォルダ",
+      "folderNamePlaceholder": "新しいフォルダ名"
+    },
+    "search": {
+      "placeholder": "タイトル、トピック、またはチャンネルで検索..."
+    },
+    "empty": "レコードはありません",
+    "default_topic": "トピックなし",
+    "sync": {
+      "localMode": "ローカルモード（未同期）",
+      "loginWithGoogle": "Login with Google",
+      "logout": "ログアウト",
+      "status": {
+        "synced": "同期済み",
+        "syncing": "同期中...",
+        "error": "同期エラー",
+        "offline": "オフライン"
+      }
+    },
+    "actions": {
+      "download": "クリップをダウンロード",
+      "openVod": "VOD を開く",
+      "deleteRecord": "レコードを削除",
+      "deleteFolder": "フォルダを削除"
+    },
+    "currentFolder": {
+      "allRecords": "すべてのレコード",
+      "uncategorized": "未分類",
+      "default": "レコード"
+    },
+    "error": {
+      "loadFailed": "レコードの読み込みに失敗しました: {error}",
+      "createFolderFailed": "フォルダの作成に失敗しました: {error}",
+      "renameFolderFailed": "フォルダの名前変更に失敗しました: {error}",
+      "deleteFolderFailed": "フォルダの削除に失敗しました: {error}",
+      "reorderFolderFailed": "フォルダの並び替えに失敗しました: {error}",
+      "updateRecordFailed": "レコードの更新に失敗しました: {error}",
+      "deleteRecordFailed": "レコードの削除に失敗しました: {error}",
+      "cannotParseUrl": "このレコードのURLを解析できません",
+      "cannotPrepareDownload": "ダウンロードの準備に失敗しました: {error}"
+    },
+    "confirm": {
+      "deleteFolder": "フォルダ「{name}」を削除しますか？中のレコードは「未分類」に移動されます。",
+      "deleteRecord": "レコード「{title}」を削除しますか？",
+      "logout": "ログアウトしますか？ローカルデータは保持されますが、クラウドへの同期は停止します。"
+    }
+  },
+  "bookmarks": {
+    "title": "チャンネルブックマーク",
+    "add": "ブックマークを追加",
+    "empty": "チャンネルブックマークはまだありません",
+    "scheduledBanner": "スケジュールダウンロードを有効にするとライブ配信状態を確認できます",
+    "urlInput": {
+      "placeholder": "https://twitch.tv/channelname または https://youtube.com/@handle",
+      "resolve": "解析",
+      "resolving": "解析中..."
+    },
+    "modal": {
+      "saveButton": "ブックマークに追加",
+      "cancelButton": "キャンセル"
+    },
+    "card": {
+      "liveBadge": "配信中",
+      "presetEnabled": "📡 スケジュール有効",
+      "presetEnabledTitle": "このチャンネルにはスケジュールダウンロードのプリセットが設定されています（有効）",
+      "presetDisabled": "📡 スケジュール無効",
+      "presetDisabledTitle": "このチャンネルにはスケジュールダウンロードのプリセットが設定されています（無効）",
+      "notesPlaceholder": "メモを入力...",
+      "notesEmpty": "（クリックしてメモを追加）",
+      "subscribers": "登録者",
+      "followers": "フォロワー",
+      "streamedAgo": "{time}に配信",
+      "refresh": "チャンネル情報を更新",
+      "delete": "削除",
+      "deleteTitle": "このブックマークを削除",
+      "expand": "展開",
+      "expandTitle": "最新動画を表示",
+      "collapse": "折りたたむ",
+      "collapseTitle": "動画リストを非表示",
+      "downloadVod": "最新 VOD をダウンロード",
+      "downloadVodTitle": "このチャンネルの最新 VOD を取得してダウンロードページへ移動",
+      "downloadVodLoading": "取得中…",
+      "addScheduled": "スケジュールプリセットを追加",
+      "addScheduledTitle": "このチャンネルにスケジュールダウンロードのプリセットを追加",
+      "openChannel": "チャンネルを開く",
+      "openChannelTitle": "ブラウザでこのチャンネルのページを開く",
+      "copyUrl": "URLをコピー",
+      "copyUrlTitle": "チャンネルのURLをクリップボードにコピー",
+      "dragHandle": "ドラッグして並び替え"
+    },
+    "videos": {
+      "loading": "読み込み中…",
+      "loadError": "動画リストを読み込めませんでした。しばらくしてから再試行してください",
+      "retry": "再試行",
+      "empty": "このチャンネルには公開動画がありません"
+    },
+    "relativeTime": {
+      "justNow": "たった今",
+      "minutesAgo": "{minutes}分前",
+      "hoursAgo": "{hours}時間前",
+      "daysAgo": "{days}日前",
+      "weeksAgo": "{weeks}週間前",
+      "monthsAgo": "{months}ヶ月前",
+      "yearsAgo": "{years}年前"
+    },
+    "viewCount": {
+      "millions": "{count}M 回視聴",
+      "thousands": "{count}K 回視聴",
+      "exact": "{count} 回視聴"
+    },
+    "error": {
+      "resolveFailed": "解析に失敗しました: {error}",
+      "unrecognized": "チャンネルを認識できません",
+      "enterUrl": "チャンネルURLを入力してください",
+      "resolveFirst": "先にチャンネルURLを解析してください",
+      "alreadyBookmarked": "このチャンネルはすでにブックマークされています",
+      "saveFailed": "保存に失敗しました: {error}",
+      "deleteFailed": "削除に失敗しました: {error}",
+      "noVod": "このチャンネルにダウンロード可能な VOD はありません",
+      "getVodFailed": "最新 VOD の取得に失敗しました。しばらくしてから再試行してください",
+      "copyFailed": "コピーに失敗しました。手動でコピーしてください"
+    },
+    "toast": {
+      "copied": "コピーしました",
+      "hasPreset": "このチャンネルにはすでにスケジュールプリセットがあります。確認しますか？"
+    },
+    "confirm": {
+      "deleteBookmark": "チャンネル「{name}」のブックマークを削除しますか？"
+    }
+  },
+  "scheduled": {
+    "title": "スケジュールダウンロード",
+    "addPreset": "プリセットを追加",
+    "queue": {
+      "title": "ダウンロードキュー",
+      "empty": "スケジュールダウンロードのタスクはありません。",
+      "running": "ダウンロード中",
+      "queued": "待機中",
+      "completed": "完了",
+      "failed": "失敗 / キャンセル済み",
+      "cancelTask": "キャンセル",
+      "openFile": "ファイルを開く",
+      "retry": "再試行",
+      "queuePosition": "キュー {position} 番目",
+      "triggeredAt": "{time} にトリガー",
+      "completedAt": "{time} に完了",
+      "alreadyCompleted": "完了済み",
+      "cancelled": "キャンセル済み"
+    },
+    "monitoring": {
+      "title": "監視状態",
+      "startTwitch": "Twitch 監視を開始",
+      "stopTwitch": "Twitch 監視を停止",
+      "connecting": "接続中…",
+      "stopped": "監視停止中",
+      "startYoutube": "YouTube ポーリングを開始",
+      "stopYoutube": "YouTube ポーリングを停止",
+      "starting": "起動中…",
+      "pollingActive": "ポーリング中",
+      "pollingStopped": "停止済み"
+    },
+    "twitchStatus": {
+      "connected": "Twitch: 接続済み（{count}チャンネル）",
+      "disconnected": "Twitch: 切断済み"
+    },
+    "youtubeStatus": {
+      "polling": "YouTube: ポーリング中（{count}チャンネル、{interval}秒ごと）",
+      "stopped": "YouTube: 停止済み"
+    },
+    "preset": {
+      "title": "チャンネルプリセット",
+      "empty": "プリセットはまだありません。「プリセットを追加」でチャンネルを追加してください。",
+      "headers": {
+        "channelName": "チャンネル名",
+        "platform": "プラットフォーム",
+        "status": "状態",
+        "enabled": "有効",
+        "lastTriggered": "最終トリガー",
+        "totalDownloads": "累計ダウンロード",
+        "actions": "操作"
+      },
+      "liveBadge": "配信中",
+      "offlineBadge": "オフライン",
+      "neverTriggered": "なし",
+      "bookmarkTitle": "チャンネルブックマークへ移動",
+      "edit": "編集",
+      "delete": "削除"
+    },
+    "modal": {
+      "addTitle": "チャンネルプリセットを追加",
+      "editTitle": "チャンネルプリセットを編集",
+      "urlLabel": "チャンネルURL",
+      "urlPlaceholder": "https://twitch.tv/channelname または https://youtube.com/@handle",
+      "resolve": "解析",
+      "resolving": "解析中...",
+      "quality": "品質",
+      "qualityBest": "最高画質",
+      "contentType": "コンテンツタイプ",
+      "contentTypeVideoAudio": "動画＋音声",
+      "contentTypeAudioOnly": "音声のみ",
+      "outputDir": "出力フォルダ",
+      "folderSelect": "選択",
+      "filenameTemplate": "ファイル名テンプレート",
+      "container": "コンテナ形式",
+      "cancel": "キャンセル",
+      "save": "保存",
+      "overwriteConfirm": "このチャンネルにはすでにプリセットがあります。上書きしますか？"
+    },
+    "task": {
+      "recordingStats": "録画中 {duration} | {bitrate} | {speed}",
+      "recordingWaiting": "録画中..."
+    },
+    "error": {
+      "toggleFailed": "状態の切り替えに失敗しました: {error}",
+      "deletePreset": "チャンネル「{name}」のプリセットを削除しますか？",
+      "deletePresetFailed": "プリセットの削除に失敗しました: {error}",
+      "overwriteFailed": "既存のプリセットを上書きできませんでした: {error}",
+      "savePresetFailed": "プリセットの保存に失敗しました: {error}",
+      "invalidOutputDir": "出力フォルダが無効です",
+      "enterUrl": "チャンネルURLを入力してください",
+      "resolveFirst": "先にチャンネルURLを解析してください",
+      "selectFolder": "出力フォルダを選択してください",
+      "resolveFailed": "解析に失敗しました: {error}",
+      "unrecognized": "チャンネルを認識できません",
+      "startTwitchFailed": "Twitch 監視を開始できませんでした: {error}",
+      "stopTwitchFailed": "Twitch 監視を停止できませんでした: {error}",
+      "startYoutubeFailed": "YouTube ポーリングを開始できませんでした: {error}",
+      "stopYoutubeFailed": "YouTube ポーリングを停止できませんでした: {error}",
+      "cancelTaskFailed": "キャンセルに失敗しました: {error}",
+      "retryFailed": "再試行に失敗しました: {error}"
+    },
+    "toast": {
+      "cancelled": "スケジュールダウンロードをキャンセルしました",
+      "requeued": "キューに再追加しました",
+      "triggered": "スケジュールダウンロードが開始されました: {channelName}（{platform}）",
+      "completed": "スケジュールダウンロードが完了しました: {channelName}（{sizeMb} MB）",
+      "failed": "スケジュールダウンロードに失敗しました: {channelName} — {error}",
+      "diskFull": "ディスク容量不足（残り {freeMb} MB）のため、スケジュールダウンロードを一時停止しました: {channelName}",
+      "youtubeError": "YouTube チャンネルエラー（{channelId}）: {error}"
+    }
+  },
+  "settings": {
+    "title": "設定",
+    "general": {
+      "title": "一般設定",
+      "downloadFolder": "デフォルトダウンロードフォルダ",
+      "downloadFolderDesc": "ダウンロードファイルのデフォルト出力先",
+      "subtitleFolder": "デフォルト字幕出力フォルダ",
+      "subtitleFolderDesc": "文字起こし字幕のデフォルト出力先",
+      "launchOnStartup": "スタートアップ時に起動",
+      "launchOnStartupDesc": "システム起動時に自動的に起動します",
+      "desktopNotifications": "デスクトップ通知",
+      "desktopNotificationsDesc": "ダウンロードまたは文字起こし完了時にシステム通知を送信",
+      "language": "言語",
+      "languageDesc": "インターフェースの言語",
+      "timezone": "タイムゾーン",
+      "timezoneDesc": "時刻表示に使用するタイムゾーン"
+    },
+    "download": {
+      "title": "ダウンロード設定",
+      "enableTranscoder": "トランスコーダーを有効にする",
+      "enableTranscoderDesc": "ダウンロード後にトランスコードを行います",
+      "videoQuality": "デフォルト動画品質",
+      "videoQualityDesc": "デフォルトで選択される画質",
+      "outputContainer": "出力コンテナ",
+      "outputContainerDesc": "デフォルトの出力形式",
+      "maxConcurrent": "最大同時ダウンロード数",
+      "maxConcurrentDesc": "並列ダウンロードタスク数",
+      "autoRetry": "自動再試行",
+      "autoRetryDesc": "ダウンロード失敗時に自動的に再試行します",
+      "maxRetryCount": "最大再試行回数",
+      "maxRetryCountDesc": "自動再試行の上限回数",
+      "speedLimit": "ダウンロード速度制限（MB/s）",
+      "speedLimitDesc": "0 = 制限なし",
+      "showCodecOptions": "コーデックオプションを表示",
+      "showCodecOptionsDesc": "ダウンロードページに詳細コーデック設定を表示"
+    },
+    "appearance": {
+      "title": "外観設定",
+      "theme": "テーマ",
+      "themeDark": "ダーク",
+      "themeLight": "ライト",
+      "themeSystem": "システムに合わせる",
+      "animation": "アニメーション",
+      "animationDesc": "UIアニメーションの有効/無効",
+      "compact": "コンパクトモード",
+      "compactDesc": "UIの余白を減らします"
+    },
+    "records": {
+      "title": "レコード設定",
+      "showAllRecords": "「すべてのレコード」フォルダを表示",
+      "showAllRecordsDesc": "すべてのフォルダを統合した仮想フォルダを表示",
+      "showUncategorized": "「未分類」フォルダを表示",
+      "showUncategorizedDesc": "未分類フォルダを表示",
+      "clipBeforeOffset": "クリップ開始オフセット（秒）",
+      "clipBeforeOffsetDesc": "レコードからダウンロード時に開始時間を前にずらします",
+      "clipAfterOffset": "クリップ終了オフセット（秒）",
+      "clipAfterOffsetDesc": "レコードからダウンロード時に終了時間を後にずらします"
+    },
+    "asr": {
+      "title": "ASR API Keys（BYOK）",
+      "description": "クラウド ASR 文字起こしサービスに使用します。API Key はデバイスに安全に保存されます。",
+      "placeholder": "API Key を入力",
+      "show": "表示",
+      "hide": "非表示",
+      "test": "接続テスト",
+      "save": "保存",
+      "remove": "削除",
+      "testing": "テスト中...",
+      "enterApiKey": "API Key を入力してください",
+      "saved": "✓ 保存済み",
+      "set": "✓ 設定済み",
+      "notSet": "未設定",
+      "removed": "削除済み",
+      "saveFailed": "保存に失敗しました",
+      "removeFailed": "削除に失敗しました",
+      "loadFailed": "読み込みに失敗しました",
+      "testFailed": "テストに失敗しました。しばらくしてから再試行してください",
+      "confirmRemove": "{provider} の API Key を削除しますか？",
+      "groqDescription": "Groq Whisper API（超高速）"
+    },
+    "scheduled": {
+      "title": "スケジュールダウンロード設定",
+      "enable": "スケジュールダウンロードを有効にする",
+      "enableDesc": "有効にするとサイドバーに「スケジュールダウンロード」タブが表示されます",
+      "closeBehavior": "閉じる動作",
+      "closeBehaviorDesc": "ウィンドウを閉じたときの動作",
+      "closeBehaviorMinimize": "システムトレイに最小化",
+      "closeBehaviorQuit": "完全に終了",
+      "pollingInterval": "YouTube ポーリング間隔（秒）",
+      "pollingIntervalDesc": "チャンネルのライブ確認間隔（30〜300秒）",
+      "triggerCooldown": "トリガークールダウン（秒）",
+      "triggerCooldownDesc": "同一チャンネルでダウンロードがトリガーされた後のクールダウン時間",
+      "notification": "スケジュールダウンロード通知",
+      "notificationDesc": "スケジュールダウンロード開始時の通知方法",
+      "notificationOs": "OS 通知",
+      "notificationToast": "アプリ内トースト",
+      "notificationBoth": "両方",
+      "notificationNone": "無効",
+      "notificationPermissionDenied": "システム通知の権限が拒否されています。システム設定で Tidemark に通知を許可してください。許可されていない場合、アプリ内トースト通知のみ有効です。",
+      "autoTranscribe": "ダウンロード後に自動文字起こし",
+      "autoTranscribeDesc": "スケジュールダウンロード完了後に自動的に字幕の文字起こしを実行",
+      "autoStart": "起動時に自動で監視を開始",
+      "autoStartDesc": "アプリ起動時に自動的にスケジュール監視を開始"
+    },
+    "channelBookmarks": {
+      "title": "チャンネルブックマーク設定",
+      "enable": "チャンネルブックマークを有効にする",
+      "enableDesc": "有効にするとサイドバーに「チャンネルブックマーク」タブが表示されます",
+      "metadataRefresh": "メタデータ自動更新間隔（時間）",
+      "metadataRefreshDesc": "チャンネルメタデータの自動更新間隔（1〜168時間）",
+      "videoCache": "動画キャッシュ数",
+      "videoCacheDesc": "チャンネルごとにキャッシュする最新動画の数（1〜20件）"
+    },
+    "gpu": {
+      "title": "GPU アクセラレーション設定",
+      "hardwareEncoding": "ダウンロード用ハードウェアエンコード",
+      "hardwareEncodingDesc": "GPU ハードウェアエンコードでダウンロードを高速化",
+      "encoder": "ハードウェアエンコーダー",
+      "encoderDesc": "ハードウェアエンコーダーを選択（自動検出または手動選択）",
+      "encoderAuto": "自動",
+      "frontendAcceleration": "フロントエンドレンダリング高速化",
+      "frontendAccelerationDesc": "Tauri WebView のハードウェアアクセラレーション（変更後は再起動が必要）",
+      "restartConfirm": "フロントエンドレンダリング高速化の設定変更を反映するには再起動が必要です。今すぐ再起動しますか？",
+      "restartManual": "変更を適用するには手動でアプリを再起動してください。"
+    },
+    "auth": {
+      "title": "プラットフォーム認証",
+      "twitchTitle": "Twitch OAuth Token",
+      "twitchDesc": "サブスクライバー限定コンテンツのダウンロードに使用します。取得方法: Twitch にログインし、ブラウザの開発者ツールを開いて Network タブのリクエストヘッダーから Authorization トークンを確認してください。",
+      "twitchPlaceholder": "Twitch OAuth Token を入力",
+      "twitchValidate": "検証",
+      "twitchValidated": "✓ 検証済み",
+      "twitchNotSet": "未設定",
+      "twitchValidating": "検証中...",
+      "twitchEnterToken": "トークンを入力してください",
+      "twitchInvalid": "トークンが無効です。再取得してください",
+      "twitchValidationFailed": "検証に失敗しました。しばらくしてから再試行してください",
+      "youtubeTitle": "YouTube Cookies",
+      "youtubeDesc": "メンバー限定または非公開動画のダウンロードに使用します。ブラウザ拡張機能を使って cookies.txt（Netscape 形式）をエクスポートしてください。",
+      "youtubePlaceholder": "cookies.txt が未インポートです",
+      "youtubeImport": "cookies.txt をインポート",
+      "youtubeImported": "✓ インポート済み",
+      "youtubeNotImported": "未インポート",
+      "youtubeValidating": "検証中...",
+      "youtubeInvalidFormat": "Cookies ファイルの形式が正しくありません。Netscape 形式を使用してください",
+      "youtubeImportFailed": "インポートに失敗しました。しばらくしてから再試行してください",
+      "clearAll": "すべての認証情報を削除",
+      "clearConfirm": "すべての認証情報を削除しますか？",
+      "clearFailed": "削除に失敗しました"
+    },
+    "about": {
+      "title": "Tidemark について",
+      "version": "バージョン情報",
+      "versionLoading": "読み込み中...",
+      "versionText": "バージョン: {version}",
+      "versionUnknown": "バージョン: 不明",
+      "checkUpdate": "アップデートを確認",
+      "checkingUpdate": "確認中...",
+      "updateAvailable": "新しいバージョンがあります: {version}",
+      "upToDate": "✓ 最新バージョンです",
+      "updateCheckFailed": "アップデートの確認に失敗しました",
+      "goToDownload": "ダウンロードページに移動しますか？",
+      "toolVersions": "コアツールのバージョン",
+      "toolVersionsLoading": "読み込み中...",
+      "toolVersionsError": "ツールのバージョン情報を取得できません",
+      "ytdlpNotInstalled": "yt-dlp: 未インストール",
+      "ffmpegNotInstalled": "FFmpeg: 未インストール",
+      "license": "オープンソースライセンス",
+      "licenseDesc": "Tidemark はオープンソースソフトウェアで、MIT License の下でライセンスされています。",
+      "viewLicense": "ライセンスを確認",
+      "licenseOpenFailed": "ライセンスページを開けませんでした"
+    }
+  },
+  "tray": {
+    "show": "Tidemark を表示",
+    "hide": "Tidemark を非表示",
+    "monitoring": "スケジュールを監視中...",
+    "quit": "終了"
   },
   "errors": {
     "languageLoadFailed": "言語ファイルの読み込みに失敗しました。繁体字中国語に切り替えます",

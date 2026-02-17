@@ -9,6 +9,7 @@
 | 0.5 | 2026-02-17 | 品質修正：完善 Interface 7 直連規格；釐清 F7.6 佇列搶佔行為；定義 F9.5 後端 i18n 訊息合約 |
 | 0.6 | 2026-02-17 | 品質修正：清理 Phase 2 殘留標記；新增 Pattern 8 設定檔版本遷移；釐清 topic 預設值與 i18n 關係；補充 records.db schema 說明；Cloud Sync 輪詢頻率說明 |
 | 0.7 | 2026-02-18 | 品質修正：固定輪詢間隔、補充 records.db metadata schema、JWT 刷新機制、離線同步批次策略、歷史上限、yt-dlp is_live 錯誤場景、直連緩衝上限、Toast 時間一致性、衝突通知、Extension i18n errors 命名空間 |
+| 0.8 | 2026-02-18 | 品質修正：補充預設刪除中下載行為（E7.1d）；釐清並行下載數變更時機；設定檔損毀恢復策略；明確 yt-dlp 更新頻率與 FFmpeg 版本策略；Extension 多分頁寫入衝突說明；離線推送衝突說明；補充 records.db 完整 DDL |
 
 ---
 
@@ -725,6 +726,7 @@ Tidemark 的排程下載功能讓使用者為特定頻道預設下載參數，�
 | E7.1a | 頻道 URL 無法辨識 | 顯示「無法辨識此頻道」 |
 | E7.1b | 重複的頻道預設 | 顯示「此頻道已有預設，是否覆蓋？」 |
 | E7.1c | 輸出資料夾不存在或無寫入權限 | 顯示「輸出資料夾無效」 |
+| E7.1d | 刪除預設時該預設有正在執行中的排程下載 | 預設從列表移除，但執行中的下載任務繼續至完成（任務已持有所有必要參數，不再依賴預設物件）。完成後正常寫入下載歷史 |
 
 ##### F7.2 Twitch 直播偵測（PubSub WebSocket）
 
@@ -861,6 +863,7 @@ Tidemark 的排程下載功能讓使用者為特定頻道預設下載參數，�
 2. 佇列遵守 F6.2 設定的最大同時下載數量限制（排程下載與手動下載共用配額）
 3. 達到上限時，新任務排入等待佇列
 4. 任務完成或取消後，自動從佇列中取出下一個任務執行
+5. 最大同時下載數量變更時機：變更僅影響下一次槽位分配。已在執行中的任務不受影響——若使用者將上限從 3 降為 1，現有 3 個任務繼續執行，但在其中 2 個完成前不會啟動新任務
 
 **佇列優先順序與搶佔規則**：
 
@@ -1530,6 +1533,7 @@ Tidemark 使用自己的 `{variable}` 語法，與 yt-dlp 的 `%(variable)s` 語
 - 通訊協定：HTTPS REST API（Cloudflare Workers）
 - 認證方式：Google OAuth → Workers 驗證 → JWT token
 - 同步策略：客戶端每 5 秒輪詢 `GET /sync?since={lastUpdatedAt}`，取得增量變更（使用者在 Records 頁面前景活躍時縮短為 3 秒）。此為單一客戶端的輪詢間隔；同一使用者若同時開啟多個 Extension 分頁，各分頁獨立輪詢。Cloud Sync Workers 端不額外限制同一使用者的請求頻率（Cloudflare Workers 的全域速率限制已足夠）
+- 多分頁寫入衝突：同一瀏覽器內多個 Extension 分頁同時編輯同一 Record/Folder/Channel Bookmark 時，以最後寫入 Chrome Storage 者為準（Chrome Storage API 為單執行緒寫入，不會產生部分寫入）。後續輪詢時各分頁從 Cloud Sync 拉取最新版本，自動收斂。此行為與 Cloud Sync 的 Last-write-wins 策略一致
 - 寫入：每次本地變更後立即 `POST /records`、`POST /folders` 或 `POST /channel-bookmarks`
 - 衝突解決：Last-write-wins，以 `updatedAt` 較新者為準
 - 資料範圍：Records、Folders、Channel Bookmarks
@@ -1724,6 +1728,9 @@ CREATE UNIQUE INDEX idx_channel_bookmarks_user_channel ON channel_bookmarks(user
 | 後端 i18n 鍵值缺失 | 前端顯示原始鍵值，記錄警告 log，不影響功能運作 |
 | 同步衝突覆寫 | Info Toast 通知使用者「{欄位名} 已被其他裝置更新」，以雲端版本為準 |
 | 歷史記錄檔案過大 | Settings 頁面提示使用者清理（JSON 檔案超過 10 MB 時觸發） |
+| 設定檔損毀 | 從 `.bak` 還原；`.bak` 也不可用時重設為預設值。Warning Toast 通知使用者 |
+| 預設刪除中有執行任務 | 執行中的下載繼續至完成，預設從列表移除。完成後正常寫入歷史 |
+| 離線推送衝突 | LWW 策略：離線裝置 `updatedAt` 較舊則被雲端版本覆蓋，下次拉取時 Info Toast 通知 |
 
 ---
 
@@ -1794,6 +1801,7 @@ yt-dlp / FFmpeg / ASR (Sidecar or Cloud API)
 - Extension 與 Desktop 各自維護本地快取
 - 離線優先：Extension 與 Desktop 均可在離線狀態下運作，回到線上後自動同步
 - 離線同步批次策略：離線期間累積的變更在恢復連線後依序批次推送（每批最多 50 筆），不設離線時長上限。若單次推送失敗，以指數退避重試（1s → 2s → 4s → … → 60s）。批次推送期間新增的本地變更排入下一批次
+- 離線推送衝突：離線期間本地修改的 Record 若同時被其他裝置修改（雲端 `updatedAt` 較新），推送時 Cloud Sync 以 Last-write-wins 處理——離線裝置的 `updatedAt` 較舊，其變更會被雲端版本覆蓋。下一次輪詢拉取時，本地資料更新為雲端版本，並顯示「{欄位名} 已被其他裝置更新」Info Toast（同 E1.6d/E4.3d）。此為 LWW 策略的預期行為，不視為錯誤
 - 下載歷史、設定、頻道元資料、影片快取：僅存在 Desktop 本地，不同步
 - 頻道書籤同步資料流（透過 Cloud Sync）：
 
@@ -1849,8 +1857,8 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 
 1. 首次啟動檢查：Desktop 啟動時檢查 yt-dlp、FFmpeg、FFprobe 是否存在且版本符合
 2. 自動下載：缺失時自動從官方 Release 下載對應平台的 binary
-3. 更新檢查：定期檢查 yt-dlp 新版本（YouTube 反爬蟲更新頻繁）
-4. 版本固定：FFmpeg 使用已知穩定版本
+3. 更新檢查：每次應用程式啟動時檢查 yt-dlp 是否有新版本（比對 GitHub Release tag），且在應用程式持續執行期間每 24 小時背景檢查一次。偵測到新版本時顯示「yt-dlp 有新版本可用」Info Toast，使用者可在 Settings（F6.7）手動觸發更新。更新過程中不中斷正在執行的下載任務（待當前任務完成後使用新版本）
+4. 版本固定：FFmpeg/FFprobe 使用首次自動下載時的最新穩定版（來自 ffmpeg-builds 或 BtbN/FFmpeg-Builds Release），後續不自動更新。使用者可在 Settings（F6.7）手動觸發更新檢查與下載
 5. 持久連線管理：Twitch PubSub WebSocket 連線需持續維護（PING/PONG 心跳、斷線重連、主題訂閱管理），與 sidecar 的一次性程序管理不同，屬於長生命週期資源
 
 #### Pattern 5: ASR 引擎選擇策略
@@ -1936,6 +1944,7 @@ Desktop 的本地 JSON 檔案（`config.json`、`scheduled_presets.json`、`chan
 5. 遷移過程中，新增的欄位使用 `defaultConfig` 中定義的預設值
 6. 遷移完成後更新 `config_version` 並寫回檔案
 7. 遷移前自動備份原檔為 `{filename}.bak`（僅保留最近一次備份）
+8. 檔案損毀恢復：若 JSON 解析失敗（檔案截斷、非法 JSON、編碼錯誤），依序嘗試：(a) 從 `{filename}.bak` 還原；(b) `.bak` 也不可用時，重設為 `defaultConfig` 並將 `config_version` 設為最新值。兩種情況均顯示「設定檔損毀，已恢復為預設值」Warning Toast
 
 **遷移範例**：
 
@@ -1953,14 +1962,43 @@ Desktop 的本地 JSON 檔案（`config.json`、`scheduled_presets.json`、`chan
 - 下載歷史：`{appDataDir}/tidemark/history.json`
 - Records 本地快取：`{appDataDir}/tidemark/records.db`（SQLite，schema 鏡像 Cloud Sync D1 的 `records` 與 `folders` 表結構，但不含 `user_id` 欄位，並額外加入 `_meta` 元資料表）
 
-**`_meta` 表 DDL**：
+**`records.db` 完整 DDL**：
 
 ```sql
+CREATE TABLE folders (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE records (
+  id TEXT PRIMARY KEY,
+  folder_id TEXT REFERENCES folders(id),
+  timestamp TEXT NOT NULL,
+  live_time TEXT NOT NULL,
+  title TEXT NOT NULL,
+  topic TEXT NOT NULL DEFAULT '無主題',
+  channel_url TEXT NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('youtube', 'twitch')),
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE _meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
--- 初始值：INSERT INTO _meta (key, value) VALUES ('config_version', '1');
+
+CREATE INDEX idx_records_updated ON records(updated_at);
+CREATE INDEX idx_folders_updated ON folders(updated_at);
+
+-- 初始值：
+INSERT INTO _meta (key, value) VALUES ('config_version', '1');
 ```
 - 下載輸出：預設 `[{type}] [{channel_name}] [{date}] {title}`（詳見 Module 10 F10.5 全域預設範本；副檔名由 yt-dlp 自動決定）
 - 字幕輸出：與輸入檔案同名，副檔名為 `.srt` 或 `.txt`

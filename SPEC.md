@@ -6,6 +6,7 @@
 | 0.2 | 2026-02-17 | 新增 Module 7: 排程下載（P2.1 升級為正式規格） |
 | 0.3 | 2026-02-17 | 新增 Module 8: 頻道書籤（P2.2 升級為正式規格） |
 | 0.4 | 2026-02-17 | 新增 Module 9: 多語系介面（P2.5 升級為正式規格）；Module 10: 檔名範本編輯器（P2.6 升級為正式規格） |
+| 0.5 | 2026-02-17 | 品質修正：完善 Interface 7 直連規格；釐清 F7.6 佇列搶佔行為；定義 F9.5 後端 i18n 訊息合約 |
 
 ---
 
@@ -849,12 +850,14 @@ Tidemark 的排程下載功能讓使用者為特定頻道預設下載參數，�
 3. 達到上限時，新任務排入等待佇列
 4. 任務完成或取消後，自動從佇列中取出下一個任務執行
 
-**佇列優先順序**：
+**佇列優先順序與搶佔規則**：
 
 | 優先級 | 類型 | 說明 |
 |--------|------|------|
 | 1（最高） | 手動下載 | 使用者在 Download 頁面手動發起的下載 |
 | 2 | 排程下載 | 由直播偵測自動觸發的下載，依偵測時間先後排序 |
+
+**搶佔行為**：手動下載**不搶佔**正在執行中的排程下載。優先順序僅影響等待佇列中的排序——當有空閒下載槽位時，手動下載優先於等待中的排程下載被執行。若所有槽位均被佔用（無論手動或排程），新任務一律排入等待佇列，依上述優先順序排序。已在執行中的任務不會被中斷或暫停。
 
 **佇列狀態顯示**（在 Scheduled Downloads 頁面）：
 
@@ -1271,15 +1274,38 @@ Rust 後端（`lib.rs`）中少量面向使用者的中文字串需要國際化�
 
 **實作策略**：
 
-1. 後端不直接嵌入翻譯字串，改為發送結構化的錯誤代碼或訊息鍵值
-2. 前端收到事件後，使用 i18n 系統查詢對應翻譯
-3. 既有的中文硬編碼字串逐步遷移為鍵值
+1. 後端不直接嵌入翻譯字串，改為發送結構化訊息物件
+2. 前端收到事件後，使用 i18n 系統查詢對應翻譯並進行插值
+3. 既有的中文硬編碼字串逐步遷移為結構化訊息
+
+**後端事件 payload 訊息格式合約**：
+
+後端所有面向使用者的字串（錯誤訊息、狀態訊息、通知標題/內容）統一使用以下結構傳遞：
+
+```typescript
+interface LocalizedMessage {
+  key: string;       // 翻譯鍵值，對應語言檔中的路徑（如 "errors.download.not_found"）
+  params?: Record<string, string | number>;  // 插值參數（如 { channel: "VTuber 頻道", size: "1.2 GB" }）
+}
+```
+
+範例：
+
+| 場景 | 後端 payload | 前端翻譯結果（zh-TW） |
+|------|-------------|---------------------|
+| 下載失敗 | `{ key: "errors.download.not_found", params: { url: "..." } }` | 「找不到該影片」 |
+| 轉錄進度 | `{ key: "subtitles.status.preparing" }` | 「正在準備轉錄環境...」 |
+| 排程下載完成通知 | `{ key: "scheduled.notification.complete", params: { channel: "VTuber 頻道", size: "1.2 GB" } }` | 「VTuber 頻道 的直播錄製已完成（1.2 GB）」 |
+| 磁碟空間不足 | `{ key: "errors.disk_full" }` | 「磁碟空間不足，已暫停所有排程下載」 |
+
+**適用的 Tauri 事件**：所有攜帶使用者可見訊息的事件（`download-error`、`download-complete`、`recording-stopped`、`transcription-progress`、`transcription-complete`、`scheduled-download-complete`、`scheduled-download-failed`、`scheduled-notification-toast`）的 payload 中，訊息欄位從原本的中文字串改為 `LocalizedMessage` 物件。純數據欄位（百分比、速度、檔案路徑等）不受影響。
 
 **錯誤情境**：
 
 | 代碼 | 條件 | 系統回應 |
 |------|------|----------|
-| E9.5a | 後端發送的訊息鍵值在前端翻譯檔中缺失 | 前端顯示原始鍵值，記錄警告 log（同 E9.2a 回退策略） |
+| E9.5a | 後端發送的 `key` 在前端翻譯檔中缺失 | 前端顯示原始鍵值字串（如 `errors.download.not_found`），記錄警告 log（同 E9.2a 回退策略） |
+| E9.5b | 後端發送的 `params` 缺少翻譯字串所需的插值變數 | 前端保留佔位符原樣顯示（同 E9.2b），記錄警告 log |
 
 ---
 
@@ -1538,9 +1564,22 @@ Tidemark 使用自己的 `{variable}` 語法，與 yt-dlp 的 `%(variable)s` 語
 
 #### Interface 7: Extension ↔ Desktop（選擇性直連）
 
-- 通訊方式：Desktop 可開啟本地 HTTP server（localhost），Extension 偵測到後可直接推送 Record
+- 通訊方式：Desktop 開啟本地 HTTP server（localhost），Extension 透過 HTTP 請求直接推送 Record/Folder/Channel Bookmark
 - 用途：使用者無需雲端帳號也能在 Extension 與 Desktop 之間同步
-- 回退策略：若本地 server 未偵測到，走 Cloud Sync 路徑
+- 監聽位址：`http://localhost:21483`（固定 port，取 Tidemark 諧音）
+- 探測機制：Extension 每 10 秒向 `GET /ping` 發送探測請求，回應 `{"app":"tidemark","version":"..."}` 視為可連線
+- 安全性：僅接受 `Origin: chrome-extension://{extension_id}` 的請求（CORS 白名單），拒絕其他來源
+- 啟用方式：Desktop 設定中「啟用本地直連」開關（預設關閉），開啟後在應用程式啟動時自動監聽
+- API 端點：與 Cloud Sync API 的 Record/Folder/Channel Bookmark 端點格式一致（相同 JSON 結構），但不需要 JWT 認證
+- 資料流方向：Extension → Desktop 單向推送。Desktop 的變更不透過此通道回傳 Extension（Extension 仍需透過 Cloud Sync 或手動匯出取得 Desktop 側的變更）
+- 回退策略：Extension 探測 `/ping` 失敗時，自動切回 Cloud Sync 路徑。若 Cloud Sync 也未登入，僅使用本地 Chrome Storage
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E-I7a | Port 21483 被其他程式佔用 | Desktop 啟動時顯示「本地直連 port 被佔用」Toast，本地直連功能停用，其他功能不受影響 |
+| E-I7b | Extension 探測到 Desktop 但推送失敗 | Extension 將變更暫存於本地，下次探測成功時補推 |
 
 #### Interface 8: Desktop ↔ Twitch PubSub WebSocket
 
@@ -1667,6 +1706,8 @@ CREATE UNIQUE INDEX idx_channel_bookmarks_user_channel ON channel_bookmarks(user
 | 頻道元資料過期 | 使用最後快取的元資料繼續顯示，背景靜默刷新。刷新失敗時標示「資料可能已過期」 |
 | 語言檔載入失敗 | 回退至 zh-TW 基準語言，顯示錯誤提示。翻譯鍵值缺失時顯示原始鍵值 |
 | 檔名範本展開失敗 | 使用回退檔名 `untitled_{datetime}`。路徑過長時自動截斷，檔名衝突時加上序號 |
+| 本地直連 port 衝突 | Desktop 停用本地直連功能，其他功能不受影響。Extension 自動切回 Cloud Sync |
+| 後端 i18n 鍵值缺失 | 前端顯示原始鍵值，記錄警告 log，不影響功能運作 |
 
 ---
 

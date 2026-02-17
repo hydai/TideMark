@@ -133,6 +133,22 @@ struct AppConfig {
     hardware_encoder: String,
     #[serde(default = "default_true")]
     enable_frontend_acceleration: bool,
+
+    // Scheduled downloads settings
+    #[serde(default)]
+    enable_scheduled_downloads: bool,
+    #[serde(default = "default_close_behavior")]
+    close_behavior: String,
+    #[serde(default = "default_youtube_polling_interval")]
+    youtube_polling_interval: u32,
+    #[serde(default = "default_trigger_cooldown")]
+    trigger_cooldown: u32,
+    #[serde(default = "default_scheduled_download_notification")]
+    scheduled_download_notification: String,
+    #[serde(default)]
+    scheduled_download_auto_transcribe: bool,
+    #[serde(default = "default_true")]
+    auto_start_monitoring: bool,
 }
 
 // Default value functions for serde
@@ -182,6 +198,22 @@ fn default_clip_offset() -> u32 {
 
 fn default_hardware_encoder() -> String {
     "auto".to_string()
+}
+
+fn default_close_behavior() -> String {
+    "minimize_to_tray".to_string()
+}
+
+fn default_youtube_polling_interval() -> u32 {
+    90
+}
+
+fn default_trigger_cooldown() -> u32 {
+    300
+}
+
+fn default_scheduled_download_notification() -> String {
+    "both".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -328,6 +360,13 @@ impl Default for AppConfig {
             enable_hardware_encoding: false,
             hardware_encoder: default_hardware_encoder(),
             enable_frontend_acceleration: true,
+            enable_scheduled_downloads: false,
+            close_behavior: default_close_behavior(),
+            youtube_polling_interval: default_youtube_polling_interval(),
+            trigger_cooldown: default_trigger_cooldown(),
+            scheduled_download_notification: default_scheduled_download_notification(),
+            scheduled_download_auto_transcribe: false,
+            auto_start_monitoring: true,
         }
     }
 }

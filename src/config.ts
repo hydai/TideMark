@@ -34,6 +34,15 @@ export interface AppConfig {
   enable_hardware_encoding: boolean;
   hardware_encoder: string; // 'auto', 'h264_nvenc', 'hevc_nvenc', 'h264_amf', 'hevc_amf', etc.
   enable_frontend_acceleration: boolean;
+
+  // Scheduled downloads settings
+  enable_scheduled_downloads: boolean;
+  close_behavior: string; // 'minimize_to_tray' | 'quit'
+  youtube_polling_interval: number; // seconds, range: 30-300
+  trigger_cooldown: number; // seconds
+  scheduled_download_notification: string; // 'os' | 'toast' | 'both' | 'none'
+  scheduled_download_auto_transcribe: boolean;
+  auto_start_monitoring: boolean;
 }
 
 const defaultConfig: AppConfig = {
@@ -61,6 +70,13 @@ const defaultConfig: AppConfig = {
   enable_hardware_encoding: false,
   hardware_encoder: 'auto',
   enable_frontend_acceleration: true,
+  enable_scheduled_downloads: false,
+  close_behavior: 'minimize_to_tray',
+  youtube_polling_interval: 90,
+  trigger_cooldown: 300,
+  scheduled_download_notification: 'both',
+  scheduled_download_auto_transcribe: false,
+  auto_start_monitoring: true,
 };
 
 export class ConfigManager {

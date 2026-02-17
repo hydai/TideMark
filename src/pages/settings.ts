@@ -64,6 +64,10 @@ function renderSettingsUI(container: HTMLElement) {
   const asrSection = createAsrApiKeysSection();
   page.appendChild(asrSection);
 
+  // Scheduled downloads settings section
+  const scheduledSection = createScheduledDownloadsSection();
+  page.appendChild(scheduledSection);
+
   // GPU acceleration section
   const gpuSection = createGpuSection();
   page.appendChild(gpuSection);
@@ -84,6 +88,7 @@ function renderSettingsUI(container: HTMLElement) {
   attachAppearanceEventListeners(container);
   attachRecordsEventListeners(container);
   attachAsrApiKeysEventListeners(container);
+  attachScheduledDownloadsEventListeners(container);
   attachGpuEventListeners(container);
   attachAuthEventListeners(container);
   attachAboutEventListeners(container);
@@ -462,6 +467,95 @@ function createApiKeyGroup(provider: string, label: string, description: string)
   return group;
 }
 
+function createScheduledDownloadsSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'settings-section';
+
+  const sectionTitle = document.createElement('h2');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = '排程下載設定';
+  section.appendChild(sectionTitle);
+
+  // Enable scheduled downloads
+  const enableGroup = createToggleGroup(
+    'enable-scheduled-downloads',
+    '啟用排程下載',
+    '啟用後側邊欄將顯示「排程下載」頁籤',
+    currentConfig?.enable_scheduled_downloads || false
+  );
+  section.appendChild(enableGroup);
+
+  // Close behavior
+  const closeBehaviorGroup = createDropdownGroupWithValues(
+    'close-behavior',
+    '關閉行為',
+    '關閉視窗時的行為',
+    currentConfig?.close_behavior || 'minimize_to_tray',
+    [
+      { value: 'minimize_to_tray', label: '最小化至系統列' },
+      { value: 'quit', label: '完全關閉' },
+    ]
+  );
+  section.appendChild(closeBehaviorGroup);
+
+  // YouTube polling interval
+  const pollingGroup = createNumberInputGroup(
+    'youtube-polling-interval',
+    'YouTube 輪詢間隔 (秒)',
+    '定期檢查頻道是否開播的間隔，範圍 30–300 秒',
+    currentConfig?.youtube_polling_interval ?? 90,
+    30,
+    300
+  );
+  section.appendChild(pollingGroup);
+
+  // Trigger cooldown
+  const cooldownGroup = createNumberInputGroup(
+    'trigger-cooldown',
+    '觸發冷卻期 (秒)',
+    '同一頻道觸發下載後的冷卻等待時間',
+    currentConfig?.trigger_cooldown ?? 300,
+    0,
+    86400
+  );
+  section.appendChild(cooldownGroup);
+
+  // Scheduled download notification
+  const notificationGroup = createDropdownGroupWithValues(
+    'scheduled-download-notification',
+    '排程下載通知',
+    '排程下載開始時的通知方式',
+    currentConfig?.scheduled_download_notification || 'both',
+    [
+      { value: 'os', label: 'OS 通知' },
+      { value: 'toast', label: '應用程式內 Toast' },
+      { value: 'both', label: '兩者' },
+      { value: 'none', label: '關閉' },
+    ]
+  );
+  section.appendChild(notificationGroup);
+
+  // Scheduled download auto transcribe
+  const autoTranscribeGroup = createToggleGroup(
+    'scheduled-download-auto-transcribe',
+    '排程下載自動轉錄',
+    '排程下載完成後自動執行字幕轉錄',
+    currentConfig?.scheduled_download_auto_transcribe || false
+  );
+  section.appendChild(autoTranscribeGroup);
+
+  // Auto start monitoring
+  const autoStartGroup = createToggleGroup(
+    'auto-start-monitoring',
+    '開機自動啟動監聽',
+    '應用程式啟動時自動開始監聽排程',
+    currentConfig?.auto_start_monitoring !== false
+  );
+  section.appendChild(autoStartGroup);
+
+  return section;
+}
+
 function createGpuSection(): HTMLElement {
   const section = document.createElement('section');
   section.className = 'settings-section';
@@ -769,6 +863,50 @@ function createDropdownGroup(id: string, label: string, description: string, val
   return group;
 }
 
+function createDropdownGroupWithValues(
+  id: string,
+  label: string,
+  description: string,
+  value: string,
+  options: { value: string; label: string }[]
+): HTMLElement {
+  const group = document.createElement('div');
+  group.className = 'setting-item';
+
+  const labelDiv = document.createElement('div');
+  labelDiv.className = 'setting-label-group';
+
+  const labelElement = document.createElement('label');
+  labelElement.className = 'setting-label';
+  labelElement.textContent = label;
+  labelDiv.appendChild(labelElement);
+
+  const desc = document.createElement('p');
+  desc.className = 'setting-description-inline';
+  desc.textContent = description;
+  labelDiv.appendChild(desc);
+
+  group.appendChild(labelDiv);
+
+  const select = document.createElement('select');
+  select.id = id;
+  select.className = 'setting-select';
+
+  options.forEach(option => {
+    const optionElement = document.createElement('option');
+    optionElement.value = option.value;
+    optionElement.textContent = option.label;
+    if (option.value === value) {
+      optionElement.selected = true;
+    }
+    select.appendChild(optionElement);
+  });
+
+  group.appendChild(select);
+
+  return group;
+}
+
 function createNumberInputGroup(id: string, label: string, description: string, value: number, min: number, max: number): HTMLElement {
   const group = document.createElement('div');
   group.className = 'setting-item';
@@ -1040,6 +1178,29 @@ function attachNumberInputListener(container: HTMLElement, elementId: string, co
       await ConfigManager.update({ [configKey]: value });
     }
   });
+}
+
+function attachScheduledDownloadsEventListeners(container: HTMLElement) {
+  // Enable scheduled downloads
+  attachToggleListener(container, 'enable-scheduled-downloads', 'enable_scheduled_downloads');
+
+  // Close behavior
+  attachDropdownListener(container, 'close-behavior', 'close_behavior');
+
+  // YouTube polling interval
+  attachNumberInputListener(container, 'youtube-polling-interval', 'youtube_polling_interval');
+
+  // Trigger cooldown
+  attachNumberInputListener(container, 'trigger-cooldown', 'trigger_cooldown');
+
+  // Scheduled download notification
+  attachDropdownListener(container, 'scheduled-download-notification', 'scheduled_download_notification');
+
+  // Scheduled download auto transcribe
+  attachToggleListener(container, 'scheduled-download-auto-transcribe', 'scheduled_download_auto_transcribe');
+
+  // Auto start monitoring
+  attachToggleListener(container, 'auto-start-monitoring', 'auto_start_monitoring');
 }
 
 function attachGpuEventListeners(container: HTMLElement) {

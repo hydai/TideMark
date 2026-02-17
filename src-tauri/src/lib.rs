@@ -2153,6 +2153,25 @@ pub struct ChannelInfo {
     pub platform: String,
 }
 
+// Channel bookmarks structures
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChannelBookmark {
+    pub id: String,
+    pub channel_id: String,
+    pub channel_name: String,
+    pub platform: String,       // "twitch" or "youtube"
+    pub notes: String,          // user notes, default empty
+    pub sort_order: i32,
+    pub created_at: String,     // ISO 8601
+    pub updated_at: String,     // ISO 8601
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BookmarkSortOrder {
+    pub id: String,
+    pub sort_order: i32,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -5758,6 +5777,110 @@ fn check_has_enabled_presets(app: AppHandle) -> Result<bool, String> {
     Ok(presets.iter().any(|p| p.enabled))
 }
 
+// Channel Bookmarks commands
+
+fn get_channel_bookmarks_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let tidemark_dir = app_data_dir.join("tidemark");
+    fs::create_dir_all(&tidemark_dir)
+        .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
+
+    Ok(tidemark_dir.join("channel_bookmarks.json"))
+}
+
+#[tauri::command]
+fn get_channel_bookmarks(app: AppHandle) -> Result<Vec<ChannelBookmark>, String> {
+    let bookmarks_path = get_channel_bookmarks_path(&app)?;
+
+    if !bookmarks_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&bookmarks_path)
+        .map_err(|e| format!("Failed to read bookmarks file: {}", e))?;
+
+    let bookmarks: Vec<ChannelBookmark> = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse bookmarks file: {}", e))?;
+
+    Ok(bookmarks)
+}
+
+#[tauri::command]
+fn save_channel_bookmark(app: AppHandle, bookmark: ChannelBookmark) -> Result<(), String> {
+    let mut bookmarks = get_channel_bookmarks(app.clone())?;
+
+    // Check for duplicate (same channel_id + platform) on new bookmarks
+    let is_new = !bookmarks.iter().any(|b| b.id == bookmark.id);
+    if is_new {
+        let duplicate = bookmarks.iter().any(|b| {
+            b.channel_id == bookmark.channel_id && b.platform == bookmark.platform
+        });
+        if duplicate {
+            return Err("此頻道已在書籤中".to_string());
+        }
+    }
+
+    // Set updated_at to now
+    let mut updated_bookmark = bookmark;
+    updated_bookmark.updated_at = Utc::now().to_rfc3339();
+
+    // Upsert: replace existing or push new
+    if let Some(pos) = bookmarks.iter().position(|b| b.id == updated_bookmark.id) {
+        bookmarks[pos] = updated_bookmark;
+    } else {
+        bookmarks.push(updated_bookmark);
+    }
+
+    let bookmarks_path = get_channel_bookmarks_path(&app)?;
+    let content = serde_json::to_string_pretty(&bookmarks)
+        .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
+
+    fs::write(&bookmarks_path, content)
+        .map_err(|e| format!("Failed to write bookmarks file: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_channel_bookmark(app: AppHandle, id: String) -> Result<(), String> {
+    let mut bookmarks = get_channel_bookmarks(app.clone())?;
+    bookmarks.retain(|b| b.id != id);
+
+    let bookmarks_path = get_channel_bookmarks_path(&app)?;
+    let content = serde_json::to_string_pretty(&bookmarks)
+        .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
+
+    fs::write(&bookmarks_path, content)
+        .map_err(|e| format!("Failed to write bookmarks file: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn reorder_channel_bookmarks(app: AppHandle, orders: Vec<BookmarkSortOrder>) -> Result<(), String> {
+    let mut bookmarks = get_channel_bookmarks(app.clone())?;
+
+    for order in &orders {
+        if let Some(bookmark) = bookmarks.iter_mut().find(|b| b.id == order.id) {
+            bookmark.sort_order = order.sort_order;
+            bookmark.updated_at = Utc::now().to_rfc3339();
+        }
+    }
+
+    let bookmarks_path = get_channel_bookmarks_path(&app)?;
+    let content = serde_json::to_string_pretty(&bookmarks)
+        .map_err(|e| format!("Failed to serialize bookmarks: {}", e))?;
+
+    fs::write(&bookmarks_path, content)
+        .map_err(|e| format!("Failed to write bookmarks file: {}", e))?;
+
+    Ok(())
+}
+
 /// Check whether OS notifications are available/permitted.
 /// Returns "granted", "denied", or "unknown".
 #[tauri::command]
@@ -5987,6 +6110,10 @@ pub fn run() {
             toggle_preset_enabled,
             resolve_channel_info,
             check_has_enabled_presets,
+            get_channel_bookmarks,
+            save_channel_bookmark,
+            delete_channel_bookmark,
+            reorder_channel_bookmarks,
             force_quit,
             get_monitoring_paused,
             set_monitoring_paused,

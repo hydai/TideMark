@@ -47,5 +47,56 @@
   "errors": {
     "languageLoadFailed": "Failed to load language file, falling back to Traditional Chinese",
     "languageLoadFailedTitle": "Language Load Failed"
+  },
+  "templateEditor": {
+    "variablesLabel": "Variables:",
+    "exampleLabel": "Example",
+    "preview": {
+      "label": "Preview",
+      "truncationWarning": "Filename truncated (exceeds 200 characters)",
+      "deferredLabel": "pending"
+    },
+    "variables": {
+      "title": {
+        "description": "Title of the video or live stream",
+        "example": "Minecraft Survival Challenge Day 1"
+      },
+      "id": {
+        "description": "Video ID on the platform",
+        "example": "abc123def"
+      },
+      "channel": {
+        "description": "Channel account name (username)",
+        "example": "example_ch"
+      },
+      "channel_name": {
+        "description": "Channel display name",
+        "example": "Example Channel"
+      },
+      "platform": {
+        "description": "Platform (youtube / twitch)",
+        "example": "youtube"
+      },
+      "type": {
+        "description": "Content type (stream / video / clip)",
+        "example": "video"
+      },
+      "date": {
+        "description": "Date (YYYY-MM-DD)",
+        "example": "2026-02-17"
+      },
+      "datetime": {
+        "description": "Date and time (YYYY-MM-DD_HHmmss)",
+        "example": "2026-02-17_143052"
+      },
+      "resolution": {
+        "description": "Resolution (e.g. 1080p); deferred in scheduled downloads",
+        "example": "1080p"
+      },
+      "duration": {
+        "description": "Duration (e.g. 02h30m15s); deferred in scheduled downloads",
+        "example": "01h25m30s"
+      }
+    }
   }
 }

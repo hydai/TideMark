@@ -691,5 +691,56 @@
   "errors": {
     "languageLoadFailed": "語言檔載入失敗，已切換回繁體中文",
     "languageLoadFailedTitle": "語言載入失敗"
+  },
+  "templateEditor": {
+    "variablesLabel": "可用變數：",
+    "exampleLabel": "範例",
+    "preview": {
+      "label": "預覽",
+      "truncationWarning": "檔名已截斷（超過 200 字元）",
+      "deferredLabel": "待取得"
+    },
+    "variables": {
+      "title": {
+        "description": "影片或直播的標題",
+        "example": "Minecraft 生存挑戰 Day 1"
+      },
+      "id": {
+        "description": "平台上的影片 ID",
+        "example": "abc123def"
+      },
+      "channel": {
+        "description": "頻道帳號名稱（username）",
+        "example": "example_ch"
+      },
+      "channel_name": {
+        "description": "頻道顯示名稱",
+        "example": "範例頻道"
+      },
+      "platform": {
+        "description": "平台（youtube / twitch）",
+        "example": "youtube"
+      },
+      "type": {
+        "description": "內容類型（stream / video / clip）",
+        "example": "video"
+      },
+      "date": {
+        "description": "日期（YYYY-MM-DD）",
+        "example": "2026-02-17"
+      },
+      "datetime": {
+        "description": "日期與時間（YYYY-MM-DD_HHmmss）",
+        "example": "2026-02-17_143052"
+      },
+      "resolution": {
+        "description": "畫質（如 1080p）；排程下載時為延遲變數",
+        "example": "1080p"
+      },
+      "duration": {
+        "description": "時長（如 02h30m15s）；排程下載時為延遲變數",
+        "example": "01h25m30s"
+      }
+    }
   }
 }

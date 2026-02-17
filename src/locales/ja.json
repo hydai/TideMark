@@ -47,5 +47,56 @@
   "errors": {
     "languageLoadFailed": "言語ファイルの読み込みに失敗しました。繁体字中国語に切り替えます",
     "languageLoadFailedTitle": "言語読み込みエラー"
+  },
+  "templateEditor": {
+    "variablesLabel": "変数：",
+    "exampleLabel": "例",
+    "preview": {
+      "label": "プレビュー",
+      "truncationWarning": "ファイル名が切り詰められました（200文字を超えています）",
+      "deferredLabel": "取得待ち"
+    },
+    "variables": {
+      "title": {
+        "description": "動画またはライブ配信のタイトル",
+        "example": "Minecraft 生存チャレンジ Day 1"
+      },
+      "id": {
+        "description": "プラットフォーム上の動画ID",
+        "example": "abc123def"
+      },
+      "channel": {
+        "description": "チャンネルアカウント名（username）",
+        "example": "example_ch"
+      },
+      "channel_name": {
+        "description": "チャンネル表示名",
+        "example": "サンプルチャンネル"
+      },
+      "platform": {
+        "description": "プラットフォーム（youtube / twitch）",
+        "example": "youtube"
+      },
+      "type": {
+        "description": "コンテンツタイプ（stream / video / clip）",
+        "example": "video"
+      },
+      "date": {
+        "description": "日付（YYYY-MM-DD）",
+        "example": "2026-02-17"
+      },
+      "datetime": {
+        "description": "日付と時刻（YYYY-MM-DD_HHmmss）",
+        "example": "2026-02-17_143052"
+      },
+      "resolution": {
+        "description": "解像度（例：1080p）；スケジュールダウンロード時は遅延変数",
+        "example": "1080p"
+      },
+      "duration": {
+        "description": "再生時間（例：02h30m15s）；スケジュールダウンロード時は遅延変数",
+        "example": "01h25m30s"
+      }
+    }
   }
 }

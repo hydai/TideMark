@@ -3,6 +3,7 @@
 | 版本 | 日期 | 說明 |
 |------|------|------|
 | 0.1 | 2026-02-16 | 初版 |
+| 0.2 | 2026-02-17 | 新增 Module 7: 排程下載（P2.1 升級為正式規格） |
 
 ---
 
@@ -19,6 +20,7 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 | 追直播的觀眾 | 在 YouTube/Twitch 看直播時，需要快速標記精彩時間點，事後下載片段回顧 |
 | 內容整理者 | 定期下載 VOD/Clip 並整理歸檔，需要字幕輔助搜尋與回顧 |
 | 剪輯創作者 | 下載特定片段後加上字幕，作為二創素材來源 |
+| 頻道追蹤者 | 追蹤特定實況主/YouTuber，希望自動錄製每場直播，不漏掉任何內容 |
 
 ### Impacts（成功行為指標）
 
@@ -26,6 +28,7 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 2. **從事後回想到即時標記**：使用者養成在看直播時即時標記時間點的習慣
 3. **從下載整支 VOD 到精準片段下載**：使用者利用時間標記直接帶入下載頁面，只下載需要的片段
 4. **從手動打字幕到自動轉錄**：下載完成後一鍵送往 ASR 轉錄
+5. **從守在螢幕前到自動擷取**：使用者設定頻道後離開電腦，直播開始時系統自動偵測並下載，不遺漏任何內容
 
 ### Success Criteria（成功指標）
 
@@ -33,13 +36,15 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 - SC-2: 桌面端首次啟動到第一次成功下載，不超過 3 分鐘（不含網路下載時間）
 - SC-3: 時間標記在 Extension 與 Desktop 之間同步延遲不超過 5 秒
 - SC-4: 支援 YouTube 與 Twitch 雙平台的所有公開內容（VOD、Clip、直播流）
+- SC-5: Twitch 頻道開始直播後，排程下載在 30 秒內自動觸發
+- SC-6: YouTube 頻道開始直播後，排程下載在輪詢間隔 + 30 秒內自動觸發
 
 ### Non-Goals（非目標）
 
 - NG-1: 不處理 DRM 保護或付費牆內容的繞過
 - NG-2: 不提供影片編輯功能（裁切是下載階段的功能，非後製編輯）
 - NG-3: 不做社群功能（分享、評論、公開書籤）
-- NG-4: Phase 1 不實作排程下載與頻道書籤（Phase 2 範疇）
+- NG-4: Phase 1 不實作頻道書籤（Phase 2 範疇）
 - NG-5: 不取代 OBS 等專業錄製軟體
 - NG-6: 不做行動端版本
 
@@ -52,7 +57,7 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 **系統內部（Tidemark 負責）：**
 
 - 瀏覽器擴充套件：時間標記的建立、管理與同步
-- 桌面應用程式：內容下載、片段裁切、直播錄製、ASR 轉錄、時間標記管理、下載歷史
+- 桌面應用程式：內容下載、片段裁切、直播錄製、ASR 轉錄、時間標記管理、下載歷史、排程下載與直播偵測
 - Cloud Sync Service：Extension 與 Desktop 之間的時間標記資料同步
 
 **系統外部（依賴但不控制）：**
@@ -64,6 +69,8 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 - OpenAI API / Groq API / ElevenLabs API（雲端 ASR 引擎，BYOK 模式）
 - Cloudflare Workers + D1（Cloud Sync 的後端服務）
 - Twitch GQL API（Twitch 內容元資料與 VOD 查詢）
+- Twitch PubSub WebSocket（Twitch 直播狀態即時推播，排程下載用）
+- YouTube RSS Feed（YouTube 頻道影片列表，直播偵測輪詢用）
 
 ### System Components（系統元件）
 
@@ -75,9 +82,9 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
         |                                                           |
         | content script                                     +------+------+------+
         v                                                    |             |      |
-  YouTube / Twitch                                     yt-dlp +       Python  Cloud ASR
-  Web Pages                                            FFmpeg    ASR Sidecar   APIs
-                                                                (local)      (BYOK)
+  YouTube / Twitch                                     yt-dlp +       Python  Cloud ASR  Twitch
+  Web Pages                                            FFmpeg    ASR Sidecar   APIs    PubSub +
+                                                                (local)      (BYOK)   YT RSS
 ```
 
 #### Browser Extension
@@ -88,9 +95,10 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 
 #### Desktop App
 
-- 職責：內容下載（YouTube + Twitch）、直播錄製、片段裁切、ASR 轉錄（本地 + 雲端 BYOK）、Record 管理（含雲端同步後的本地呈現）、下載歷史管理、全域設定
+- 職責：內容下載（YouTube + Twitch）、直播錄製、片段裁切、ASR 轉錄（本地 + 雲端 BYOK）、Record 管理（含雲端同步後的本地呈現）、下載歷史管理、排程下載（直播偵測 + 自動下載 + 系統列背景執行）、全域設定
 - 技術形式：Tauri (Rust backend + Web frontend)
 - 外部程序管理：yt-dlp, FFmpeg, FFprobe 以 sidecar binary 嵌入；本地 ASR 以 Python sidecar 執行
+- 背景服務：系統列（System Tray）常駐模式，支援 Twitch PubSub WebSocket 持續連線與 YouTube RSS 定期輪詢
 
 #### Cloud Sync Service
 
@@ -630,6 +638,256 @@ Tidemark 的轉錄功能支援兩種模式：**本地 ASR**（在使用者電腦
 - 核心工具版本顯示（yt-dlp、FFmpeg）
 - 開源授權資訊
 
+##### F6.8 排程下載設定
+
+| 設定項 | 說明 | 預設值 |
+|--------|------|--------|
+| 啟用排程下載 | 是否啟用排程下載功能（關閉時隱藏 Scheduled Downloads 頁面） | 關閉 |
+| 關閉行為 | 視窗關閉時的行為：最小化至系統列 / 完全關閉 | 最小化至系統列 |
+| YouTube 輪詢間隔 | YouTube 直播偵測的輪詢間隔（秒），範圍 30–300 | 90 |
+| 觸發冷卻期 | 同一頻道觸發後忽略後續事件的等待時間（秒） | 300 |
+| 排程下載通知 | 通知管道：OS 通知 / 應用程式內 Toast / 兩者 / 關閉 | 兩者 |
+| 排程下載自動轉錄 | 排程下載完成後是否自動啟動字幕轉錄 | 關閉 |
+| 開機自動啟動監聽 | 應用程式啟動時是否自動開始直播偵測 | 開啟 |
+
+---
+
+#### Module 7: Desktop — Scheduled Downloads（排程下載）
+
+Tidemark 的排程下載功能讓使用者為特定頻道預設下載參數，當該頻道開始直播時自動觸發下載。支援 Twitch（透過 PubSub WebSocket 即時偵測）與 YouTube（透過 RSS Feed 定期輪詢）。應用程式可最小化至系統列（System Tray），在背景持續監聽頻道狀態。
+
+##### F7.1 下載預設管理（Download Preset）
+
+**使用者操作**：在「Scheduled Downloads」頁面，新增、編輯、刪除、啟用/停用頻道的下載預設
+
+**系統回應**：
+
+1. 新增預設：輸入頻道 URL 或名稱，系統自動辨識平台（Twitch / YouTube）並取得頻道資訊（名稱、頭像）
+2. 設定下載參數：影片品質、內容類型、輸出資料夾、檔名範本、容器格式
+3. 啟用/停用：切換預設的啟用狀態，停用時不會觸發自動下載
+4. 列表顯示每個預設的：頻道名稱、平台圖示、啟用狀態、上次觸發時間、累計下載次數
+
+**儲存的資料**（DownloadPreset 物件）：
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | string | 唯一識別碼 |
+| channelId | string | 頻道識別碼（Twitch: login name, YouTube: channel ID） |
+| channelName | string | 頻道顯示名稱 |
+| platform | string | `"twitch"` 或 `"youtube"` |
+| enabled | boolean | 是否啟用 |
+| quality | string | 偏好畫質（如 `"best"`, `"1080p"`, `"720p"`） |
+| contentType | string | `"video+audio"` / `"audio_only"` |
+| outputDir | string | 輸出資料夾路徑 |
+| filenameTemplate | string | 檔名範本（同 F2.2 變數，其中 `{date}` 為直播開始日期） |
+| containerFormat | string | `"auto"` / `"mp4"` / `"mkv"` |
+| createdAt | string | 建立時間 ISO 8601 |
+| lastTriggeredAt | string \| null | 上次觸發時間 |
+| triggerCount | number | 累計觸發次數 |
+
+**備註**：排程下載用於錄製直播串流，影片/音訊編解碼器由串流來源決定，不在預設中指定。`quality` 欄位控制串流品質選擇
+
+**儲存位置**：`{appDataDir}/tidemark/scheduled_presets.json`
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E7.1a | 頻道 URL 無法辨識 | 顯示「無法辨識此頻道」 |
+| E7.1b | 重複的頻道預設 | 顯示「此頻道已有預設，是否覆蓋？」 |
+| E7.1c | 輸出資料夾不存在或無寫入權限 | 顯示「輸出資料夾無效」 |
+
+##### F7.2 Twitch 直播偵測（PubSub WebSocket）
+
+**系統行為**（背景服務，無需使用者操作）：
+
+1. 為所有已啟用的 Twitch 預設，建立至 Twitch PubSub 伺服器的 WebSocket 連線
+2. 訂閱 `video-playback-by-id.<channel_id>` 主題
+3. 收到 `stream-up` 事件時，標記該頻道為「直播中」，觸發自動下載（F7.4）
+4. 收到 `stream-down` 事件時，標記該頻道為「離線」
+5. 連線維持：每 4 分鐘發送 PING，收到 PONG 確認連線存活
+
+**PubSub 連線規格**：
+
+| 項目 | 值 |
+|------|------|
+| WebSocket URL | `wss://pubsub-edge.twitch.tv` |
+| 訂閱主題 | `video-playback-by-id.<channel_id>` |
+| PING 間隔 | 4 分鐘 |
+| 單一連線主題上限 | 50 |
+| 重連策略 | 指數退避（1s → 2s → 4s → ... → 120s 上限） |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E7.2a | WebSocket 連線失敗 | 指數退避重連，通知使用者「Twitch 連線中斷，重試中…」 |
+| E7.2b | PING 逾時（無 PONG 回應） | 關閉連線並重新建立 |
+| E7.2c | 訂閱主題數超過 50 | 自動建立額外的 WebSocket 連線 |
+| E7.2d | Twitch 服務維護 | 顯示「Twitch 服務暫時不可用」，持續重試 |
+
+##### F7.3 YouTube 直播偵測（RSS 輪詢）
+
+**系統行為**（背景服務，無需使用者操作）：
+
+1. 為所有已啟用的 YouTube 預設，定期檢查頻道是否正在直播
+2. 查詢 YouTube RSS Feed（`https://www.youtube.com/feeds/videos.xml?channel_id={id}`）
+3. 解析 Feed 中的最新項目，透過 yt-dlp 確認是否為直播中的串流（`--dump-json` 檢查 `is_live` 欄位）
+4. 偵測到直播時，標記該頻道為「直播中」，觸發自動下載（F7.4）
+
+**輪詢規格**：
+
+| 項目 | 值 |
+|------|------|
+| 輪詢間隔 | 預設 90 秒（可在 F6.8 設定中調整，範圍 30–300 秒） |
+| RSS Feed URL | `https://www.youtube.com/feeds/videos.xml?channel_id={id}` |
+| 確認方式 | yt-dlp `--dump-json` 檢查 `is_live` 欄位 |
+| 並行檢查上限 | 最多同時 3 個頻道（避免 rate limit） |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E7.3a | RSS Feed 無法存取 | 跳過本次檢查，下次輪詢重試 |
+| E7.3b | YouTube rate limit | 自動將輪詢間隔增加至 2 倍，5 分鐘後恢復原間隔 |
+| E7.3c | 頻道 ID 無效 | 停用該預設，通知使用者「頻道不存在」 |
+| E7.3d | yt-dlp 確認逾時 | 跳過本次檢查，下次輪詢重試 |
+
+##### F7.4 自動下載觸發
+
+**系統行為**（由 F7.2 或 F7.3 驅動）：
+
+1. 當直播偵測服務偵測到頻道開始直播
+2. 查找對應的已啟用 DownloadPreset
+3. 使用預設中的下載參數，自動建立直播錄製任務（錄製行為同 F2.5，但無需使用者確認，完全自動執行）
+4. 下載任務進入排程下載佇列（F7.6），若佇列已滿則排入等待
+5. 更新預設的 `lastTriggeredAt` 與 `triggerCount`
+6. 發送通知（F7.7）
+
+**防重複觸發規則**：
+
+| 規則 | 說明 |
+|------|------|
+| 串流 ID 判斷 | 同一頻道同一場直播僅觸發一次。Twitch 以 PubSub 事件中的 stream ID 為判斷依據；YouTube 以 RSS Feed 項目的 video ID（`yt:video:id`）為判斷依據 |
+| 觸發冷卻期 | 同一頻道在上次觸發後的冷卻期內（預設 300 秒，可在 F6.8 調整），新事件忽略（防止 stream-up/down 抖動） |
+| 佇列重複檢查 | 若佇列中已有相同串流的下載任務，不重複建立 |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E7.4a | 下載啟動失敗（yt-dlp 錯誤） | 通知使用者「{頻道名} 的自動下載啟動失敗」，記錄錯誤 |
+| E7.4b | 磁碟空間不足 | 暫停所有排程下載，通知使用者「磁碟空間不足」 |
+| E7.4c | 達到同時下載上限 | 任務排入佇列等待，通知使用者「{頻道名} 已排入下載佇列」 |
+| E7.4d | 串流重啟（冷卻期後再次偵測到 stream-up，但串流 ID 不同） | 視為新的直播，重新觸發下載 |
+| E7.4e | 觸發後網路中斷導致 yt-dlp 無法啟動 | 任務標記為失敗，通知使用者，網路恢復後不自動重試（因直播可能已結束） |
+
+##### F7.5 系統列模式（System Tray）
+
+**使用者操作**：點擊視窗關閉按鈕（或透過選單選擇「最小化至系統列」）
+
+**系統回應**：
+
+1. 視窗隱藏，應用程式圖示顯示在系統列（macOS: 選單列、Windows: 系統匣）
+2. 系統列圖示根據狀態變化：
+   - 預設圖示：無監聽中的預設
+   - 監聽中圖示：有啟用的預設正在監聽
+   - 下載中圖示：有排程下載任務執行中
+3. 背景服務持續執行（直播偵測、下載任務）
+
+**系統列右鍵選單**：
+
+| 選項 | 動作 |
+|------|------|
+| 顯示主視窗 | 還原主視窗至前景 |
+| 監聽狀態 | 顯示目前監聽中的頻道數與平台 |
+| 暫停所有監聽 | 暫停所有直播偵測（保持連線但不觸發下載） |
+| 恢復所有監聽 | 恢復暫停的直播偵測 |
+| 結束 | 停止所有監聽與下載，完全關閉應用程式 |
+
+**使用者操作**：雙擊系統列圖示（Windows）或點擊系統列圖示（macOS）
+
+**系統回應**：還原主視窗至前景
+
+**系統行為**（視窗關閉時的判斷邏輯，依以下優先順序執行第一個匹配的條件）：
+
+| 優先順序 | 條件 | 行為 |
+|----------|------|------|
+| 1 | 按住 Shift + 關閉（或選單中選「結束」） | 完全關閉應用程式 |
+| 2 | 有啟用的排程預設（不論是否有下載進行中） | 最小化至系統列（不關閉應用程式） |
+| 3 | 無啟用的排程預設 | 依 F6.8「關閉行為」設定決定：最小化至系統列 或 完全關閉 |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E7.5a | 系統不支援系統列（極少見） | 關閉按鈕改為完全關閉，顯示警告「此系統不支援背景執行」 |
+
+##### F7.6 排程下載佇列
+
+**系統行為**：
+
+1. 管理由自動觸發（F7.4）產生的排程下載任務
+2. 佇列遵守 F6.2 設定的最大同時下載數量限制（排程下載與手動下載共用配額）
+3. 達到上限時，新任務排入等待佇列
+4. 任務完成或取消後，自動從佇列中取出下一個任務執行
+
+**佇列優先順序**：
+
+| 優先級 | 類型 | 說明 |
+|--------|------|------|
+| 1（最高） | 手動下載 | 使用者在 Download 頁面手動發起的下載 |
+| 2 | 排程下載 | 由直播偵測自動觸發的下載，依偵測時間先後排序 |
+
+**佇列狀態顯示**（在 Scheduled Downloads 頁面）：
+
+- 執行中的排程下載：顯示進度（百分比、下載速度、已錄製時長）
+- 等待中的排程下載：顯示佇列位置
+- 已完成的排程下載：顯示完成時間、檔案大小
+- 失敗的排程下載：顯示錯誤原因，提供「重試」按鈕
+
+**使用者操作**：在佇列中對任務執行取消、重試
+
+**系統回應**：取消時終止下載程序並從佇列移除；重試時重新加入佇列尾端
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E7.6a | 佇列中任務全部失敗 | 通知使用者「所有排程下載均失敗，請檢查網路與設定」 |
+| E7.6b | 直播結束但下載仍在佇列中等待 | 通知使用者「{頻道名} 的直播已結束，改為下載 VOD」 |
+
+##### F7.7 通知系統
+
+**通知管道**：
+
+| 管道 | 說明 | 預設 |
+|------|------|------|
+| OS 通知 | macOS Notification Center / Windows Toast Notification | 開啟 |
+| 應用程式內 Toast | 右下角 Toast 通知（同 Pattern 2 的 Info 等級） | 開啟 |
+
+**通知事件**：
+
+| 事件 | 通知內容 | 等級 |
+|------|----------|------|
+| 偵測到直播開始 | 「{頻道名} 正在直播，已啟動自動下載」 | Info |
+| 排程下載完成 | 「{頻道名} 的直播錄製已完成（{檔案大小}）」 | Info |
+| 排程下載失敗 | 「{頻道名} 的下載失敗：{錯誤摘要}」 | Warning |
+| 連線中斷 | 「Twitch/YouTube 監聽連線中斷，重試中…」 | Warning |
+| 磁碟空間不足 | 「磁碟空間不足，已暫停所有排程下載」 | Critical |
+| 直播結束未下載 | 「{頻道名} 的直播已結束，排程下載未能啟動」 | Warning |
+
+**OS 通知互動**：
+
+- 點擊通知：開啟 Tidemark 主視窗，跳轉至 Scheduled Downloads 頁面
+- 完成通知：提供「開啟檔案」與「在資料夾中顯示」的快捷動作（macOS actionable notification / Windows toast action）
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E7.7a | OS 通知權限未授予 | 僅使用應用程式內 Toast，設定頁提示使用者授予通知權限 |
+
 ---
 
 ### Interfaces Between Components（元件間介面）
@@ -688,6 +946,27 @@ Tidemark 的轉錄功能支援兩種模式：**本地 ASR**（在使用者電腦
 - 通訊方式：Desktop 可開啟本地 HTTP server（localhost），Extension 偵測到後可直接推送 Record
 - 用途：使用者無需雲端帳號也能在 Extension 與 Desktop 之間同步
 - 回退策略：若本地 server 未偵測到，走 Cloud Sync 路徑
+
+#### Interface 8: Desktop ↔ Twitch PubSub WebSocket
+
+- 通訊方式：Tauri Rust backend 建立 WebSocket 連線至 Twitch PubSub 伺服器
+- 連線位址：`wss://pubsub-edge.twitch.tv`
+- 訊息格式：JSON（`{"type": "LISTEN", "data": {"topics": [...]}}`）
+- 訂閱主題：`video-playback-by-id.<channel_id>`
+- 接收事件：`stream-up`（直播開始）、`stream-down`（直播結束）、`viewcount`（觀看人數更新）
+- 心跳：客戶端每 4 分鐘發送 `{"type":"PING"}`，伺服器回應 `{"type":"PONG"}`
+- 連線管理：每條 WebSocket 最多訂閱 50 個主題，超過時建立新連線
+- 重連策略：連線斷開時使用指數退避重連（1s → 2s → 4s → ... → 120s 上限）
+- 無需認證：`video-playback-by-id` 主題為公開主題，不需要 OAuth token
+
+#### Interface 9: Desktop ↔ YouTube RSS Feed
+
+- 通訊方式：Tauri Rust backend 透過 HTTPS GET 請求查詢 YouTube RSS Feed
+- Feed URL：`https://www.youtube.com/feeds/videos.xml?channel_id={id}`
+- 回傳格式：Atom XML，包含頻道最新 15 筆影片/直播項目
+- 輪詢間隔：預設 90 秒（可調整）
+- 後續確認：對 Feed 中的最新項目，呼叫 yt-dlp `--dump-json` 確認 `is_live` 狀態
+- 無需認證：RSS Feed 為公開資源
 
 ---
 
@@ -769,6 +1048,9 @@ CREATE INDEX idx_folders_user_updated ON folders(user_id, updated_at);
 | 儲存空間不足 | 下載前檢查可用空間，不足時提示 |
 | Cloud Sync 不可用 | 降級為純本地模式，資料不遺失 |
 | Cloud ASR API 失敗 | 顯示具體錯誤訊息，已完成的段落保留，建議切換引擎或改用本地 |
+| Twitch PubSub 斷線 | 指數退避自動重連（1s → 120s），持續重試直到恢復。通知使用者連線狀態 |
+| YouTube 輪詢失敗 | 跳過本次檢查，下次輪詢重試。遇 rate limit 時自動降低頻率 |
+| 排程下載觸發失敗 | 通知使用者具體錯誤，不影響其他預設的正常運作 |
 
 ---
 
@@ -793,6 +1075,13 @@ CREATE INDEX idx_folders_user_updated ON folders(user_id, updated_at);
 | BYOK | Bring Your Own Key | 使用者自行提供第三方 API Key 來使用雲端服務 |
 | Local ASR | 本地 ASR | 在使用者電腦上執行的語音辨識引擎（Whisper / Qwen3-ASR） |
 | Cloud ASR | 雲端 ASR | 透過 BYOK API Key 呼叫的第三方語音辨識服務 |
+| Preset | 下載預設 | 為特定頻道設定的下載參數組合，用於排程下載自動觸發時套用 |
+| Scheduled Download | 排程下載 | 由直播偵測自動觸發的下載任務，使用預設的下載參數 |
+| Live Detection | 直播偵測 | 監聽頻道直播狀態變化的背景服務，包含 Twitch PubSub 與 YouTube RSS 兩種方式 |
+| System Tray | 系統列 | 作業系統的通知區域圖示（macOS: 選單列、Windows: 系統匣），用於背景執行 |
+| PubSub | PubSub | Twitch 的即時事件推播 WebSocket 服務，用於偵測直播狀態變化 |
+| Cooldown | 冷卻期 | 同一頻道觸發自動下載後，忽略後續重複事件的等待時間 |
+| Stream ID | 串流 ID | 單場直播的唯一識別碼。Twitch: PubSub 事件中的 stream ID；YouTube: 直播影片的 video ID |
 
 ### Patterns（共用模式）
 
@@ -818,6 +1107,20 @@ yt-dlp / FFmpeg / ASR (Sidecar or Cloud API)
 - Extension 與 Desktop 各自維護本地快取
 - 離線優先：Extension 與 Desktop 均可在離線狀態下運作，回到線上後自動同步
 - 下載歷史與設定：僅存在 Desktop 本地，不同步
+- 排程下載資料流（獨立於 Cloud Sync）：
+
+```
+Twitch PubSub (WebSocket)  ──stream-up──>  Live Detection Service
+YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
+                                                   |
+                                                   | match preset
+                                                   v
+                                           Download Preset (JSON)
+                                                   |
+                                                   | auto-trigger
+                                                   v
+                                           Download Queue → yt-dlp / FFmpeg
+```
 
 #### Pattern 2: 三級錯誤處理
 
@@ -842,6 +1145,7 @@ yt-dlp / FFmpeg / ASR (Sidecar or Cloud API)
 2. 自動下載：缺失時自動從官方 Release 下載對應平台的 binary
 3. 更新檢查：定期檢查 yt-dlp 新版本（YouTube 反爬蟲更新頻繁）
 4. 版本固定：FFmpeg 使用已知穩定版本
+5. 持久連線管理：Twitch PubSub WebSocket 連線需持續維護（PING/PONG 心跳、斷線重連、主題訂閱管理），與 sidecar 的一次性程序管理不同，屬於長生命週期資源
 
 #### Pattern 5: ASR 引擎選擇策略
 
@@ -864,10 +1168,11 @@ yt-dlp / FFmpeg / ASR (Sidecar or Cloud API)
 - Records 本地快取：`{appDataDir}/tidemark/records.db`（SQLite）
 - 下載輸出：預設 `[{type}] [{channel_name}] [{date}] {title} {resolution}.{ext}`
 - 字幕輸出：與輸入檔案同名，副檔名為 `.srt` 或 `.txt`
+- 排程下載預設：`{appDataDir}/tidemark/scheduled_presets.json`
 
 #### UI 模式
 
-- Tab Navigation：Desktop 主介面使用側邊 Tab 導航（Download、History、Subtitles、Records、Settings）
+- Tab Navigation：Desktop 主介面使用側邊 Tab 導航（Download、History、Subtitles、Records、Scheduled Downloads、Settings）。Scheduled Downloads 頁面僅在 F6.8「啟用排程下載」開啟時顯示
 - Card Pattern：下載任務以卡片呈現，含進度條、操作按鈕、展開/收起詳情
 - Toast Notifications：短暫操作回饋（右下角，1.5~3 秒自動消失）
 - Modal Dialogs：破壞性操作（刪除、清空）需要確認對話框
@@ -885,12 +1190,9 @@ yt-dlp / FFmpeg / ASR (Sidecar or Cloud API)
 
 以下功能在 Phase 1 不實作，但在架構設計時需預留擴充空間。
 
-### P2.1 Scheduled Downloads（排程下載）
+### ~~P2.1 Scheduled Downloads（排程下載）~~ → 已升級為 Module 7
 
-- 來源：TwitchLink 的 ScheduledDownloads 模組
-- 功能：為指定的 Twitch 頻道設定下載預設（畫質、檔名範本、輸出資料夾），當該頻道開始直播時自動觸發下載
-- 關鍵元件：ScheduledDownloadPreset、PubSub WebSocket 連線、ScheduledDownloadManager
-- 架構預留：Desktop 端需預留 background service / system tray 模式
+已於 v0.2 升級為正式規格，詳見 Design Layer 的 Module 7。
 
 ### P2.2 Channel Bookmarks（頻道書籤）
 
@@ -898,11 +1200,9 @@ yt-dlp / FFmpeg / ASR (Sidecar or Cloud API)
 - 功能：收藏常看的 Twitch/YouTube 頻道，快速存取頻道狀態與最新影片列表
 - 架構預留：資料模型中為 Bookmark 預留儲存空間
 
-### P2.3 PubSub Live Detection（直播偵測）
+### ~~P2.3 PubSub Live Detection（直播偵測）~~ → 已併入 Module 7
 
-- 來源：TwitchLink 的 TwitchPubSub 模組
-- 功能：透過 Twitch PubSub WebSocket 持續監聽已書籤頻道的直播狀態變化
-- 架構預留：Tauri 端需預留持久 WebSocket 連線管理
+已於 v0.2 併入 Module 7（F7.2 Twitch 直播偵測），詳見 Design Layer 的 Module 7。
 
 ### P2.4 Video Unmuting（靜音片段修復）
 

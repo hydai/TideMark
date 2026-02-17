@@ -698,8 +698,12 @@
     }
   },
   "tray": {
-    "show": "Tidemark を表示",
+    "show": "メインウィンドウを表示",
     "hide": "Tidemark を隠す",
+    "statusIdle": "モニタリング：未開始",
+    "statusMonitoring": "モニタリング：実行中",
+    "pause": "すべてのモニタリングを一時停止",
+    "resume": "すべてのモニタリングを再開",
     "monitoring": "スケジュールモニタリング中...",
     "quit": "終了"
   },

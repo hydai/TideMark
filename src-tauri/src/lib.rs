@@ -2077,6 +2077,18 @@ struct DownloadTask {
 
 type DownloadTasks = Arc<Mutex<HashMap<String, DownloadTask>>>;
 
+/// State for tray menu items, allowing dynamic label updates on language change (F9.3).
+struct TrayMenuItems {
+    show: MenuItem<tauri::Wry>,
+    status: MenuItem<tauri::Wry>,
+    pause: MenuItem<tauri::Wry>,
+    quit: MenuItem<tauri::Wry>,
+    pause_label: String,
+    resume_label: String,
+}
+
+type TrayState = Arc<std::sync::Mutex<TrayMenuItems>>;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct AppConfig {
     // Config version for migration
@@ -7493,13 +7505,35 @@ fn escape_filename_for_ytdlp(filename: String) -> String {
     filename.replace('%', "%%")
 }
 
-/// Update tray menu item text for pause/resume state.
-/// Returns ("暫停所有監聽", false) when monitoring is active,
-/// or ("恢復所有監聽", false) when monitoring is paused.
-fn update_pause_menu_item(pause_item: &MenuItem<tauri::Wry>) {
+/// Update tray menu labels when the user switches language (F9.3).
+/// The frontend sends translated labels for each menu item.
+#[tauri::command]
+fn update_tray_language(
+    state: tauri::State<'_, TrayState>,
+    show_label: String,
+    status_label: String,
+    pause_label: String,
+    resume_label: String,
+    quit_label: String,
+) -> Result<(), String> {
+    let mut items = state.lock().map_err(|e| e.to_string())?;
+    let _ = items.show.set_text(&show_label);
+    let _ = items.status.set_text(&status_label);
     let paused = MONITORING_PAUSED.load(Ordering::SeqCst);
-    let label = if paused { "恢復所有監聽" } else { "暫停所有監聽" };
-    let _ = pause_item.set_text(label);
+    let _ = items.pause.set_text(if paused { &resume_label } else { &pause_label });
+    let _ = items.quit.set_text(&quit_label);
+    items.pause_label = pause_label;
+    items.resume_label = resume_label;
+    Ok(())
+}
+
+/// Update tray menu item text for pause/resume state using stored localized labels.
+fn update_pause_menu_item(tray_state: &TrayState) {
+    if let Ok(items) = tray_state.lock() {
+        let paused = MONITORING_PAUSED.load(Ordering::SeqCst);
+        let label = if paused { &items.resume_label } else { &items.pause_label };
+        let _ = items.pause.set_text(label);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -7520,7 +7554,7 @@ pub fn run() {
                 )?;
             }
 
-            // Build tray context menu
+            // Build tray context menu with default Chinese labels (updated by frontend via update_tray_language)
             let show_item = MenuItem::with_id(app, "show", "顯示主視窗", true, None::<&str>)?;
             let status_item = MenuItem::with_id(app, "status", "監聽狀態：未啟動", false, None::<&str>)?;
             let pause_item = MenuItem::with_id(app, "pause", "暫停所有監聽", true, None::<&str>)?;
@@ -7532,8 +7566,19 @@ pub fn run() {
                 &[&show_item, &status_item, &sep1, &pause_item, &sep2, &quit_item],
             )?;
 
+            // Store tray menu item references in managed state for language updates (F9.3)
+            let tray_state: TrayState = Arc::new(std::sync::Mutex::new(TrayMenuItems {
+                show: show_item.clone(),
+                status: status_item.clone(),
+                pause: pause_item.clone(),
+                quit: quit_item.clone(),
+                pause_label: "暫停所有監聽".to_string(),
+                resume_label: "恢復所有監聽".to_string(),
+            }));
+            app.manage(tray_state.clone());
+
             let tray_app = app.handle().clone();
-            let pause_item_clone = pause_item.clone();
+            let tray_state_clone = tray_state.clone();
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -7551,7 +7596,7 @@ pub fn run() {
                         "pause" => {
                             let current = MONITORING_PAUSED.load(Ordering::SeqCst);
                             MONITORING_PAUSED.store(!current, Ordering::SeqCst);
-                            update_pause_menu_item(&pause_item_clone);
+                            update_pause_menu_item(&tray_state_clone);
                         }
                         "quit" => {
                             FORCE_QUIT.store(true, Ordering::SeqCst);
@@ -7725,7 +7770,8 @@ pub fn run() {
             expand_filename_template_phase1,
             sanitize_filename,
             resolve_output_filename,
-            escape_filename_for_ytdlp
+            escape_filename_for_ytdlp,
+            update_tray_language
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,6 +8,8 @@
  * Fallback chain: user language → zh-TW → raw key string
  */
 
+import { invoke } from '@tauri-apps/api/core';
+
 type TranslationMap = Record<string, string | Record<string, string | Record<string, string>>>;
 
 /** Loaded translation maps keyed by locale code. */
@@ -80,6 +82,9 @@ export async function setLanguage(locale: string): Promise<void> {
     currentLocale = ok ? locale : 'zh-TW';
   }
 
+  // Update tray menu labels (F9.3)
+  updateTrayLabels();
+
   // Trigger page re-render
   if (rerenderCallback) {
     rerenderCallback();
@@ -106,6 +111,25 @@ export async function initI18n(preferredLocale: string = 'zh-TW'): Promise<void>
   } else {
     currentLocale = 'zh-TW';
   }
+
+  // Set initial tray labels based on loaded language
+  updateTrayLabels();
+}
+
+/**
+ * Send localized tray menu labels to the Rust backend (F9.3).
+ * Called on language switch and on init.
+ */
+function updateTrayLabels(): void {
+  invoke('update_tray_language', {
+    showLabel: t('tray.show'),
+    statusLabel: t('tray.statusIdle'),
+    pauseLabel: t('tray.pause'),
+    resumeLabel: t('tray.resume'),
+    quitLabel: t('tray.quit'),
+  }).catch((err) => {
+    console.warn('[i18n] Failed to update tray labels:', err);
+  });
 }
 
 // ── Translation lookup ────────────────────────────────────────────────────────

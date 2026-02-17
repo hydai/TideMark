@@ -698,10 +698,14 @@
     }
   },
   "tray": {
-    "show": "顯示 Tidemark",
+    "show": "顯示主視窗",
     "hide": "隱藏 Tidemark",
+    "statusIdle": "監聽狀態：未啟動",
+    "statusMonitoring": "監聽狀態：執行中",
+    "pause": "暫停所有監聯",
+    "resume": "恢復所有監聽",
     "monitoring": "監聽排程中...",
-    "quit": "退出"
+    "quit": "結束"
   },
   "errors": {
     "languageLoadFailed": "語言檔載入失敗，已切換回繁體中文",

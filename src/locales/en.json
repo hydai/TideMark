@@ -698,8 +698,12 @@
     }
   },
   "tray": {
-    "show": "Show Tidemark",
+    "show": "Show Main Window",
     "hide": "Hide Tidemark",
+    "statusIdle": "Monitoring: Not Started",
+    "statusMonitoring": "Monitoring: Running",
+    "pause": "Pause All Monitoring",
+    "resume": "Resume All Monitoring",
     "monitoring": "Monitoring scheduled...",
     "quit": "Quit"
   },

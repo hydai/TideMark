@@ -15,15 +15,15 @@ Unified streaming content capture tool for YouTube and Twitch. Mark time points 
 │  - Organize folders │     │  - Record live streams│
 │  - Import/Export    │     │  - Transcribe (ASR)   │
 │                     │     │  - Manage records     │
-└────────┬────────────┘     └────────┬──────────────┘
-         │                           │
-         └──────────┬────────────────┘
-                    │ JWT Auth
-         ┌──────────▼──────────────┐
-         │   Cloud Sync API        │
-         │   (Cloudflare Workers)  │
-         │   D1 SQLite database    │
-         └─────────────────────────┘
+└────────┬────────────┘     │  - Scheduled downloads│
+         │                  │  - System tray mode   │
+         │                  └────────┬──────────────┘
+         └──────────┬────────────────┤
+                    │ JWT Auth       │
+         ┌──────────▼──────────┐     │
+         │   Cloud Sync API    │     ├── Twitch PubSub (WebSocket)
+         │   (CF Workers + D1) │     └── YouTube RSS (HTTP polling)
+         └─────────────────────┘
 ```
 
 ## Components
@@ -33,7 +33,8 @@ Unified streaming content capture tool for YouTube and Twitch. Mark time points 
 Tauri 2 app with TypeScript frontend and Rust backend.
 
 - **Frontend**: Vanilla TypeScript + Vite, single-page app with tab navigation
-- **Backend**: Rust with Tauri commands for download, recording, transcription, auth
+- **Backend**: Rust with Tauri commands for download, recording, transcription, auth, scheduled downloads
+- **Background Services**: Twitch PubSub WebSocket, YouTube RSS polling, system tray
 - **Sidecars**: yt-dlp (download), FFmpeg/FFprobe (media processing), Python (ASR)
 
 ### Browser Extension (`/extension`)
@@ -138,6 +139,7 @@ Tidemark/
 │       ├── history.ts      # Download history management
 │       ├── subtitles.ts    # Transcription (local + cloud ASR)
 │       ├── records.ts      # Records & folders management
+│       ├── scheduled-downloads.ts  # Scheduled downloads & presets
 │       └── settings.ts     # All settings sections
 ├── src-tauri/
 │   ├── src/

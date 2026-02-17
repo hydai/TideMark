@@ -26,9 +26,12 @@
 - **IPC**: Tauri `invoke()` for commands, `emit()`/`listen()` for events (progress, downloads).
 - **Config**: Persisted to `{appDataDir}/tidemark/config.json`. Interface in `src/config.ts`.
 - **Auth config**: Separate file at `{appDataDir}/tidemark/auth_config.json`.
+- **Scheduled presets**: Persisted to `{appDataDir}/tidemark/scheduled_presets.json`.
+- **System tray**: App minimizes to tray when scheduled downloads are active. Tray menu provides monitoring control.
+- **Background services**: Twitch PubSub WebSocket and YouTube RSS polling run as tokio tasks for live stream detection.
 
 ### Frontend Pages
-Each page in `src/pages/*.ts` exports a `render*Page(container)` function that builds the entire page DOM. Pages are mounted/unmounted by `src/app.ts` on tab switch.
+Each page in `src/pages/*.ts` exports a `render*Page(container)` function that builds the entire page DOM. Pages are mounted/unmounted by `src/app.ts` on tab switch. The "Scheduled Downloads" tab is conditionally rendered based on `enable_scheduled_downloads` config.
 
 ### Cloud Sync
 - Polling-based sync (3-5s intervals) using `updatedAt` timestamps.
@@ -61,6 +64,11 @@ Long-running operations (downloads, recordings, transcription) emit Tauri events
 - `download-progress`, `download-complete`, `download-error`
 - `recording-progress`, `recording-stopped`
 - `transcription-progress`, `transcription-complete`
+- `twitch-stream-up`, `twitch-stream-down`, `twitch-pubsub-status`
+- `youtube-stream-live`, `youtube-polling-status`, `youtube-channel-error`
+- `scheduled-download-triggered`, `scheduled-download-complete`, `scheduled-download-failed`
+- `scheduled-download-queue-update`, `scheduled-download-disk-full`
+- `scheduled-notification-toast`
 
 ### Cloud Sync Flow
 Extension and Desktop both sync through the same API:

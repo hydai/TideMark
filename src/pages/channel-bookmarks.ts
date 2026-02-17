@@ -834,6 +834,40 @@ function createBookmarkCard(
   expandBtn.title = '展開最新影片列表';
   card.appendChild(expandBtn);
 
+  // ── Quick action buttons row (F8.5) ──────────────────────────────────────────
+  const quickActionsRow = document.createElement('div');
+  quickActionsRow.className = 'bookmark-quick-actions';
+
+  // Action 1: Download latest VOD
+  const downloadVodBtn = document.createElement('button');
+  downloadVodBtn.className = 'action-btn bookmark-quick-btn';
+  downloadVodBtn.textContent = '下載最新 VOD';
+  downloadVodBtn.title = '取得此頻道最新 VOD 並前往下載';
+  quickActionsRow.appendChild(downloadVodBtn);
+
+  // Action 2: Add scheduled preset
+  const schedPresetBtn = document.createElement('button');
+  schedPresetBtn.className = 'action-btn bookmark-quick-btn';
+  schedPresetBtn.textContent = '新增排程預設';
+  schedPresetBtn.title = '為此頻道新增排程下載預設';
+  quickActionsRow.appendChild(schedPresetBtn);
+
+  // Action 3: Open channel page
+  const openChannelBtn = document.createElement('button');
+  openChannelBtn.className = 'action-btn bookmark-quick-btn';
+  openChannelBtn.textContent = '開啟頻道';
+  openChannelBtn.title = '在瀏覽器中開啟此頻道頁面';
+  quickActionsRow.appendChild(openChannelBtn);
+
+  // Action 4: Copy channel URL
+  const copyUrlBtn = document.createElement('button');
+  copyUrlBtn.className = 'action-btn bookmark-quick-btn';
+  copyUrlBtn.textContent = '複製連結';
+  copyUrlBtn.title = '複製頻道 URL 到剪貼簿';
+  quickActionsRow.appendChild(copyUrlBtn);
+
+  card.appendChild(quickActionsRow);
+
   // Video list container (collapsed by default)
   const videoListEl = document.createElement('div');
   videoListEl.className = 'bookmark-video-list';
@@ -1021,6 +1055,79 @@ function createBookmarkCard(
     }
   });
 
+  // ── Quick action event listeners (F8.5) ──────────────────────────────────────
+
+  // Action 1: Download latest VOD
+  downloadVodBtn.addEventListener('click', async () => {
+    downloadVodBtn.disabled = true;
+    downloadVodBtn.textContent = '取得中…';
+    try {
+      const videos = await invoke<ChannelVideo[]>('fetch_channel_videos', {
+        channelId: bookmark.channel_id,
+        platform: bookmark.platform,
+        count: 1,
+      });
+      if (videos.length === 0) {
+        showToast('此頻道目前沒有可下載的 VOD');
+        return;
+      }
+      const latestUrl = videos[0].url;
+      // Navigate to Download tab with the URL pre-filled
+      window.dispatchEvent(new CustomEvent('app:navigate-download', {
+        detail: { url: latestUrl },
+      }));
+    } catch (_err) {
+      showToast('取得最新 VOD 失敗，請稍後再試');
+    } finally {
+      downloadVodBtn.disabled = false;
+      downloadVodBtn.textContent = '下載最新 VOD';
+    }
+  });
+
+  // Action 2: Add / view scheduled preset
+  schedPresetBtn.addEventListener('click', async () => {
+    // Check if a preset already exists for this channel
+    const key = `${bookmark.platform}:${bookmark.channel_id}`;
+    if (presetLinks.has(key)) {
+      // Preset exists — ask user if they want to navigate there
+      if (confirm('此頻道已有排程預設，是否前往查看？')) {
+        window.dispatchEvent(new CustomEvent('app:navigate-scheduled', {
+          detail: null,
+        }));
+      }
+    } else {
+      // No preset — navigate to Scheduled Downloads with pre-filled channel info
+      window.dispatchEvent(new CustomEvent('app:navigate-scheduled', {
+        detail: {
+          channelId: bookmark.channel_id,
+          channelName: bookmark.channel_name,
+          platform: bookmark.platform,
+        },
+      }));
+    }
+  });
+
+  // Action 3: Open channel page in browser
+  openChannelBtn.addEventListener('click', async () => {
+    const url = getChannelUrl(bookmark.platform, bookmark.channel_id);
+    try {
+      await invoke('open_url', { url });
+    } catch (err) {
+      console.error('Failed to open URL:', err);
+    }
+  });
+
+  // Action 4: Copy channel URL to clipboard
+  copyUrlBtn.addEventListener('click', async () => {
+    const url = getChannelUrl(bookmark.platform, bookmark.channel_id);
+    try {
+      await navigator.clipboard.writeText(url);
+      showToast('已複製');
+    } catch (_err) {
+      showToast('複製失敗，請手動複製');
+    }
+  });
+
   return card;
 }
 
@@ -1038,6 +1145,29 @@ function hideFormError(elementId: string) {
     el.style.display = 'none';
     el.textContent = '';
   }
+}
+
+// ── Quick action helpers (F8.5) ───────────────────────────────────────────────
+
+/** Show a brief toast notification at the bottom of the screen. */
+function showToast(message: string) {
+  const toast = document.createElement('div');
+  toast.className = 'toast-notification';
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('toast-fade-out');
+    setTimeout(() => toast.remove(), 500);
+  }, 3000);
+}
+
+/** Return the public channel URL for a given platform and channel ID / login. */
+function getChannelUrl(platform: string, channelId: string): string {
+  if (platform === 'youtube') {
+    return `https://www.youtube.com/channel/${channelId}`;
+  }
+  // Twitch channel IDs stored here are the login name (lowercase)
+  return `https://www.twitch.tv/${channelId}`;
 }
 
 // ── Video list rendering helpers (F8.4) ───────────────────────────────────────

@@ -177,13 +177,32 @@ export async function initGlobalToastListener() {
 
 /** Initialize the cross-tab navigation listener. Called once at app startup.
  *  Pages dispatch 'app:navigate-bookmarks' on window to request switching to the
- *  channel-bookmarks tab and optionally highlighting a specific bookmark card. */
+ *  channel-bookmarks tab and optionally highlighting a specific bookmark card.
+ *  Pages dispatch 'app:navigate-scheduled' on window to request switching to the
+ *  scheduled-downloads tab and optionally opening the new-preset modal with
+ *  pre-filled channel info. */
 export function initNavigationListener() {
   window.addEventListener('app:navigate-bookmarks', (e: Event) => {
     const detail = (e as CustomEvent<{ channelId: string; platform: string }>).detail;
     // Store focus target so the bookmarks page can read it on render
     (window as any).__bookmarksFocusTarget = detail;
     switchTab('channel-bookmarks');
+  });
+
+  window.addEventListener('app:navigate-scheduled', (e: Event) => {
+    const detail = (e as CustomEvent<{ channelId: string; channelName: string; platform: string } | null>).detail;
+    // Store prefill data so the scheduled-downloads page can read it on render
+    if (detail) {
+      (window as any).__scheduledNewPresetChannel = detail;
+    }
+    switchTab('scheduled-downloads');
+  });
+
+  window.addEventListener('app:navigate-download', (e: Event) => {
+    const detail = (e as CustomEvent<{ url: string }>).detail;
+    // Use the existing navigationData mechanism to pass the URL to the Download page
+    navigationData = { url: detail.url };
+    switchTab('download');
   });
 }
 

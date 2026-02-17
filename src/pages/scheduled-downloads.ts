@@ -162,8 +162,22 @@ const scheduledProgressMap: Map<string, DownloadProgressEvent> = new Map();
 // Tauri event unlisten functions — cleaned up when page is unmounted
 const _unlisteners: UnlistenFn[] = [];
 
+// Pre-filled channel info for new preset modal (set by cross-tab navigation from bookmarks)
+let newPresetPrefillChannel: { channelId: string; channelName: string; platform: string } | null = null;
+
 export async function renderScheduledDownloadsPage(container: HTMLElement) {
   containerEl = container;
+
+  // Read and clear any prefill data set by 'app:navigate-scheduled' custom event.
+  const prefill = (window as any).__scheduledNewPresetChannel as
+    { channelId: string; channelName: string; platform: string } | undefined;
+  if (prefill) {
+    newPresetPrefillChannel = prefill;
+    isNewPreset = true;
+    delete (window as any).__scheduledNewPresetChannel;
+  } else {
+    newPresetPrefillChannel = null;
+  }
 
   // Clean up any previously registered listeners to avoid duplicates.
   for (const unlisten of _unlisteners.splice(0)) {
@@ -1020,6 +1034,7 @@ function openPresetModal(presetId: string | null) {
 function closePresetModal() {
   editingPresetId = null;
   isNewPreset = false;
+  newPresetPrefillChannel = null;
   if (containerEl) renderPage(containerEl);
 }
 
@@ -1220,6 +1235,17 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
     channelInfoName.textContent = existingPreset.channel_name;
     channelInfoPlatform.textContent = existingPreset.platform === 'youtube' ? 'YouTube' : 'Twitch';
     channelInfoPlatform.className = `channel-info-platform platform-badge ${existingPreset.platform}`;
+  } else if (newPresetPrefillChannel) {
+    // Pre-fill from cross-tab navigation (e.g. from channel bookmarks "新增排程預設" action)
+    const ch = newPresetPrefillChannel;
+    channelIdInput.value = ch.channelId;
+    channelNameInput.value = ch.channelName;
+    platformInput.value = ch.platform;
+
+    channelInfoDiv.style.display = 'flex';
+    channelInfoName.textContent = ch.channelName;
+    channelInfoPlatform.textContent = ch.platform === 'youtube' ? 'YouTube' : 'Twitch';
+    channelInfoPlatform.className = `channel-info-platform platform-badge ${ch.platform}`;
   }
 
   // Attach resolve button event

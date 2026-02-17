@@ -1096,7 +1096,10 @@ fn check_disk_space(path: &str) -> Result<u64, String> {
     let ret = unsafe { libc::statvfs(cpath.as_ptr(), &mut stat) };
     if ret == 0 {
         // available bytes = f_bavail * f_bsize
-        Ok(stat.f_bavail as u64 * stat.f_bsize as u64)
+        // Cast needed: f_bavail/f_bsize are u32 on Linux, u64 on macOS
+        #[allow(clippy::unnecessary_cast)]
+        let free = stat.f_bavail as u64 * stat.f_bsize as u64;
+        Ok(free)
     } else {
         Err(format!("statvfs failed (code {})", ret))
     }
@@ -1116,7 +1119,8 @@ const MIN_FREE_BYTES: u64 = 500 * 1024 * 1024;
 /// - "toast" → in-app toast via Tauri event only
 /// - "both"  → both OS and in-app toast
 /// - "none"  → no notifications
-/// level: "info" | "warning" | "critical"
+///
+/// `level`: "info" | "warning" | "critical"
 async fn send_scheduled_notification(app: &AppHandle, title: &str, body: &str, level: &str) {
     let mode = match load_config(app.clone()) {
         Ok(cfg) => cfg.scheduled_download_notification,
@@ -5832,18 +5836,17 @@ pub fn run() {
                 .on_tray_icon_event(move |_tray, event| {
                     // On macOS: single left click shows window
                     // On Windows: double-click shows window, single click also acceptable
-                    let should_show = match &event {
+                    let should_show = matches!(
+                        &event,
                         TrayIconEvent::Click {
                             button: MouseButton::Left,
                             button_state: MouseButtonState::Up,
                             ..
-                        } => true,
-                        TrayIconEvent::DoubleClick {
+                        } | TrayIconEvent::DoubleClick {
                             button: MouseButton::Left,
                             ..
-                        } => true,
-                        _ => false,
-                    };
+                        }
+                    );
                     if should_show {
                         if let Some(win) = tray_app.get_webview_window("main") {
                             let _ = win.show();

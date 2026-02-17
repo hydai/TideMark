@@ -1781,7 +1781,7 @@ Extension (Chrome Storage)
        v
 Cloud Sync (Cloudflare D1)  ← source of truth
        |
-       | polling every 3-5s
+       | polling every 5s (3s when foreground-active)
        v
 Desktop (Local SQLite / JSON)
        |

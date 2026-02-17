@@ -3047,14 +3047,13 @@ body {
   color: var(--accent-color);
 }
 
-/* Video list container — sits below the card header row */
+/* Video list container — sits below the card header row.
+   flex-basis: 100% forces it to wrap to its own row in the wrapping flex card. */
 .bookmark-video-list {
   width: 100%;
-  /* flex-basis: 100% ensures it wraps to its own row in the flex card */
   flex-basis: 100%;
-  margin-top: 8px;
   border-top: 1px solid var(--border-color);
-  padding-top: 8px;
+  padding-top: 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;

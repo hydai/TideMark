@@ -878,7 +878,7 @@ function createBookmarkCard(
       });
       videoCache.set(cacheKey, videos);
       renderVideoList(videoListEl, videos);
-    } catch (err) {
+    } catch (_err) {
       renderVideoListError(videoListEl, () => {
         // Retry: clear cache entry and re-trigger expand
         videoCache.delete(cacheKey);

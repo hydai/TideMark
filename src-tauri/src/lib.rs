@@ -6437,8 +6437,6 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
     let mut inside_video_id = false;
     let mut inside_title = false;
     let mut inside_published = false;
-    // Skip the feed-level <title> (appears before any <entry>)
-    let mut feed_title_done = false;
 
     loop {
         match reader.read_event_into(&mut buf) {
@@ -6459,9 +6457,6 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
                     }
                     "title" if in_entry => {
                         inside_title = true;
-                    }
-                    "title" if !in_entry && !feed_title_done => {
-                        // Will be consumed as text; mark done when End is seen
                     }
                     "published" if in_entry => {
                         inside_published = true;
@@ -6533,9 +6528,6 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
                     } else if inside_published && in_entry {
                         cur_published = t;
                         inside_published = false;
-                    } else if !in_entry && !feed_title_done {
-                        // Consume the feed-level title text
-                        feed_title_done = true;
                     }
                 }
             }
@@ -6593,7 +6585,7 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
 /// - Twitch: queries the GQL API using the public client ID + stored OAuth token
 #[tauri::command]
 async fn fetch_channel_videos(
-    app: AppHandle,
+    _app: AppHandle,
     channel_id: String,
     platform: String,
     count: u32,
@@ -6635,94 +6627,75 @@ async fn fetch_channel_videos(
             Ok(videos)
         }
         "twitch" => {
-            // Load auth config to get Twitch token
-            let auth_config: AuthConfig = {
-                let auth_path = get_auth_config_path(&app).unwrap_or_default();
-                if auth_path.exists() {
-                    fs::read_to_string(&auth_path)
-                        .ok()
-                        .and_then(|s| serde_json::from_str(&s).ok())
-                        .unwrap_or(AuthConfig {
-                            twitch_token: None,
-                            youtube_cookies_path: None,
-                            openai_api_key: None,
-                            groq_api_key: None,
-                            elevenlabs_api_key: None,
-                        })
-                } else {
-                    AuthConfig {
-                        twitch_token: None,
-                        youtube_cookies_path: None,
-                        openai_api_key: None,
-                        groq_api_key: None,
-                        elevenlabs_api_key: None,
-                    }
-                }
+            // Use yt-dlp to fetch recent VODs for the Twitch channel.
+            // channel_id here is the login name (e.g. "shroud").
+            use tokio::process::Command as TokioCommand;
+            use tokio::time::{timeout, Duration};
+
+            let channel_url = format!("https://www.twitch.tv/{}/videos", channel_id);
+
+            let fut = TokioCommand::new("yt-dlp")
+                .args([
+                    "--flat-playlist",
+                    "--dump-single-json",
+                    "--playlist-items",
+                    &format!("1-{}", limit),
+                    "--no-warnings",
+                    &channel_url,
+                ])
+                .output();
+
+            let output = match timeout(Duration::from_secs(30), fut).await {
+                Err(_) => return Err("yt-dlp timed out fetching Twitch VODs".to_string()),
+                Ok(Err(e)) => return Err(format!("yt-dlp spawn error: {}", e)),
+                Ok(Ok(o)) => o,
             };
 
-            let client_id = "kimne78kx3ncx6brgo4mv6wki5h1ko";
-
-            // Use Twitch GQL to query the channel's recent VODs via inline query.
-            // This is more robust than persisted queries which can expire.
-            let gql_body = format!(
-                r#"[{{"query":"query {{ user(login:\"{login}\") {{ videos(first:{first},type:ARCHIVE,sort:TIME) {{ edges {{ node {{ id title publishedAt lengthSeconds viewCount previewThumbnailURL(width:120,height:68) }} }} }} }} }}","variables":{{}}}}]"#,
-                login = channel_id.replace('"', ""),
-                first = limit
-            );
-
-            let client = reqwest::Client::new();
-            let mut req = client
-                .post("https://gql.twitch.tv/gql")
-                .header("Client-Id", client_id)
-                .header("Content-Type", "application/json")
-                .body(gql_body);
-
-            if let Some(ref token) = auth_config.twitch_token {
-                if !token.is_empty() {
-                    req = req.header("Authorization", format!("OAuth {}", token));
-                }
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                log::warn!("[ChannelVideos] yt-dlp failed for {}: {}", channel_id, stderr);
+                return Ok(Vec::new());
             }
 
-            let response = req
-                .send()
-                .await
-                .map_err(|e| format!("GQL request failed: {}", e))?;
-
-            if !response.status().is_success() {
-                return Err(format!(
-                    "Twitch GQL returned status {}",
-                    response.status()
-                ));
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let json_str = stdout.trim();
+            if json_str.is_empty() {
+                return Ok(Vec::new());
             }
 
-            let body: serde_json::Value = response
-                .json()
-                .await
-                .map_err(|e| format!("Failed to parse Twitch GQL response: {}", e))?;
+            let playlist: serde_json::Value = serde_json::from_str(json_str)
+                .map_err(|e| format!("Failed to parse yt-dlp output: {}", e))?;
 
-            // Response is an array; first element contains data.user.videos.edges
             let empty_arr = vec![];
-            let edges = body
-                .as_array()
-                .and_then(|arr| arr.first())
-                .and_then(|item| item.get("data"))
-                .and_then(|data| data.get("user"))
-                .and_then(|user| user.get("videos"))
-                .and_then(|vids| vids.get("edges"))
+            let entries = playlist
+                .get("entries")
                 .and_then(|e| e.as_array())
                 .unwrap_or(&empty_arr);
 
-            let mut videos: Vec<ChannelVideo> = edges
+            let mut videos: Vec<ChannelVideo> = entries
                 .iter()
-                .filter_map(|edge| {
-                    let node = edge.get("node")?;
-                    let id = node["id"].as_str()?.to_string();
-                    let title = node["title"].as_str().unwrap_or("").to_string();
-                    let published_at = node["publishedAt"].as_str().unwrap_or("").to_string();
-                    let duration_secs = node["lengthSeconds"].as_u64().unwrap_or(0);
-                    let view_count = node["viewCount"].as_u64();
+                .filter_map(|entry| {
+                    let id = entry["id"].as_str()?.to_string();
+                    let title = entry["title"].as_str().unwrap_or("").to_string();
+                    let url = entry["url"]
+                        .as_str()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| format!("https://www.twitch.tv/videos/{}", id));
 
-                    // Convert seconds to H:MM:SS
+                    // yt-dlp flat playlist gives timestamp as Unix epoch
+                    let published_at = entry["timestamp"].as_i64()
+                        .map(|ts| {
+                            // Convert Unix timestamp to ISO 8601 using chrono
+                            use chrono::TimeZone;
+                            match chrono::Utc.timestamp_opt(ts, 0) {
+                                chrono::LocalResult::Single(dt) => dt.to_rfc3339(),
+                                _ => String::new(),
+                            }
+                        })
+                        .unwrap_or_default();
+
+                    // Duration in seconds from yt-dlp
+                    let duration_secs = entry["duration"].as_f64().unwrap_or(0.0) as u64;
                     let duration = if duration_secs > 0 {
                         let h = duration_secs / 3600;
                         let m = (duration_secs % 3600) / 60;
@@ -6732,13 +6705,13 @@ async fn fetch_channel_videos(
                         None
                     };
 
-                    // Thumbnail: prefer animatedPreviewURL, fall back to previewThumbnailURL
-                    let thumbnail_url = node["previewThumbnailURL"]
+                    let view_count = entry["view_count"].as_u64();
+
+                    // yt-dlp provides thumbnail in flat playlist
+                    let thumbnail_url = entry["thumbnail"]
                         .as_str()
                         .filter(|s| !s.is_empty())
                         .map(|s| s.to_string());
-
-                    let url = format!("https://www.twitch.tv/videos/{}", id);
 
                     Some(ChannelVideo {
                         video_id: id,

@@ -8,10 +8,12 @@ import {
   SYNC_POLL_INTERVAL,
   type Record,
   type Folder,
+  type ChannelBookmark,
   type SyncState,
   type SyncQueueItem,
   type APIRecord,
   type APIFolder,
+  type APIChannelBookmark,
   type SyncUser,
   type SyncStatus,
 } from './types';
@@ -216,6 +218,41 @@ function apiToFolder(apiFolder: APIFolder): Folder {
 }
 
 /**
+ * Convert local ChannelBookmark to API format
+ */
+function channelBookmarkToAPI(bookmark: ChannelBookmark, userId: string): APIChannelBookmark {
+  const now = new Date().toISOString();
+  return {
+    id: bookmark.id,
+    user_id: userId,
+    channel_id: bookmark.channel_id,
+    channel_name: bookmark.channel_name,
+    platform: bookmark.platform,
+    notes: bookmark.notes,
+    sort_order: bookmark.sort_order,
+    created_at: bookmark.created_at,
+    updated_at: now,
+    deleted: 0,
+  };
+}
+
+/**
+ * Convert API ChannelBookmark to local format
+ */
+function apiToChannelBookmark(apiBookmark: APIChannelBookmark): ChannelBookmark {
+  return {
+    id: apiBookmark.id,
+    channel_id: apiBookmark.channel_id,
+    channel_name: apiBookmark.channel_name,
+    platform: apiBookmark.platform,
+    notes: apiBookmark.notes,
+    sort_order: apiBookmark.sort_order,
+    created_at: apiBookmark.created_at,
+    updated_at: apiBookmark.updated_at,
+  };
+}
+
+/**
  * Push a record to the cloud
  */
 export async function pushRecord(record: Record): Promise<void> {
@@ -392,6 +429,93 @@ export async function deleteFolderRemote(folderId: string): Promise<void> {
 }
 
 /**
+ * Push a channel bookmark to the cloud
+ */
+export async function pushChannelBookmark(bookmark: ChannelBookmark): Promise<void> {
+  const state = await getSyncState();
+  if (!state.jwt || !state.user) {
+    await queueSync({
+      id: `sync-${Date.now()}-${Math.random()}`,
+      action: 'create_channel_bookmark',
+      data: bookmark,
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  try {
+    await updateSyncState({ status: 'syncing' });
+
+    const apiBookmark = channelBookmarkToAPI(bookmark, state.user.id);
+    const response = await fetch(`${CLOUD_SYNC_API_URL}/channel-bookmarks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${state.jwt}`,
+      },
+      body: JSON.stringify(apiBookmark),
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to push channel bookmark');
+    }
+
+    await updateSyncState({ status: 'synced' });
+  } catch (error) {
+    console.error('Push channel bookmark error:', error);
+    await updateSyncState({ status: 'error' });
+    await queueSync({
+      id: `sync-${Date.now()}-${Math.random()}`,
+      action: 'create_channel_bookmark',
+      data: bookmark,
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+/**
+ * Delete a channel bookmark in the cloud
+ */
+export async function deleteChannelBookmarkRemote(bookmarkId: string): Promise<void> {
+  const state = await getSyncState();
+  if (!state.jwt || !state.user) {
+    await queueSync({
+      id: `sync-${Date.now()}-${Math.random()}`,
+      action: 'delete_channel_bookmark',
+      data: { bookmarkId },
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+
+  try {
+    await updateSyncState({ status: 'syncing' });
+
+    const response = await fetch(`${CLOUD_SYNC_API_URL}/channel-bookmarks/${bookmarkId}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${state.jwt}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to delete channel bookmark');
+    }
+
+    await updateSyncState({ status: 'synced' });
+  } catch (error) {
+    console.error('Delete channel bookmark error:', error);
+    await updateSyncState({ status: 'error' });
+    await queueSync({
+      id: `sync-${Date.now()}-${Math.random()}`,
+      action: 'delete_channel_bookmark',
+      data: { bookmarkId },
+      timestamp: new Date().toISOString(),
+    });
+  }
+}
+
+/**
  * Queue a sync operation for later
  */
 async function queueSync(item: SyncQueueItem): Promise<void> {
@@ -428,6 +552,13 @@ export async function processQueue(): Promise<void> {
           break;
         case 'delete_folder':
           await deleteFolderRemote(item.data.folderId);
+          break;
+        case 'create_channel_bookmark':
+        case 'update_channel_bookmark':
+          await pushChannelBookmark(item.data);
+          break;
+        case 'delete_channel_bookmark':
+          await deleteChannelBookmarkRemote(item.data.bookmarkId);
           break;
       }
     } catch (error) {
@@ -467,15 +598,18 @@ export async function pullRemoteChanges(): Promise<void> {
     const data = await response.json();
     const remoteRecords: APIRecord[] = data.records || [];
     const remoteFolders: APIFolder[] = data.folders || [];
+    const remoteBookmarks: APIChannelBookmark[] = data.channel_bookmarks || [];
 
     // Get local data
-    const localStorage = await chrome.storage.local.get(['records', 'folders']) as { records?: Record[]; folders?: Folder[] };
+    const localStorage = await chrome.storage.local.get(['records', 'folders', 'channelBookmarks']) as { records?: Record[]; folders?: Folder[]; channelBookmarks?: ChannelBookmark[] };
     const localRecords: Record[] = localStorage.records || [];
     const localFolders: Folder[] = localStorage.folders || [];
+    const localBookmarks: ChannelBookmark[] = localStorage.channelBookmarks || [];
 
     // Merge remote changes
     const recordsMap = new Map(localRecords.map((r) => [r.id, r]));
     const foldersMap = new Map(localFolders.map((f) => [f.id, f]));
+    const bookmarksMap = new Map(localBookmarks.map((b) => [b.id, b]));
 
     // Apply remote records
     for (const remoteRecord of remoteRecords) {
@@ -499,10 +633,22 @@ export async function pullRemoteChanges(): Promise<void> {
       }
     }
 
+    // Apply remote channel bookmarks
+    for (const remoteBookmark of remoteBookmarks) {
+      if (remoteBookmark.deleted === 1) {
+        // Delete locally
+        bookmarksMap.delete(remoteBookmark.id);
+      } else {
+        // Add or update (last-write-wins)
+        bookmarksMap.set(remoteBookmark.id, apiToChannelBookmark(remoteBookmark));
+      }
+    }
+
     // Save merged data
     await chrome.storage.local.set({
       records: Array.from(recordsMap.values()),
       folders: Array.from(foldersMap.values()),
+      channelBookmarks: Array.from(bookmarksMap.values()),
     });
 
     // Update last synced time

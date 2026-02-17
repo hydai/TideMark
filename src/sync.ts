@@ -43,9 +43,23 @@ export interface APIFolder {
   deleted: number;
 }
 
+export interface APIChannelBookmark {
+  id: string;
+  user_id: string;
+  channel_id: string;
+  channel_name: string;
+  platform: string;
+  notes: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted: number;
+}
+
 export interface SyncResponse {
   records: APIRecord[];
   folders: APIFolder[];
+  channel_bookmarks: APIChannelBookmark[];
   synced_at: string;
 }
 
@@ -66,6 +80,17 @@ export interface Folder {
   name: string;
   created: string;
   sort_order?: number;
+}
+
+export interface ChannelBookmark {
+  id: string;
+  channel_id: string;
+  channel_name: string;
+  platform: string;
+  notes: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
 }
 
 const SYNC_POLL_INTERVAL = 4000; // 4 seconds
@@ -271,6 +296,28 @@ export async function pullRemoteChanges(): Promise<void> {
 
     await invoke('save_local_records', { data: mergedData });
 
+    // Apply remote channel bookmarks
+    const remoteBookmarks: APIChannelBookmark[] = syncResponse.channel_bookmarks || [];
+    for (const remoteBookmark of remoteBookmarks) {
+      if (remoteBookmark.deleted === 1) {
+        // Delete locally
+        await invoke('delete_channel_bookmark', { id: remoteBookmark.id });
+      } else {
+        // Add or update (last-write-wins)
+        const localBookmark: ChannelBookmark = {
+          id: remoteBookmark.id,
+          channel_id: remoteBookmark.channel_id,
+          channel_name: remoteBookmark.channel_name,
+          platform: remoteBookmark.platform,
+          notes: remoteBookmark.notes,
+          sort_order: remoteBookmark.sort_order,
+          created_at: remoteBookmark.created_at,
+          updated_at: remoteBookmark.updated_at,
+        };
+        await invoke('save_channel_bookmark', { bookmark: localBookmark });
+      }
+    }
+
     // Update sync state
     await saveSyncState({
       ...state,
@@ -360,6 +407,45 @@ export async function deleteFolderRemote(folderId: string): Promise<void> {
     await saveSyncState({ ...state, status: 'synced' });
   } catch (error) {
     console.error('Delete folder error:', error);
+    await saveSyncState({ ...state, status: 'error' });
+  }
+}
+
+/**
+ * Push a channel bookmark to the cloud
+ */
+export async function pushChannelBookmark(bookmark: ChannelBookmark): Promise<void> {
+  const state = await getSyncState();
+  if (!state.jwt || !state.user) {
+    // Not logged in, skip sync
+    return;
+  }
+
+  try {
+    await saveSyncState({ ...state, status: 'syncing' });
+    await invoke('sync_push_channel_bookmark', { bookmark });
+    await saveSyncState({ ...state, status: 'synced' });
+  } catch (error) {
+    console.error('Push channel bookmark error:', error);
+    await saveSyncState({ ...state, status: 'error' });
+  }
+}
+
+/**
+ * Delete a channel bookmark in the cloud
+ */
+export async function deleteChannelBookmarkRemote(bookmarkId: string): Promise<void> {
+  const state = await getSyncState();
+  if (!state.jwt || !state.user) {
+    return;
+  }
+
+  try {
+    await saveSyncState({ ...state, status: 'syncing' });
+    await invoke('sync_delete_channel_bookmark', { bookmarkId });
+    await saveSyncState({ ...state, status: 'synced' });
+  } catch (error) {
+    console.error('Delete channel bookmark error:', error);
     await saveSyncState({ ...state, status: 'error' });
   }
 }

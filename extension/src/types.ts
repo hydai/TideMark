@@ -90,11 +90,25 @@ export interface SyncUser {
 export type SyncStatus = 'offline' | 'synced' | 'syncing' | 'error';
 
 /**
+ * Channel Bookmark data model stored in Chrome Storage
+ */
+export interface ChannelBookmark {
+  id: string;
+  channel_id: string;
+  channel_name: string;
+  platform: string;   // "youtube" or "twitch"
+  notes: string;
+  sort_order: number;
+  created_at: string; // ISO 8601
+  updated_at: string; // ISO 8601
+}
+
+/**
  * Sync Queue Item
  */
 export interface SyncQueueItem {
   id: string;
-  action: 'create_record' | 'update_record' | 'delete_record' | 'create_folder' | 'update_folder' | 'delete_folder';
+  action: 'create_record' | 'update_record' | 'delete_record' | 'create_folder' | 'update_folder' | 'delete_folder' | 'create_channel_bookmark' | 'update_channel_bookmark' | 'delete_channel_bookmark';
   data: any;
   timestamp: string;
 }
@@ -136,6 +150,22 @@ export interface APIFolder {
   id: string;
   user_id: string;
   name: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+  deleted: number;
+}
+
+/**
+ * API Channel Bookmark format (matches Cloud Sync API)
+ */
+export interface APIChannelBookmark {
+  id: string;
+  user_id: string;
+  channel_id: string;
+  channel_name: string;
+  platform: string;
+  notes: string;
   sort_order: number;
   created_at: string;
   updated_at: string;

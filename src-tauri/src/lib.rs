@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, Child};
 use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tauri::{AppHandle, Manager, Emitter, WindowEvent};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState};
@@ -17,6 +17,27 @@ use futures_util::{SinkExt, StreamExt};
 // Global state for force quit and monitoring pause
 static FORCE_QUIT: AtomicBool = AtomicBool::new(false);
 static MONITORING_PAUSED: AtomicBool = AtomicBool::new(false);
+
+// ── Live status state (for channel bookmarks) ─────────────────────────────────
+
+/// Tracks live status for all monitored channels (presets + bookmark-only).
+/// Key: "platform:channel_id" (e.g. "twitch:123456" or "youtube:UCxxxxxx")
+struct LiveStatusState {
+    statuses: HashMap<String, bool>,
+}
+
+impl LiveStatusState {
+    fn new() -> Self {
+        Self { statuses: HashMap::new() }
+    }
+}
+
+static LIVE_STATUS_STATE: std::sync::OnceLock<tokio::sync::Mutex<LiveStatusState>> =
+    std::sync::OnceLock::new();
+
+fn live_status_state() -> &'static tokio::sync::Mutex<LiveStatusState> {
+    LIVE_STATUS_STATE.get_or_init(|| tokio::sync::Mutex::new(LiveStatusState::new()))
+}
 
 // ── Twitch PubSub global state ──────────────────────────────────────────────
 
@@ -102,6 +123,7 @@ async fn run_pubsub_connection(
     app: AppHandle,
     topics: Vec<String>,
     channel_map: HashMap<String, String>, // channel_id -> channel_name
+    bookmark_only_channels: HashSet<String>, // channel_ids that are bookmarks-only (no preset)
     mut shutdown_rx: watch::Receiver<bool>,
 ) {
     use tokio_tungstenite::connect_async;
@@ -232,6 +254,7 @@ async fn run_pubsub_connection(
                                             &app,
                                             &txt,
                                             &channel_map,
+                                            &bookmark_only_channels,
                                             &tasks_ref,
                                         );
                                     }
@@ -316,6 +339,7 @@ fn handle_pubsub_message(
     app: &AppHandle,
     text: &str,
     channel_map: &HashMap<String, String>,
+    bookmark_only_channels: &HashSet<String>,
     tasks: &DownloadTasks,
 ) {
     let msg: PubSubIncoming = match serde_json::from_str(text) {
@@ -361,12 +385,15 @@ fn handle_pubsub_message(
                 let paused = MONITORING_PAUSED.load(Ordering::SeqCst);
                 let now = Utc::now().to_rfc3339();
 
+                let is_bookmark_only = bookmark_only_channels.contains(&channel_id);
+
                 match playback.msg_type.as_str() {
                     "stream-up" => {
                         log::info!(
-                            "[PubSub] stream-up for channel {} ({})",
+                            "[PubSub] stream-up for channel {} ({}), bookmark_only={}",
                             channel_name,
-                            channel_id
+                            channel_id,
+                            is_bookmark_only
                         );
                         let _ = app.emit(
                             "twitch-stream-up",
@@ -377,25 +404,45 @@ fn handle_pubsub_message(
                                 "paused": paused,
                             }),
                         );
-                        // Trigger auto-download for this Twitch channel.
-                        let stream_url = format!("https://www.twitch.tv/{}", channel_name.to_lowercase());
-                        // Use channel_id + timestamp as stream_id fallback for Twitch.
-                        let stream_id = format!("twitch_{}_{}", channel_id, now);
-                        let app2 = app.clone();
-                        let tasks2 = tasks.clone();
-                        let ch_id = channel_id.clone();
-                        let ch_name = channel_name.clone();
+                        // Emit live status update for bookmark UI.
+                        let _ = app.emit(
+                            "channel-live-status-update",
+                            serde_json::json!({
+                                "channel_id": channel_id,
+                                "platform": "twitch",
+                                "is_live": true,
+                            }),
+                        );
+                        // Update global live status state.
+                        let status_key = format!("twitch:{}", channel_id);
+                        let app_status = app.clone();
                         tokio::spawn(async move {
-                            trigger_scheduled_download(
-                                app2,
-                                tasks2,
-                                ch_id,
-                                ch_name,
-                                "twitch".to_string(),
-                                stream_id,
-                                stream_url,
-                            ).await;
+                            let mut st = live_status_state().lock().await;
+                            st.statuses.insert(status_key, true);
+                            drop(st);
+                            drop(app_status);
                         });
+                        // Trigger auto-download only if this channel has a preset.
+                        if !is_bookmark_only {
+                            let stream_url = format!("https://www.twitch.tv/{}", channel_name.to_lowercase());
+                            // Use channel_id + timestamp as stream_id fallback for Twitch.
+                            let stream_id = format!("twitch_{}_{}", channel_id, now);
+                            let app2 = app.clone();
+                            let tasks2 = tasks.clone();
+                            let ch_id = channel_id.clone();
+                            let ch_name = channel_name.clone();
+                            tokio::spawn(async move {
+                                trigger_scheduled_download(
+                                    app2,
+                                    tasks2,
+                                    ch_id,
+                                    ch_name,
+                                    "twitch".to_string(),
+                                    stream_id,
+                                    stream_url,
+                                ).await;
+                            });
+                        }
                     }
                     "stream-down" => {
                         log::info!(
@@ -411,6 +458,24 @@ fn handle_pubsub_message(
                                 "timestamp": now,
                             }),
                         );
+                        // Emit live status update for bookmark UI.
+                        let _ = app.emit(
+                            "channel-live-status-update",
+                            serde_json::json!({
+                                "channel_id": channel_id,
+                                "platform": "twitch",
+                                "is_live": false,
+                            }),
+                        );
+                        // Update global live status state.
+                        let status_key = format!("twitch:{}", channel_id);
+                        let app_status = app.clone();
+                        tokio::spawn(async move {
+                            let mut st = live_status_state().lock().await;
+                            st.statuses.insert(status_key, false);
+                            drop(st);
+                            drop(app_status);
+                        });
                     }
                     _ => {}
                 }
@@ -431,19 +496,35 @@ async fn start_twitch_pubsub(app: AppHandle) -> Result<(), String> {
         .filter(|p| p.platform == "twitch" && p.enabled)
         .collect();
 
-    if twitch_presets.is_empty() {
-        return Err("沒有已啟用的 Twitch 頻道預設".to_string());
-    }
-
-    // Build channel_id list and channel_map.
-    let channel_ids: Vec<String> = twitch_presets
-        .iter()
-        .map(|p| p.channel_id.clone())
-        .collect();
-    let channel_map: HashMap<String, String> = twitch_presets
+    // Build channel_map from presets (channel_id → channel_name).
+    let mut channel_map: HashMap<String, String> = twitch_presets
         .iter()
         .map(|p| (p.channel_id.clone(), p.channel_name.clone()))
         .collect();
+
+    // Build set of preset channel_ids (have download behavior).
+    let preset_channel_ids: HashSet<String> = twitch_presets
+        .iter()
+        .map(|p| p.channel_id.clone())
+        .collect();
+
+    // Also include Twitch bookmark channels not already covered by presets.
+    let bookmarks = get_channel_bookmarks(app.clone()).unwrap_or_default();
+    let mut bookmark_only_channels: HashSet<String> = HashSet::new();
+    for bm in bookmarks.iter().filter(|b| b.platform == "twitch") {
+        if !preset_channel_ids.contains(&bm.channel_id) {
+            bookmark_only_channels.insert(bm.channel_id.clone());
+            channel_map.insert(bm.channel_id.clone(), bm.channel_name.clone());
+        }
+    }
+
+    // Require at least one channel (preset or bookmark).
+    if channel_map.is_empty() {
+        return Err("沒有已啟用的 Twitch 頻道預設".to_string());
+    }
+
+    // Collect all channel_ids for subscription topics.
+    let channel_ids: Vec<String> = channel_map.keys().cloned().collect();
 
     // Stop any existing connection first.
     stop_twitch_pubsub_inner().await;
@@ -468,16 +549,19 @@ async fn start_twitch_pubsub(app: AppHandle) -> Result<(), String> {
         let app_clone = app.clone();
         let chunk_topics = chunk.to_vec();
         let cm_clone = channel_map.clone();
+        let boc_clone = bookmark_only_channels.clone();
         let rx_clone = shutdown_rx.clone();
 
         tokio::spawn(async move {
-            run_pubsub_connection(app_clone, chunk_topics, cm_clone, rx_clone).await;
+            run_pubsub_connection(app_clone, chunk_topics, cm_clone, boc_clone, rx_clone).await;
         });
     }
 
     log::info!(
-        "[PubSub] Started monitoring {} Twitch channels",
-        channel_ids.len()
+        "[PubSub] Started monitoring {} Twitch channels ({} preset, {} bookmark-only)",
+        channel_ids.len(),
+        preset_channel_ids.len(),
+        bookmark_only_channels.len()
     );
 
     Ok(())
@@ -642,7 +726,8 @@ const YOUTUBE_RSS_ENTRIES: usize = 5;
 /// Run the YouTube RSS polling loop for a list of channel presets until shutdown.
 async fn run_youtube_polling(
     app: AppHandle,
-    mut presets: Vec<(String, String)>, // (channel_id, channel_name)
+    mut presets: Vec<(String, String)>, // (channel_id, channel_name) — includes preset + bookmark-only
+    mut bookmark_only_channels: HashSet<String>, // channel_ids that are bookmark-only (no preset)
     mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
 ) {
     use tokio::sync::Semaphore;
@@ -689,11 +774,24 @@ async fn run_youtube_polling(
 
         // Refresh preset list (handles dynamic enable/disable).
         if let Ok(fresh_presets) = get_scheduled_presets(app.clone()) {
-            presets = fresh_presets
+            let fresh_preset_channels: Vec<(String, String)> = fresh_presets
                 .into_iter()
                 .filter(|p| p.platform == "youtube" && p.enabled)
                 .map(|p| (p.channel_id, p.channel_name))
                 .collect();
+            let preset_ids: HashSet<String> = fresh_preset_channels.iter().map(|(id, _)| id.clone()).collect();
+
+            // Also refresh bookmarks; rebuild bookmark_only_channels.
+            let fresh_bookmarks = get_channel_bookmarks(app.clone()).unwrap_or_default();
+            bookmark_only_channels.clear();
+            let mut merged = fresh_preset_channels;
+            for bm in fresh_bookmarks.iter().filter(|b| b.platform == "youtube") {
+                if !preset_ids.contains(&bm.channel_id) {
+                    bookmark_only_channels.insert(bm.channel_id.clone());
+                    merged.push((bm.channel_id.clone(), bm.channel_name.clone()));
+                }
+            }
+            presets = merged;
         }
 
         if presets.is_empty() {
@@ -806,7 +904,8 @@ async fn run_youtube_polling(
                     }
                 }
 
-                None // No live stream found this cycle.
+                // No live stream found this cycle; emit offline status.
+                Some(("not_live", ch_id, ch_name, String::new()))
             });
 
             handles.push(handle);
@@ -830,24 +929,59 @@ async fn run_youtube_polling(
                                 "paused": MONITORING_PAUSED.load(Ordering::SeqCst),
                             }),
                         );
-                        // Trigger auto-download for this YouTube channel.
-                        let stream_url = format!("https://www.youtube.com/watch?v={}", payload);
-                        let app2 = app.clone();
-                        let tasks2 = app.state::<DownloadTasks>().inner().clone();
-                        let ch_id2 = ch_id.clone();
-                        let ch_name2 = ch_name.clone();
-                        let video_id = payload.clone();
-                        tokio::spawn(async move {
-                            trigger_scheduled_download(
-                                app2,
-                                tasks2,
-                                ch_id2,
-                                ch_name2,
-                                "youtube".to_string(),
-                                video_id,
-                                stream_url,
-                            ).await;
-                        });
+                        // Emit live status update for bookmark UI.
+                        let _ = app.emit(
+                            "channel-live-status-update",
+                            serde_json::json!({
+                                "channel_id": ch_id,
+                                "platform": "youtube",
+                                "is_live": true,
+                            }),
+                        );
+                        // Update global live status state.
+                        let status_key = format!("youtube:{}", ch_id);
+                        {
+                            let mut st = live_status_state().lock().await;
+                            st.statuses.insert(status_key, true);
+                        }
+                        // Trigger auto-download only if this channel has a preset.
+                        if !bookmark_only_channels.contains(&ch_id) {
+                            let stream_url = format!("https://www.youtube.com/watch?v={}", payload);
+                            let app2 = app.clone();
+                            let tasks2 = app.state::<DownloadTasks>().inner().clone();
+                            let ch_id2 = ch_id.clone();
+                            let ch_name2 = ch_name.clone();
+                            let video_id = payload.clone();
+                            tokio::spawn(async move {
+                                trigger_scheduled_download(
+                                    app2,
+                                    tasks2,
+                                    ch_id2,
+                                    ch_name2,
+                                    "youtube".to_string(),
+                                    video_id,
+                                    stream_url,
+                                ).await;
+                            });
+                        }
+                    }
+                    "not_live" => {
+                        // Channel was polled and confirmed not live this cycle.
+                        // Emit offline status update for bookmark UI.
+                        let _ = app.emit(
+                            "channel-live-status-update",
+                            serde_json::json!({
+                                "channel_id": ch_id,
+                                "platform": "youtube",
+                                "is_live": false,
+                            }),
+                        );
+                        // Update global live status state.
+                        let status_key = format!("youtube:{}", ch_id);
+                        {
+                            let mut st = live_status_state().lock().await;
+                            st.statuses.insert(status_key, false);
+                        }
                     }
                     "rate_limit" => {
                         got_rate_limit = true;
@@ -940,7 +1074,22 @@ async fn start_youtube_polling(app: AppHandle) -> Result<(), String> {
         .map(|p| (p.channel_id, p.channel_name))
         .collect();
 
-    if youtube_presets.is_empty() {
+    // Build set of preset channel_ids.
+    let preset_channel_ids: HashSet<String> = youtube_presets.iter().map(|(id, _)| id.clone()).collect();
+
+    // Also include YouTube bookmark channels not covered by presets.
+    let bookmarks = get_channel_bookmarks(app.clone()).unwrap_or_default();
+    let mut bookmark_only_channels: HashSet<String> = HashSet::new();
+    let mut all_channels: Vec<(String, String)> = youtube_presets.clone();
+    for bm in bookmarks.iter().filter(|b| b.platform == "youtube") {
+        if !preset_channel_ids.contains(&bm.channel_id) {
+            bookmark_only_channels.insert(bm.channel_id.clone());
+            all_channels.push((bm.channel_id.clone(), bm.channel_name.clone()));
+        }
+    }
+
+    // Require at least one channel (preset or bookmark).
+    if all_channels.is_empty() {
         return Err("沒有已啟用的 YouTube 頻道預設".to_string());
     }
 
@@ -954,15 +1103,21 @@ async fn start_youtube_polling(app: AppHandle) -> Result<(), String> {
         let mut st = youtube_polling_state().lock().await;
         st.active = true;
         st.shutdown_tx = Some(shutdown_tx);
-        st.polling_channels = youtube_presets.iter().map(|(id, _)| id.clone()).collect();
+        st.polling_channels = all_channels.iter().map(|(id, _)| id.clone()).collect();
     }
+
+    log::info!(
+        "[YouTube] Started RSS polling for {} channels ({} preset, {} bookmark-only)",
+        all_channels.len(),
+        preset_channel_ids.len(),
+        bookmark_only_channels.len()
+    );
 
     let app_clone = app.clone();
     tokio::spawn(async move {
-        run_youtube_polling(app_clone, youtube_presets, shutdown_rx).await;
+        run_youtube_polling(app_clone, all_channels, bookmark_only_channels, shutdown_rx).await;
     });
 
-    log::info!("[YouTube] Started RSS polling");
     Ok(())
 }
 
@@ -2112,9 +2267,25 @@ pub struct APIFolder {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct APIChannelBookmark {
+    pub id: String,
+    pub user_id: String,
+    pub channel_id: String,
+    pub channel_name: String,
+    pub platform: String,
+    pub notes: String,
+    pub sort_order: i32,
+    pub created_at: String,
+    pub updated_at: String,
+    pub deleted: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SyncResponse {
     pub records: Vec<APIRecord>,
     pub folders: Vec<APIFolder>,
+    #[serde(default)]
+    pub channel_bookmarks: Vec<APIChannelBookmark>,
     pub synced_at: String,
 }
 
@@ -5560,6 +5731,81 @@ async fn sync_delete_folder(app: AppHandle, folder_id: String) -> Result<(), Str
 }
 
 #[tauri::command]
+async fn sync_push_channel_bookmark(app: AppHandle, bookmark: ChannelBookmark) -> Result<(), String> {
+    let state = get_sync_state(app.clone())?;
+
+    if state.jwt.is_none() || state.user.is_none() {
+        return Err("Not logged in".to_string());
+    }
+
+    let jwt = state.jwt.unwrap();
+    let user = state.user.unwrap();
+
+    let api_bookmark = APIChannelBookmark {
+        id: bookmark.id,
+        user_id: user.id,
+        channel_id: bookmark.channel_id,
+        channel_name: bookmark.channel_name,
+        platform: bookmark.platform,
+        notes: bookmark.notes,
+        sort_order: bookmark.sort_order,
+        created_at: bookmark.created_at,
+        updated_at: bookmark.updated_at,
+        deleted: 0,
+    };
+
+    // Get API URL from environment or use default
+    // In production, this should be configured via .env file or app config
+    let api_url = std::env::var("CLOUD_SYNC_API_URL")
+        .unwrap_or_else(|_| "https://tidemark-sync.hydai.workers.dev".to_string());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/channel-bookmarks", api_url))
+        .header("Authorization", format!("Bearer {}", jwt))
+        .json(&api_bookmark)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to push channel bookmark: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned error: {}", response.status()));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn sync_delete_channel_bookmark(app: AppHandle, bookmark_id: String) -> Result<(), String> {
+    let state = get_sync_state(app.clone())?;
+
+    if state.jwt.is_none() {
+        return Err("Not logged in".to_string());
+    }
+
+    let jwt = state.jwt.unwrap();
+
+    // Get API URL from environment or use default
+    // In production, this should be configured via .env file or app config
+    let api_url = std::env::var("CLOUD_SYNC_API_URL")
+        .unwrap_or_else(|_| "https://tidemark-sync.hydai.workers.dev".to_string());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .delete(format!("{}/channel-bookmarks/{}", api_url, bookmark_id))
+        .header("Authorization", format!("Bearer {}", jwt))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to delete channel bookmark: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("API returned error: {}", response.status()));
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
@@ -6099,6 +6345,8 @@ pub fn run() {
             sync_delete_record,
             sync_push_folder,
             sync_delete_folder,
+            sync_push_channel_bookmark,
+            sync_delete_channel_bookmark,
             open_url,
             get_app_version,
             get_tool_versions,

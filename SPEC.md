@@ -4,6 +4,7 @@
 |------|------|------|
 | 0.1 | 2026-02-16 | 初版 |
 | 0.2 | 2026-02-17 | 新增 Module 7: 排程下載（P2.1 升級為正式規格） |
+| 0.3 | 2026-02-17 | 新增 Module 8: 頻道書籤（P2.2 升級為正式規格） |
 
 ---
 
@@ -29,6 +30,7 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 3. **從下載整支 VOD 到精準片段下載**：使用者利用時間標記直接帶入下載頁面，只下載需要的片段
 4. **從手動打字幕到自動轉錄**：下載完成後一鍵送往 ASR 轉錄
 5. **從守在螢幕前到自動擷取**：使用者設定頻道後離開電腦，直播開始時系統自動偵測並下載，不遺漏任何內容
+6. **從零散 URL 到集中管理**：使用者將常看的頻道集中收藏，一覽即時直播狀態與最新影片，不再需要逐一開啟頻道頁面檢查
 
 ### Success Criteria（成功指標）
 
@@ -38,13 +40,15 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 - SC-4: 支援 YouTube 與 Twitch 雙平台的所有公開內容（VOD、Clip、直播流）
 - SC-5: Twitch 頻道開始直播後，排程下載在 30 秒內自動觸發
 - SC-6: YouTube 頻道開始直播後，排程下載在輪詢間隔 + 30 秒內自動觸發
+- SC-7: 頻道書籤的直播狀態從平台事件到 UI 更新延遲不超過 5 秒（Twitch）或輪詢間隔 + 5 秒（YouTube）
+- SC-8: 頻道書籤在 Extension 與 Desktop 之間的同步延遲不超過 5 秒（與 Record/Folder 同步一致）
 
 ### Non-Goals（非目標）
 
 - NG-1: 不處理 DRM 保護或付費牆內容的繞過
 - NG-2: 不提供影片編輯功能（裁切是下載階段的功能，非後製編輯）
 - NG-3: 不做社群功能（分享、評論、公開書籤）
-- NG-4: Phase 1 不實作頻道書籤（Phase 2 範疇）
+- ~~NG-4: Phase 1 不實作頻道書籤（Phase 2 範疇）~~ → 已於 v0.3 升級為 Module 8
 - NG-5: 不取代 OBS 等專業錄製軟體
 - NG-6: 不做行動端版本
 
@@ -57,8 +61,8 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 **系統內部（Tidemark 負責）：**
 
 - 瀏覽器擴充套件：時間標記的建立、管理與同步
-- 桌面應用程式：內容下載、片段裁切、直播錄製、ASR 轉錄、時間標記管理、下載歷史、排程下載與直播偵測
-- Cloud Sync Service：Extension 與 Desktop 之間的時間標記資料同步
+- 桌面應用程式：內容下載、片段裁切、直播錄製、ASR 轉錄、時間標記管理、下載歷史、排程下載與直播偵測、頻道書籤管理
+- Cloud Sync Service：Extension 與 Desktop 之間的時間標記與頻道書籤資料同步
 
 **系統外部（依賴但不控制）：**
 
@@ -95,16 +99,16 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 
 #### Desktop App
 
-- 職責：內容下載（YouTube + Twitch）、直播錄製、片段裁切、ASR 轉錄（本地 + 雲端 BYOK）、Record 管理（含雲端同步後的本地呈現）、下載歷史管理、排程下載（直播偵測 + 自動下載 + 系統列背景執行）、全域設定
+- 職責：內容下載（YouTube + Twitch）、直播錄製、片段裁切、ASR 轉錄（本地 + 雲端 BYOK）、Record 管理（含雲端同步後的本地呈現）、下載歷史管理、排程下載（直播偵測 + 自動下載 + 系統列背景執行）、頻道書籤管理（直播狀態、元資料、最新影片、快速動作）、全域設定
 - 技術形式：Tauri (Rust backend + Web frontend)
 - 外部程序管理：yt-dlp, FFmpeg, FFprobe 以 sidecar binary 嵌入；本地 ASR 以 Python sidecar 執行
 - 背景服務：系統列（System Tray）常駐模式，支援 Twitch PubSub WebSocket 持續連線與 YouTube RSS 定期輪詢
 
 #### Cloud Sync Service
 
-- 職責：Extension 與 Desktop 之間的資料中介，負責 Record 與 Folder 的雲端持久化與同步
+- 職責：Extension 與 Desktop 之間的資料中介，負責 Record、Folder 與 Channel Bookmark 的雲端持久化與同步
 - 技術形式：Cloudflare Workers（REST API）+ Cloudflare D1（SQLite 資料庫）
-- 資料範圍：僅同步 Record 與 Folder 資料。下載歷史、設定不同步
+- 資料範圍：同步 Record、Folder 與 Channel Bookmark 核心資料。下載歷史、設定、頻道元資料不同步
 
 ---
 
@@ -650,6 +654,14 @@ Tidemark 的轉錄功能支援兩種模式：**本地 ASR**（在使用者電腦
 | 排程下載自動轉錄 | 排程下載完成後是否自動啟動字幕轉錄 | 關閉 |
 | 開機自動啟動監聽 | 應用程式啟動時是否自動開始直播偵測 | 開啟 |
 
+##### F6.9 頻道書籤設定
+
+| 設定項 | 說明 | 預設值 |
+|--------|------|--------|
+| 啟用頻道書籤 | 是否啟用頻道書籤功能（關閉時隱藏 Channel Bookmarks 頁面） | 關閉 |
+| 元資料自動刷新間隔 | 頻道元資料（頭像、追蹤者數等）的自動刷新間隔（小時） | 24 |
+| 影片快取數量 | 每個頻道顯示的最新影片數量 | 5 |
+
 ---
 
 #### Module 7: Desktop — Scheduled Downloads（排程下載）
@@ -890,6 +902,214 @@ Tidemark 的排程下載功能讓使用者為特定頻道預設下載參數，�
 
 ---
 
+#### Module 8: Desktop — Channel Bookmarks（頻道書籤）
+
+Tidemark 的頻道書籤功能讓使用者收藏常看的 Twitch/YouTube 頻道，集中檢視即時直播狀態、頻道元資料與最新影片。書籤與排程下載（Module 7）雙向整合：可從書籤快速建立下載預設，也可在書籤上查看已存在的預設狀態。書籤核心資料透過 Cloud Sync 在 Extension 與 Desktop 間同步；頻道元資料與影片清單為裝置本地快取，不同步。
+
+##### F8.1 頻道書籤 CRUD（Channel Bookmark CRUD）
+
+**使用者操作**：在「Channel Bookmarks」頁面，新增、編輯、刪除、拖曳排序頻道書籤
+
+**系統回應**：
+
+1. 新增書籤：輸入頻道 URL 或名稱，系統呼叫 `resolve_channel_info()`（複用 F7.1 的頻道解析邏輯）自動辨識平台並取得頻道資訊（名稱、頭像、平台）
+2. 編輯書籤：修改自訂備註（notes）
+3. 刪除書籤：點擊刪除按鈕後彈出確認對話框，確認後軟刪除
+4. 排序：拖曳書籤項目上下移動，放開後自動儲存新的 `sort_order`
+5. 若使用者已登入 Cloud Sync，變更即時同步
+
+**儲存的資料**（ChannelBookmark 物件）：
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| id | string | 唯一識別碼（timestamp-based） |
+| channelId | string | 頻道識別碼（Twitch: login name, YouTube: channel ID） |
+| channelName | string | 頻道顯示名稱 |
+| platform | string | `"twitch"` 或 `"youtube"` |
+| notes | string | 使用者自訂備註（預設空字串） |
+| sortOrder | number | 排序順序 |
+| createdAt | string | 建立時間 ISO 8601 |
+| updatedAt | string | 最後更新時間 ISO 8601 |
+
+**儲存位置**：`{appDataDir}/tidemark/channel_bookmarks.json`
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E8.1a | 頻道 URL 無法辨識 | 顯示「無法辨識此頻道」 |
+| E8.1b | 重複的頻道書籤 | 顯示「此頻道已在書籤中」 |
+| E8.1c | 頻道不存在或已關閉 | 顯示「找不到此頻道」 |
+
+##### F8.2 即時直播狀態（Live Status Indicator）
+
+**系統行為**（背景服務，無需使用者操作）：
+
+1. 書籤中的頻道自動加入既有的直播偵測基礎設施（共用 Module 7 的 PubSub/RSS 連線，不建立重複連線）
+   - Twitch 頻道：加入 PubSub WebSocket 的 `video-playback-by-id` 訂閱（F7.2）
+   - YouTube 頻道：加入 RSS Feed 輪詢列表（F7.3）
+2. 收到直播狀態事件時，更新書籤 UI 上的狀態徽章
+3. **僅限書籤的頻道**（無對應 DownloadPreset）：`stream-up` 事件僅更新直播徽章，**不觸發**自動下載
+4. **同時有書籤與預設的頻道**：`stream-up` 事件同時更新徽章與觸發下載（F7.4）
+
+**狀態徽章**：
+
+| 狀態 | 顯示 | 說明 |
+|------|------|------|
+| 直播中 | 紅色圓點 + 「直播中」 | 頻道正在直播 |
+| 離線 | 灰色圓點 | 頻道未直播 |
+| 未知 | 無徽章 | 尚未取得狀態（初始化中） |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E8.2a | 直播偵測服務未啟動（如使用者未啟用排程下載功能） | 書籤頁面顯示「啟用排程下載以獲取即時直播狀態」提示，頻道狀態顯示為「未知」 |
+| E8.2b | PubSub/RSS 連線中斷 | 狀態徽章保持最後已知狀態，顯示「連線中斷」提示（複用 F7.2/F7.3 的重連機制） |
+
+##### F8.3 頻道元資料顯示（Channel Metadata Display）
+
+**系統行為**：
+
+1. 書籤新增時，取得並快取頻道元資料：頭像 URL、頻道名稱、平台、追蹤者/訂閱者數、最後直播時間
+2. 元資料快取在裝置本地，**不同步至雲端**（各裝置獨立取得與刷新）
+3. 懶刷新策略：開啟 Channel Bookmarks 頁面時，檢查元資料的 `lastRefreshedAt`，若超過設定的自動刷新間隔（預設 24 小時，可在 F6.9 調整），在背景靜默刷新
+
+**元資料快取物件**（ChannelMetadata，裝置本地）：
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| channelId | string | 頻道識別碼（與 ChannelBookmark.channelId 對應） |
+| avatarUrl | string \| null | 頻道頭像 URL |
+| followerCount | number \| null | 追蹤者/訂閱者數 |
+| lastStreamAt | string \| null | 最後直播時間 ISO 8601 |
+| lastRefreshedAt | string | 元資料最後刷新時間 ISO 8601 |
+
+**元資料來源**：
+
+| 平台 | 來源 | 取得方式 |
+|------|------|----------|
+| Twitch | Twitch GQL API | 查詢 `User` 物件（login, displayName, profileImageURL, followers, lastBroadcast） |
+| YouTube | yt-dlp `--dump-json` | 從頻道頁面取得（channel, uploader, thumbnail, channel_follower_count） |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E8.3a | 元資料取得失敗（網路錯誤） | 使用上次快取的元資料，下次開啟頁面時重試 |
+| E8.3b | 頻道已關閉或更名 | 顯示快取的舊資料，標示「資料可能已過期」 |
+
+##### F8.4 最新影片列表（Latest Videos List）
+
+**使用者操作**：在 Channel Bookmarks 頁面展開某個書籤，查看該頻道的最新影片列表
+
+**系統回應**：
+
+1. 展開時呼叫平台 API 取得最新 5-10 筆影片（VOD/Clip）
+2. 影片清單以時間倒序排列，每筆顯示：縮圖、標題、發佈時間、時長、觀看數
+3. 影片清單為**暫態快取**（記憶體中），關閉頁面或切換頁面後清除，不持久化、不同步
+
+**影片資料來源**：
+
+| 平台 | 來源 | 取得方式 |
+|------|------|----------|
+| Twitch | Twitch GQL API | 查詢頻道的 `VideoConnection`（最新 VOD 與 Clip） |
+| YouTube | YouTube RSS Feed | 解析 `https://www.youtube.com/feeds/videos.xml?channel_id={id}` 中的最新項目 |
+
+**暫態快取物件**（ChannelVideo，僅存於記憶體）：
+
+| 欄位 | 型別 | 說明 |
+|------|------|------|
+| videoId | string | 影片識別碼 |
+| title | string | 影片標題 |
+| url | string | 影片 URL |
+| thumbnailUrl | string \| null | 縮圖 URL |
+| publishedAt | string | 發佈時間 ISO 8601 |
+| duration | string \| null | 時長（VOD 有，直播/Clip 可能為 null） |
+| viewCount | number \| null | 觀看數 |
+| contentType | string | `"video"` / `"clip"` / `"stream"` |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E8.4a | 影片列表取得失敗 | 顯示「無法載入影片列表，請稍後重試」，提供「重試」按鈕 |
+| E8.4b | 頻道無公開影片 | 顯示「此頻道目前沒有公開影片」 |
+
+##### F8.5 快速動作（Quick Actions）
+
+**使用者操作**：在書籤項目上透過動作按鈕或右鍵選單執行快速操作
+
+**可用動作**：
+
+| 動作 | 說明 | 觸發方式 |
+|------|------|----------|
+| 下載最新 VOD | 取得頻道最新 VOD 的 URL，自動帶入 Download 頁面（F2.1） | 動作按鈕 |
+| 新增排程預設 | 以此頻道資訊預填，跳轉至 Scheduled Downloads 頁面新增預設（F7.1） | 動作按鈕 |
+| 開啟頻道頁面 | 在系統預設瀏覽器中開啟頻道頁面 URL | 動作按鈕 |
+| 複製頻道 URL | 將頻道 URL 複製至系統剪貼簿 | 右鍵選單 |
+
+**系統回應**：
+
+1. 下載最新 VOD：從影片列表（F8.4）或即時查詢中取得最新 VOD URL，切換至 Download 頁面並自動填入
+2. 新增排程預設：切換至 Scheduled Downloads 頁面，自動填入 `channelId`、`channelName`、`platform`
+3. 開啟頻道頁面：呼叫系統 API 開啟 URL
+4. 複製 URL：寫入系統剪貼簿，顯示「已複製」Toast
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E8.5a | 頻道無可下載的 VOD | 顯示「此頻道目前沒有可下載的 VOD」 |
+| E8.5b | 頻道已有排程預設 | 顯示「此頻道已有排程預設，是否前往查看？」 |
+
+##### F8.6 Cloud Sync（頻道書籤同步）
+
+**系統行為**（複用既有 Cloud Sync 基礎設施）：
+
+1. 書籤的核心資料（id, channelId, channelName, platform, notes, sortOrder）透過 Cloud Sync 在 Extension 與 Desktop 間同步
+2. 同步策略與 Record/Folder 一致：
+   - 寫入：每次本地變更後立即 push 至 Cloud Sync
+   - 讀取：定期輪詢（每 3-5 秒）拉取增量變更（`updatedAt` 追蹤）
+   - 衝突解決：Last-write-wins，以 `updatedAt` 較新者為準
+   - 刪除：軟刪除（`deleted=1`），不硬刪除
+3. **不同步的資料**：頻道元資料（F8.3）、影片列表（F8.4）、直播狀態（F8.2）均為裝置本地資料
+4. **Extension 角色**：Extension 僅負責書籤核心資料的儲存與同步，不提供直播狀態、元資料、影片列表、快速動作等完整 UI（這些為 Desktop-only 功能）
+
+**D1 Schema**（新增 `channel_bookmarks` 表，詳見 Cloud Sync API 設計）
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E8.6a | 同步衝突 | Last-write-wins，以 `updatedAt` 較新者為準（同 Record/Folder） |
+| E8.6b | Cloud Sync 不可用 | 降級為純本地模式，恢復後自動同步 |
+
+##### F8.7 排程下載整合（Scheduled Downloads Integration）
+
+**系統行為**（雙向整合，無需使用者操作）：
+
+**書籤 → 排程下載方向**：
+
+1. 書籤列表中，若頻道已有對應的 DownloadPreset（F7.1），顯示排程預設狀態圖示（啟用中 / 已停用）
+2. 快速動作「新增排程預設」（F8.5）提供從書籤到預設的快速通道
+
+**排程下載 → 書籤方向**：
+
+1. Scheduled Downloads 頁面的每個預設，若該頻道已有書籤，顯示書籤圖示
+2. 書籤圖示可點擊，跳轉至 Channel Bookmarks 頁面並聚焦該頻道
+
+**關聯判斷**：以 `channelId` + `platform` 為鍵，比對 ChannelBookmark 與 DownloadPreset
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E8.7a | 書籤對應的預設已刪除 | 書籤上的排程狀態圖示消失，不影響書籤本身 |
+| E8.7b | 預設對應的書籤已刪除 | 預設上的書籤圖示消失，不影響預設本身 |
+
+---
+
 ### Interfaces Between Components（元件間介面）
 
 #### Interface 1: Extension ↔ Cloud Sync
@@ -897,14 +1117,16 @@ Tidemark 的排程下載功能讓使用者為特定頻道預設下載參數，�
 - 通訊協定：HTTPS REST API（Cloudflare Workers）
 - 認證方式：Google OAuth → Workers 驗證 → JWT token
 - 同步策略：客戶端每 3-5 秒輪詢 `GET /sync?since={lastUpdatedAt}`，取得增量變更
-- 寫入：每次本地變更後立即 `POST /records` 或 `POST /folders`
+- 寫入：每次本地變更後立即 `POST /records`、`POST /folders` 或 `POST /channel-bookmarks`
 - 衝突解決：Last-write-wins，以 `updatedAt` 較新者為準
+- 資料範圍：Records、Folders、Channel Bookmarks
 
 #### Interface 2: Desktop ↔ Cloud Sync
 
 - 通訊協定：HTTPS REST API（Cloudflare Workers），與 Interface 1 相同的 API
 - 認證方式：Google OAuth（透過系統瀏覽器 redirect 流程）→ JWT token
 - 同步策略：同 Interface 1
+- 資料範圍：同 Interface 1（Records、Folders、Channel Bookmarks）
 
 #### Interface 3: Desktop ↔ yt-dlp (Sidecar)
 
@@ -1009,8 +1231,23 @@ CREATE TABLE records (
   deleted INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE channel_bookmarks (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  channel_id TEXT NOT NULL,
+  channel_name TEXT NOT NULL,
+  platform TEXT NOT NULL CHECK (platform IN ('youtube', 'twitch')),
+  notes TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  deleted INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE INDEX idx_records_user_updated ON records(user_id, updated_at);
 CREATE INDEX idx_folders_user_updated ON folders(user_id, updated_at);
+CREATE INDEX idx_channel_bookmarks_user_updated ON channel_bookmarks(user_id, updated_at);
+CREATE UNIQUE INDEX idx_channel_bookmarks_user_channel ON channel_bookmarks(user_id, channel_id, platform) WHERE deleted = 0;
 ```
 
 **API Endpoints**:
@@ -1018,11 +1255,13 @@ CREATE INDEX idx_folders_user_updated ON folders(user_id, updated_at);
 | Method | Path | 說明 |
 |--------|------|------|
 | POST | `/auth/google` | Google OAuth token 交換 JWT |
-| GET | `/sync?since={iso8601}` | 增量同步（取得 since 之後的所有 records + folders 變更） |
+| GET | `/sync?since={iso8601}` | 增量同步（取得 since 之後的所有 records + folders + channel_bookmarks 變更） |
 | POST | `/records` | 建立或更新 Record（upsert by id） |
 | DELETE | `/records/{id}` | 軟刪除 Record（設 deleted=1） |
 | POST | `/folders` | 建立或更新 Folder（upsert by id） |
 | DELETE | `/folders/{id}` | 軟刪除 Folder（設 deleted=1） |
+| POST | `/channel-bookmarks` | 建立或更新 Channel Bookmark（upsert by id） |
+| DELETE | `/channel-bookmarks/{id}` | 軟刪除 Channel Bookmark（設 deleted=1） |
 
 **Subrequest 估算**（per `/sync` invocation）：
 
@@ -1031,7 +1270,8 @@ CREATE INDEX idx_folders_user_updated ON folders(user_id, updated_at);
 | JWT 驗證 | 0（本地驗證） |
 | D1 查詢 records | 1 |
 | D1 查詢 folders | 1 |
-| **總計** | **2** |
+| D1 查詢 channel_bookmarks | 1 |
+| **總計** | **3** |
 
 遠低於 Workers 的 1000 subrequest limit。
 
@@ -1051,6 +1291,7 @@ CREATE INDEX idx_folders_user_updated ON folders(user_id, updated_at);
 | Twitch PubSub 斷線 | 指數退避自動重連（1s → 120s），持續重試直到恢復。通知使用者連線狀態 |
 | YouTube 輪詢失敗 | 跳過本次檢查，下次輪詢重試。遇 rate limit 時自動降低頻率 |
 | 排程下載觸發失敗 | 通知使用者具體錯誤，不影響其他預設的正常運作 |
+| 頻道元資料過期 | 使用最後快取的元資料繼續顯示，背景靜默刷新。刷新失敗時標示「資料可能已過期」 |
 
 ---
 
@@ -1082,6 +1323,9 @@ CREATE INDEX idx_folders_user_updated ON folders(user_id, updated_at);
 | PubSub | PubSub | Twitch 的即時事件推播 WebSocket 服務，用於偵測直播狀態變化 |
 | Cooldown | 冷卻期 | 同一頻道觸發自動下載後，忽略後續重複事件的等待時間 |
 | Stream ID | 串流 ID | 單場直播的唯一識別碼。Twitch: PubSub 事件中的 stream ID；YouTube: 直播影片的 video ID |
+| Channel Bookmark | 頻道書籤 | 使用者收藏的 Twitch/YouTube 頻道，包含頻道核心資訊與使用者備註，支援 Cloud Sync |
+| Metadata Refresh | 元資料刷新 | 定期從平台 API 重新取得頻道元資料（頭像、追蹤者數等）的背景操作 |
+| Quick Action | 快速動作 | 頻道書籤上的一鍵操作（下載 VOD、新增預設、開啟頻道頁面等） |
 
 ### Patterns（共用模式）
 
@@ -1103,23 +1347,41 @@ Desktop (Local SQLite / JSON)
 yt-dlp / FFmpeg / ASR (Sidecar or Cloud API)
 ```
 
-- Cloudflare D1 為 Record/Folder 的 source of truth
+- Cloudflare D1 為 Record/Folder/Channel Bookmark 的 source of truth
 - Extension 與 Desktop 各自維護本地快取
 - 離線優先：Extension 與 Desktop 均可在離線狀態下運作，回到線上後自動同步
-- 下載歷史與設定：僅存在 Desktop 本地，不同步
+- 下載歷史、設定、頻道元資料、影片快取：僅存在 Desktop 本地，不同步
+- 頻道書籤同步資料流（透過 Cloud Sync）：
+
+```
+Extension (Chrome Storage)           Desktop (JSON)
+       |                                   |
+       | channel_bookmarks                 | channel_bookmarks
+       | (core data only)                  | (core data + local metadata)
+       v                                   v
+Cloud Sync (Cloudflare D1: channel_bookmarks table)
+       ↕ polling every 3-5s
+       同步欄位：id, channelId, channelName, platform, notes, sortOrder
+       不同步：avatarUrl, followerCount, lastStreamAt, video cache
+```
+
 - 排程下載資料流（獨立於 Cloud Sync）：
 
 ```
 Twitch PubSub (WebSocket)  ──stream-up──>  Live Detection Service
 YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
                                                    |
-                                                   | match preset
-                                                   v
-                                           Download Preset (JSON)
-                                                   |
-                                                   | auto-trigger
-                                                   v
-                                           Download Queue → yt-dlp / FFmpeg
+                                           +-------+-------+
+                                           |               |
+                                     match preset    match bookmark
+                                           |               |
+                                           v               v
+                                   Download Preset   Update badge
+                                      (JSON)          (UI only)
+                                           |
+                                           | auto-trigger
+                                           v
+                                   Download Queue → yt-dlp / FFmpeg
 ```
 
 #### Pattern 2: 三級錯誤處理
@@ -1169,10 +1431,12 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 - 下載輸出：預設 `[{type}] [{channel_name}] [{date}] {title} {resolution}.{ext}`
 - 字幕輸出：與輸入檔案同名，副檔名為 `.srt` 或 `.txt`
 - 排程下載預設：`{appDataDir}/tidemark/scheduled_presets.json`
+- 頻道書籤：`{appDataDir}/tidemark/channel_bookmarks.json`
+- 頻道元資料快取：`{appDataDir}/tidemark/channel_metadata_cache.json`
 
 #### UI 模式
 
-- Tab Navigation：Desktop 主介面使用側邊 Tab 導航（Download、History、Subtitles、Records、Scheduled Downloads、Settings）。Scheduled Downloads 頁面僅在 F6.8「啟用排程下載」開啟時顯示
+- Tab Navigation：Desktop 主介面使用側邊 Tab 導航（Download、History、Subtitles、Records、Channel Bookmarks、Scheduled Downloads、Settings）。Scheduled Downloads 頁面僅在 F6.8「啟用排程下載」開啟時顯示；Channel Bookmarks 頁面僅在 F6.9「啟用頻道書籤」開啟時顯示
 - Card Pattern：下載任務以卡片呈現，含進度條、操作按鈕、展開/收起詳情
 - Toast Notifications：短暫操作回饋（右下角，1.5~3 秒自動消失）
 - Modal Dialogs：破壞性操作（刪除、清空）需要確認對話框
@@ -1194,11 +1458,9 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 
 已於 v0.2 升級為正式規格，詳見 Design Layer 的 Module 7。
 
-### P2.2 Channel Bookmarks（頻道書籤）
+### ~~P2.2 Channel Bookmarks（頻道書籤）~~ → 已升級為 Module 8
 
-- 來源：TwitchLink 的 Bookmarks 功能
-- 功能：收藏常看的 Twitch/YouTube 頻道，快速存取頻道狀態與最新影片列表
-- 架構預留：資料模型中為 Bookmark 預留儲存空間
+已於 v0.3 升級為正式規格，詳見 Design Layer 的 Module 8。
 
 ### ~~P2.3 PubSub Live Detection（直播偵測）~~ → 已併入 Module 7
 

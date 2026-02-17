@@ -5,6 +5,7 @@
 | 0.1 | 2026-02-16 | 初版 |
 | 0.2 | 2026-02-17 | 新增 Module 7: 排程下載（P2.1 升級為正式規格） |
 | 0.3 | 2026-02-17 | 新增 Module 8: 頻道書籤（P2.2 升級為正式規格） |
+| 0.4 | 2026-02-17 | 新增 Module 9: 多語系介面（P2.5 升級為正式規格）；Module 10: 檔名範本編輯器（P2.6 升級為正式規格） |
 
 ---
 
@@ -42,6 +43,8 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 - SC-6: YouTube 頻道開始直播後，排程下載在輪詢間隔 + 30 秒內自動觸發
 - SC-7: 頻道書籤的直播狀態從平台事件到 UI 更新延遲不超過 5 秒（Twitch）或輪詢間隔 + 5 秒（YouTube）
 - SC-8: 頻道書籤在 Extension 與 Desktop 之間的同步延遲不超過 5 秒（與 Record/Folder 同步一致）
+- SC-9: 語言切換後 UI 在 1 秒內更新完成，無需重新載入頁面
+- SC-10: 檔名範本預覽在使用者輸入後 200ms 內更新
 
 ### Non-Goals（非目標）
 
@@ -51,6 +54,8 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 - ~~NG-4: Phase 1 不實作頻道書籤（Phase 2 範疇）~~ → 已於 v0.3 升級為 Module 8
 - NG-5: 不取代 OBS 等專業錄製軟體
 - NG-6: 不做行動端版本
+- NG-7: 不做社群翻譯平台——僅支援 3 種目標語言（zh-TW, en, ja），社群翻譯工作流不在範圍內
+- NG-8: 不做正規表達式檔名系統——範本使用簡單 `{variable}` 替換，不支援任意表達式
 
 ---
 
@@ -99,7 +104,7 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 
 #### Desktop App
 
-- 職責：內容下載（YouTube + Twitch）、直播錄製、片段裁切、ASR 轉錄（本地 + 雲端 BYOK）、Record 管理（含雲端同步後的本地呈現）、下載歷史管理、排程下載（直播偵測 + 自動下載 + 系統列背景執行）、頻道書籤管理（直播狀態、元資料、最新影片、快速動作）、全域設定
+- 職責：內容下載（YouTube + Twitch）、直播錄製、片段裁切、ASR 轉錄（本地 + 雲端 BYOK）、Record 管理（含雲端同步後的本地呈現）、下載歷史管理、排程下載（直播偵測 + 自動下載 + 系統列背景執行）、頻道書籤管理（直播狀態、元資料、最新影片、快速動作）、多語系介面（i18n）、統一檔名範本引擎、全域設定
 - 技術形式：Tauri (Rust backend + Web frontend)
 - 外部程序管理：yt-dlp, FFmpeg, FFprobe 以 sidecar binary 嵌入；本地 ASR 以 Python sidecar 執行
 - 背景服務：系統列（System Tray）常駐模式，支援 Twitch PubSub WebSocket 持續連線與 YouTube RSS 定期輪詢
@@ -1110,6 +1115,374 @@ Tidemark 的頻道書籤功能讓使用者收藏常看的 Twitch/YouTube 頻道�
 
 ---
 
+#### Module 9: Desktop — Multi-Language UI（多語系介面）
+
+Tidemark 的多語系介面功能讓使用者在繁體中文、英文、日文之間切換介面語言。系統採用 JSON 語言檔與命名空間鍵值架構，支援靜態字串、帶變數插值與複數形式。語言切換後即時重新渲染當前頁面，無需重新載入應用程式。Desktop 與 Extension 各自維護獨立的語言偏好設定，不透過 Cloud Sync 同步。
+
+##### F9.1 語言切換（Language Switching）
+
+**使用者操作**：在 Settings 頁面（F6.1）的「語言」下拉選單中選擇介面語言
+
+**系統回應**：
+
+1. 使用者從下拉選單選擇目標語言（zh-TW / en / ja）
+2. 系統載入對應的語言 JSON 檔案
+3. 將選擇儲存至 `config.json` 的 `language` 欄位
+4. 觸發即時語言更新（F9.3），重新渲染當前頁面
+5. 後續所有頁面切換均使用新選擇的語言
+
+**支援的語言**：
+
+| 語言代碼 | 顯示名稱 | 說明 |
+|----------|----------|------|
+| `zh-TW` | 繁體中文 | 預設語言，所有翻譯的基準語言 |
+| `en` | English | 英文 |
+| `ja` | 日本語 | 日文 |
+
+**語言檔案**：
+
+- 格式：JSON，以命名空間鍵值組織（詳見 F9.2）
+- 儲存位置：隨應用程式打包為靜態資源（app assets）
+- 載入方式：應用程式啟動時載入使用者設定的語言檔，語言切換時動態載入目標語言檔
+
+**回退策略**：
+
+1. 優先使用使用者選擇的語言
+2. 若該語言的翻譯鍵值缺失，回退至 `zh-TW`（基準語言）
+3. 若 `zh-TW` 也缺失（不應發生），顯示原始鍵值（如 `settings.title`）
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E9.1a | 語言檔案載入失敗（檔案損毀或缺失） | 回退至 `zh-TW`，顯示「語言檔載入失敗，已切換回繁體中文」Toast |
+| E9.1b | 語言檔案格式錯誤（非合法 JSON） | 同 E9.1a，回退至 `zh-TW` |
+
+##### F9.2 翻譯鍵值架構（Translation Key Architecture）
+
+**系統設計**（無直接使用者操作，為 F9.1/F9.3 的基礎架構）：
+
+**鍵值命名規則**：採用命名空間點分隔結構
+
+```
+{page}.{section}.{element}
+```
+
+範例：
+- `download.settings.quality` → 「影片品質」
+- `settings.general.language` → 「語言」
+- `history.table.title` → 「標題」
+- `common.actions.save` → 「儲存」
+- `common.actions.cancel` → 「取消」
+
+**字串類別**：
+
+| 類別 | 說明 | 語言檔範例 |
+|------|------|-----------|
+| 靜態字串 | 固定文字，無動態內容 | `"download.title": "內容下載"` |
+| 插值字串 | 包含 `{variable}` 佔位符，執行時替換 | `"download.progress": "下載中... {percent}%"` |
+| 複數形式 | 依數量選擇不同文字 | `"history.count": "{count, one:1 筆記錄, other:{count} 筆記錄}"` |
+
+**命名空間分類**：
+
+| 命名空間 | 對應範圍 |
+|----------|----------|
+| `common` | 跨頁面共用字串（按鈕文字、通用標籤） |
+| `download` | Module 2: Download 頁面 |
+| `history` | Module 5: History 頁面 |
+| `subtitles` | Module 3: Transcription 頁面 |
+| `records` | Module 4: Records 頁面 |
+| `bookmarks` | Module 8: Channel Bookmarks 頁面 |
+| `scheduled` | Module 7: Scheduled Downloads 頁面 |
+| `settings` | Module 6: Settings 頁面 |
+| `tray` | 系統列選單與通知 |
+| `errors` | 錯誤訊息 |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E9.2a | 翻譯鍵值在當前語言與 `zh-TW` 中均缺失 | 顯示原始鍵值字串（如 `settings.title`），記錄警告 log |
+| E9.2b | 插值字串缺少必要變數（如 `{percent}` 未提供） | 保留佔位符原樣顯示（如「下載中... {percent}%」），記錄警告 log |
+
+##### F9.3 即時語言更新（Live Language Update）
+
+**系統行為**（語言切換時自動觸發）：
+
+1. 語言切換後，系統呼叫當前頁面的 `render*Page()` 函式重新渲染
+2. 所有 UI 文字從新的語言檔中查詢對應翻譯
+3. 不重新載入應用程式（無 page reload），保留當前頁面狀態（滾動位置、展開/收合狀態、輸入欄位內容）
+4. 非當前頁面在下次切換時自然使用新語言，無需額外處理
+5. 系統列（System Tray）選單文字同步更新
+
+**需保留的頁面狀態**：
+
+| 頁面 | 保留的狀態 |
+|------|-----------|
+| Download | URL 輸入欄位內容、已選擇的設定值 |
+| History | 搜尋篩選條件、排序方式 |
+| Records | 展開的群組、選擇的 Folder |
+| Scheduled Downloads | 展開的預設詳情 |
+| Channel Bookmarks | 展開的書籤詳情 |
+| Settings | 未儲存的設定變更 |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E9.3a | 語言切換期間有進行中的下載/錄製/轉錄任務 | 允許切換，進行中的任務不受影響；任務相關的動態訊息（進度文字、錯誤訊息）從切換時刻起使用新語言 |
+
+##### F9.4 Extension 語言支援（Extension Language Support）
+
+**系統設計**：
+
+1. Extension 採用與 Desktop 相同的 i18n 鍵值架構（F9.2）與回退策略（F9.1）
+2. Extension 維護獨立的語言偏好設定，儲存於 Chrome Storage，**不透過 Cloud Sync 同步**
+3. 語言切換在 Extension 的 popup/options 頁面提供
+4. Extension 的翻譯範圍較小（僅涵蓋 Extension UI：Record 管理、Folder 管理、同步狀態），不需要 Desktop 的完整翻譯檔
+
+**Extension 翻譯命名空間**：
+
+| 命名空間 | 對應範圍 |
+|----------|----------|
+| `common` | 共用字串（與 Desktop 共用相同鍵值） |
+| `extension` | Extension 專屬 UI（popup、content script overlay） |
+| `records` | Record 管理（與 Desktop 共用部分鍵值） |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E9.4a | Extension 語言檔載入失敗 | 回退至 `zh-TW`，Extension popup 顯示錯誤提示 |
+
+##### F9.5 後端字串國際化（Backend String Localization）
+
+**系統設計**：
+
+Rust 後端（`lib.rs`）中少量面向使用者的中文字串需要國際化。這些字串出現在 Tauri 事件的 payload 中，最終由前端 UI 顯示。
+
+**需國際化的後端字串類別**：
+
+| 類別 | 來源 | 範例 |
+|------|------|------|
+| 下載錯誤訊息 | yt-dlp 執行失敗時的包裝訊息 | 「下載失敗：找不到影片」 |
+| 轉錄狀態訊息 | ASR sidecar 的進度描述 | 「正在準備轉錄環境...」 |
+| 系統通知標題 | 排程下載、錄製完成的通知 | 「直播錄製完成」 |
+
+**實作策略**：
+
+1. 後端不直接嵌入翻譯字串，改為發送結構化的錯誤代碼或訊息鍵值
+2. 前端收到事件後，使用 i18n 系統查詢對應翻譯
+3. 既有的中文硬編碼字串逐步遷移為鍵值
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E9.5a | 後端發送的訊息鍵值在前端翻譯檔中缺失 | 前端顯示原始鍵值，記錄警告 log（同 E9.2a 回退策略） |
+
+---
+
+#### Module 10: Desktop — Filename Template Editor（檔名範本編輯器）
+
+Tidemark 的檔名範本編輯器提供統一的檔名產生引擎，取代目前分散且不完整的兩套系統（手動下載 F2.2 與排程下載 F7.1）。使用者透過視覺化的範本編輯器組合 `{variable}` 變數，搭配即時預覽確認實際檔名效果。系統支援全域預設範本與每個排程預設的個別覆寫，並在產生檔名時自動處理作業系統禁用字元與長度限制。
+
+##### F10.1 統一範本引擎（Unified Template Engine）
+
+**系統設計**（取代既有的兩套分散系統）：
+
+統一的範本引擎負責所有下載任務（手動下載、排程下載、直播錄製）的檔名產生，使用一致的 `{variable}` 語法與相同的變數集。
+
+**範本變數**：
+
+| 變數 | 說明 | 範例值 | 展開時機 |
+|------|------|--------|----------|
+| `{title}` | 影片/直播標題 | `Minecraft 生存挑戰` | 即時（手動下載）/ 延遲（排程下載） |
+| `{id}` | 影片 ID | `dQw4w9WgXcQ` | 即時 / 延遲 |
+| `{channel}` | 頻道 username | `vtuber_ch` | 即時 |
+| `{channel_name}` | 頻道顯示名稱 | `VTuber 頻道` | 即時 |
+| `{platform}` | 平台名稱 | `youtube` / `twitch` | 即時 |
+| `{type}` | 內容類型 | `stream` / `video` / `clip` | 即時（手動下載）/ 延遲（排程下載） |
+| `{date}` | 日期 YYYY-MM-DD | `2026-02-17` | 即時 |
+| `{datetime}` | 日期時間 YYYY-MM-DD_HHmmss | `2026-02-17_143052` | 即時 |
+| `{resolution}` | 畫質 | `1080p` | 延遲（需等待串流元資料） |
+| `{duration}` | 時長 | `02h30m15s` | 延遲（直播結束後才確定） |
+
+**展開時機說明**：
+
+| 情境 | 即時變數（觸發時可知） | 延遲變數（需等待元資料） |
+|------|----------------------|------------------------|
+| 手動下載（F2.2） | 全部 10 個變數均為即時（URL 解析後已知） | 無 |
+| 排程下載（F7.1） | `{channel}`, `{channel_name}`, `{platform}`, `{date}`, `{datetime}` | `{title}`, `{id}`, `{type}`, `{resolution}`, `{duration}` |
+
+**兩階段展開流程**（排程下載專用）：
+
+1. **觸發階段**：直播偵測觸發時（F7.4），展開所有即時變數，延遲變數保留為佔位符
+2. **元資料階段**：yt-dlp 取得串流元資料後，展開剩餘的延遲變數，產生最終檔名
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E10.1a | 範本包含無法辨識的變數（如 `{author}`） | 驗證時提示「無法辨識的變數：{author}」，不允許儲存 |
+| E10.1b | 範本展開後結果為空字串（所有變數值均為空） | 使用回退檔名 `untitled_{datetime}` |
+
+##### F10.2 視覺化範本編輯器（Visual Template Editor）
+
+**使用者操作**：在 Settings 頁面（全域預設範本）或 Scheduled Downloads 預設編輯中，透過視覺化介面編輯檔名範本
+
+**系統回應**：
+
+1. 編輯器由文字輸入框與變數按鈕列組成
+2. 變數按鈕列顯示所有 10 個可用變數，每個變數以可點擊的標籤（tag）呈現
+3. 點擊變數標籤後，將該變數插入文字輸入框的當前游標位置
+4. 滑鼠懸停在變數標籤上時，顯示工具提示（tooltip），說明該變數的用途與範例值
+5. 已插入的變數在輸入框中以視覺區別標示（如不同背景色），與一般文字區分
+
+**變數標籤工具提示內容**：
+
+| 變數 | 工具提示 |
+|------|----------|
+| `{title}` | 影片或直播的標題 |
+| `{id}` | 平台上的影片 ID |
+| `{channel}` | 頻道帳號名稱（username） |
+| `{channel_name}` | 頻道顯示名稱 |
+| `{platform}` | 平台（youtube / twitch） |
+| `{type}` | 內容類型（stream / video / clip） |
+| `{date}` | 日期（YYYY-MM-DD） |
+| `{datetime}` | 日期與時間（YYYY-MM-DD_HHmmss） |
+| `{resolution}` | 畫質（如 1080p）；排程下載時為延遲變數 |
+| `{duration}` | 時長（如 02h30m15s）；排程下載時為延遲變數 |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E10.2a | 使用者手動輸入無效的變數語法（如 `{title` 缺少右括號） | 即時預覽（F10.3）顯示原樣文字，不阻止編輯，儲存時驗證提示 |
+
+##### F10.3 即時預覽（Live Preview）
+
+**使用者操作**：在範本編輯器中輸入或修改範本時，即時查看產生的檔名預覽
+
+**系統回應**：
+
+1. 編輯器下方顯示預覽區域，呈現範本展開後的完整檔名
+2. 預覽在使用者輸入後 200ms 內更新（SC-10），使用 debounce 避免過度觸發
+3. **手動下載情境**：若 Download 頁面已有載入的影片資訊，使用實際資料預覽
+4. **全域預設範本情境**（Settings 頁面）：使用固定的範例資料預覽
+5. **排程下載情境**：即時變數使用預設的頻道資料，延遲變數以視覺區別標示（如斜體或灰色文字 + 「待取得」提示）
+
+**範例資料**（用於 Settings 頁面預覽）：
+
+| 變數 | 範例值 |
+|------|--------|
+| `{title}` | `Minecraft 生存挑戰 Day 1` |
+| `{id}` | `abc123def` |
+| `{channel}` | `example_ch` |
+| `{channel_name}` | `範例頻道` |
+| `{platform}` | `youtube` |
+| `{type}` | `video` |
+| `{date}` | `2026-02-17` |
+| `{datetime}` | `2026-02-17_143052` |
+| `{resolution}` | `1080p` |
+| `{duration}` | `01h25m30s` |
+
+**預覽結果包含**：展開後的檔名 + 副檔名（如 `.mp4`）+ 完整路徑（輸出資料夾 + 檔名）
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E10.3a | 預覽產生的檔名超過長度限制（F10.4） | 預覽區域顯示截斷後的檔名，並標示「檔名已截斷（超過 {limit} 字元）」警告 |
+
+##### F10.4 檔名安全性處理（Filename Sanitization）
+
+**系統行為**（自動處理，無需使用者操作）：
+
+範本展開後的檔名自動經過安全性處理，確保在所有目標作業系統上合法。
+
+**處理規則**：
+
+| 規則 | 說明 |
+|------|------|
+| 禁用字元替換 | 將 `/ \ : * ? " < > \|` 替換為 `_` |
+| 控制字元移除 | 移除 ASCII 0–31 與 DEL (127) |
+| 前後空白與點 | 移除檔名開頭與結尾的空白與 `.`（Windows 限制） |
+| 長度限制 | 檔名（不含副檔名與路徑）超過 200 字元時，從尾部截斷並保留完整性 |
+| Windows 保留名稱 | 若檔名為 `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9`（不分大小寫），加上前綴 `_` |
+| 空白正規化 | 連續多個空白壓縮為單一空白 |
+
+**檔名衝突處理**：
+
+若輸出資料夾中已存在同名檔案，在檔名末尾加上遞增序號：`{filename} (1).mp4`、`{filename} (2).mp4`
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E10.4a | 清理後檔名為空字串（原始範本展開結果全為禁用字元） | 使用回退檔名 `untitled_{datetime}` |
+| E10.4b | 完整路徑（資料夾 + 檔名 + 副檔名）超過作業系統路徑長度限制（Windows: 260, macOS/Linux: 4096） | 進一步截斷檔名（保留路徑與副檔名空間），顯示「路徑過長，檔名已自動截斷」Toast |
+| E10.4c | 檔名衝突且遞增序號超過 99 | 使用 `{filename}_{datetime}.{ext}` 格式避免無限遞增 |
+
+##### F10.5 全域預設範本（Global Default Template）
+
+**使用者操作**：在 Settings 頁面設定全域預設檔名範本
+
+**系統回應**：
+
+1. Settings 頁面新增「預設檔名範本」設定項，附帶視覺化範本編輯器（F10.2）與即時預覽（F10.3）
+2. 全域預設範本套用於所有未個別設定範本的下載任務
+
+**範本套用優先順序**：
+
+| 優先順序 | 來源 | 說明 |
+|----------|------|------|
+| 1（最高） | 手動下載時使用者在 Download 頁面的即時修改 | 使用者在下載前可直接編輯檔名 |
+| 2 | 排程下載預設的 `filenameTemplate`（F7.1） | 個別預設的範本覆寫 |
+| 3（最低） | 全域預設範本 `default_filename_template` | 新 AppConfig 欄位 |
+
+**新增 AppConfig 欄位**：
+
+| 欄位 | 型別 | 預設值 | 說明 |
+|------|------|--------|------|
+| `default_filename_template` | string | `[{type}] [{channel_name}] [{date}] {title}` | 全域預設檔名範本 |
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E10.5a | 全域範本被設為空字串 | 驗證時提示「檔名範本不可為空」，不允許儲存 |
+| E10.5b | 全域範本不包含任何變數（純靜態文字如 `download`） | 允許儲存，但顯示警告「此範本不含變數，所有下載將使用相同檔名（系統會自動加上序號避免覆蓋）」 |
+
+##### F10.6 yt-dlp 變數橋接（yt-dlp Variable Bridge）
+
+**系統行為**（Tidemark 與 yt-dlp 之間的檔名傳遞）：
+
+Tidemark 使用自己的 `{variable}` 語法，與 yt-dlp 的 `%(variable)s` 語法不同。範本引擎負責完全展開所有 Tidemark 變數後，將產生的具體字串傳遞給 yt-dlp 的 `-o` 參數。
+
+**轉換流程**：
+
+1. 使用者在 Tidemark 中設定範本：`[{type}] [{channel_name}] [{date}] {title}`
+2. 範本引擎展開所有 Tidemark 變數：`[stream] [VTuber 頻道] [2026-02-17] Minecraft 生存挑戰`
+3. 檔名安全性處理（F10.4）：`[stream] [VTuber 頻道] [2026-02-17] Minecraft 生存挑戰`
+4. 傳遞給 yt-dlp：`yt-dlp -o "/path/to/[stream] [VTuber 頻道] [2026-02-17] Minecraft 生存挑戰.%(ext)s" {url}`
+
+**注意**：yt-dlp 的 `%(ext)s` 由 yt-dlp 自行處理（決定最終容器格式），Tidemark 不介入副檔名的展開。
+
+**排程下載的橋接**（兩階段）：
+
+1. **觸發階段**：展開即時變數 → 傳遞部分展開的字串與 yt-dlp 的 output template
+2. **元資料階段**：yt-dlp 回傳串流元資料後，展開延遲變數 → 產生最終完整檔名 → 重新設定 yt-dlp 的 `-o` 參數
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E10.6a | yt-dlp 回傳的元資料缺少預期欄位（如無 title） | 該變數使用「unknown」作為回退值 |
+| E10.6b | 展開後的檔名包含 yt-dlp 的特殊語法字元 `%` | 將 `%` 轉義為 `%%`，避免 yt-dlp 誤解析 |
+
+---
+
 ### Interfaces Between Components（元件間介面）
 
 #### Interface 1: Extension ↔ Cloud Sync
@@ -1292,6 +1665,8 @@ CREATE UNIQUE INDEX idx_channel_bookmarks_user_channel ON channel_bookmarks(user
 | YouTube 輪詢失敗 | 跳過本次檢查，下次輪詢重試。遇 rate limit 時自動降低頻率 |
 | 排程下載觸發失敗 | 通知使用者具體錯誤，不影響其他預設的正常運作 |
 | 頻道元資料過期 | 使用最後快取的元資料繼續顯示，背景靜默刷新。刷新失敗時標示「資料可能已過期」 |
+| 語言檔載入失敗 | 回退至 zh-TW 基準語言，顯示錯誤提示。翻譯鍵值缺失時顯示原始鍵值 |
+| 檔名範本展開失敗 | 使用回退檔名 `untitled_{datetime}`。路徑過長時自動截斷，檔名衝突時加上序號 |
 
 ---
 
@@ -1326,6 +1701,17 @@ CREATE UNIQUE INDEX idx_channel_bookmarks_user_channel ON channel_bookmarks(user
 | Channel Bookmark | 頻道書籤 | 使用者收藏的 Twitch/YouTube 頻道，包含頻道核心資訊與使用者備註，支援 Cloud Sync |
 | Metadata Refresh | 元資料刷新 | 定期從平台 API 重新取得頻道元資料（頭像、追蹤者數等）的背景操作 |
 | Quick Action | 快速動作 | 頻道書籤上的一鍵操作（下載 VOD、新增預設、開啟頻道頁面等） |
+| i18n | 國際化 | Internationalization 的縮寫，指將應用程式介面文字從程式碼中抽離，支援多語言切換的架構 |
+| Locale | 語言代碼 | 標識特定語言與地區的代碼，如 `zh-TW`（繁體中文）、`en`（英文）、`ja`（日文） |
+| Translation Key | 翻譯鍵值 | 以命名空間點分隔的字串識別碼（如 `settings.title`），用於從語言檔中查詢對應翻譯 |
+| Interpolation | 字串插值 | 在翻譯字串中使用 `{variable}` 佔位符，執行時替換為實際值 |
+| Fallback | 回退 | 當前語言的翻譯缺失時，依序嘗試備用語言或原始鍵值的查詢策略 |
+| Filename Template | 檔名範本 | 使用 `{variable}` 語法定義的檔名產生規則，如 `[{type}] [{channel_name}] [{date}] {title}` |
+| Template Variable | 範本變數 | 檔名範本中以 `{name}` 表示的動態佔位符，展開時替換為實際值 |
+| Immediate Variable | 即時變數 | 在下載觸發時即可確定值的範本變數（如 `{channel_name}`, `{date}`） |
+| Deferred Variable | 延遲變數 | 需等待串流元資料後才能確定值的範本變數（如 `{title}`, `{resolution}`），僅排程下載場景存在 |
+| Filename Sanitization | 檔名清理 | 將範本展開後的檔名中的作業系統禁用字元替換為安全字元、截斷過長檔名的處理過程 |
+| Global Default Template | 全域預設範本 | AppConfig 中的 `default_filename_template` 欄位，作為所有下載任務的基礎檔名範本 |
 
 ### Patterns（共用模式）
 
@@ -1421,6 +1807,64 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 | 需要 Speaker Diarization | ElevenLabs (BYOK) | 內建說話者分離 |
 | 離線環境 | 本地 Whisper / Qwen | 不需網路 |
 
+#### Pattern 6: i18n 字串解析
+
+翻譯字串的查詢與回退流程：
+
+```
+翻譯鍵值（如 settings.title）
+       |
+       v
+查詢使用者選擇的語言檔（如 en.json）
+       |
+  ┌────┴────┐
+  找到      未找到
+  |              |
+  v              v
+回傳翻譯   查詢 zh-TW.json（基準語言）
+              |
+         ┌────┴────┐
+         找到      未找到
+         |              |
+         v              v
+      回傳翻譯   回傳原始鍵值字串
+                  + 記錄警告 log
+```
+
+- 基準語言 `zh-TW` 為唯一完整翻譯，其他語言允許部分缺失
+- 插值字串（`{var}`）在翻譯查詢後進行變數替換
+- 複數形式（`{count, one:..., other:...}`）在插值階段根據變數值選擇對應形式
+
+#### Pattern 7: 兩階段範本展開
+
+排程下載的檔名產生分為兩個階段，因為部分變數在觸發時尚不可知：
+
+```
+直播偵測觸發（F7.4）
+       |
+       v
+第一階段：展開即時變數
+  {channel}, {channel_name}, {platform}, {date}, {datetime}
+       |
+       v
+中間結果：「[stream] [VTuber 頻道] [2026-02-17] {title}」
+       |
+       | yt-dlp 開始下載，取得串流元資料
+       v
+第二階段：展開延遲變數
+  {title}, {id}, {type}, {resolution}, {duration}
+       |
+       v
+最終結果：「[stream] [VTuber 頻道] [2026-02-17] Minecraft 生存挑戰」
+       |
+       v
+檔名安全性處理（F10.4）→ 傳遞給 yt-dlp -o
+```
+
+- 手動下載（F2.2）：所有變數均為即時，一次展開即完成
+- 排程下載（F7.1）：即時 + 延遲，需兩階段
+- 預覽（F10.3）中延遲變數以視覺區別標示
+
 ### Form（形式規範）
 
 #### 檔案命名
@@ -1428,7 +1872,7 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 - 應用程式設定檔：`{appDataDir}/tidemark/config.json`
 - 下載歷史：`{appDataDir}/tidemark/history.json`
 - Records 本地快取：`{appDataDir}/tidemark/records.db`（SQLite）
-- 下載輸出：預設 `[{type}] [{channel_name}] [{date}] {title} {resolution}.{ext}`
+- 下載輸出：預設 `[{type}] [{channel_name}] [{date}] {title}`（詳見 Module 10 F10.5 全域預設範本；副檔名由 yt-dlp 自動決定）
 - 字幕輸出：與輸入檔案同名，副檔名為 `.srt` 或 `.txt`
 - 排程下載預設：`{appDataDir}/tidemark/scheduled_presets.json`
 - 頻道書籤：`{appDataDir}/tidemark/channel_bookmarks.json`
@@ -1471,12 +1915,10 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 - 來源：TwitchLink 的 unmute video 功能
 - 功能：Twitch VOD 中因版權音樂被靜音的片段，嘗試修復音訊
 
-### P2.5 Multi-Language UI
+### ~~P2.5 Multi-Language UI~~ → 已升級為 Module 9
 
-- 功能：桌面端 UI 支援多語言（繁中、英文、日文）
-- 架構預留：所有 UI 字串使用 i18n key
+已於 v0.4 升級為正式規格，詳見 Design Layer 的 Module 9。
 
-### P2.6 Filename Template Editor
+### ~~P2.6 Filename Template Editor~~ → 已升級為 Module 10
 
-- 來源：TwitchLink 的 FileNameGenerator 與 Template 系統
-- 功能：可視化的檔名範本編輯器，顯示所有可用變數與即時預覽
+已於 v0.4 升級為正式規格，詳見 Design Layer 的 Module 10。

@@ -333,6 +333,31 @@ pub struct GoogleAuthResponse {
     pub token: String,
 }
 
+// Scheduled downloads structures
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DownloadPreset {
+    pub id: String,
+    pub channel_id: String,
+    pub channel_name: String,
+    pub platform: String,        // "twitch" | "youtube"
+    pub enabled: bool,
+    pub quality: String,          // "best", "1080p", "720p", etc.
+    pub content_type: String,     // "video+audio" | "audio_only"
+    pub output_dir: String,
+    pub filename_template: String,
+    pub container_format: String, // "auto" | "mp4" | "mkv"
+    pub created_at: String,       // ISO 8601
+    pub last_triggered_at: Option<String>,
+    pub trigger_count: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChannelInfo {
+    pub channel_id: String,
+    pub channel_name: String,
+    pub platform: String,
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -420,6 +445,19 @@ fn get_sync_state_path(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
 
     Ok(tidemark_dir.join("sync_state.json"))
+}
+
+fn get_scheduled_presets_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let tidemark_dir = app_data_dir.join("tidemark");
+    fs::create_dir_all(&tidemark_dir)
+        .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
+
+    Ok(tidemark_dir.join("scheduled_presets.json"))
 }
 
 #[tauri::command]
@@ -3224,6 +3262,234 @@ fn reorder_folders(app: AppHandle, folder_order: Vec<String>) -> Result<(), Stri
     Ok(())
 }
 
+// Scheduled Downloads commands
+#[tauri::command]
+fn get_scheduled_presets(app: AppHandle) -> Result<Vec<DownloadPreset>, String> {
+    let presets_path = get_scheduled_presets_path(&app)?;
+
+    if !presets_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&presets_path)
+        .map_err(|e| format!("Failed to read presets file: {}", e))?;
+
+    let presets: Vec<DownloadPreset> = serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse presets file: {}", e))?;
+
+    Ok(presets)
+}
+
+#[tauri::command]
+fn save_scheduled_preset(app: AppHandle, preset: DownloadPreset) -> Result<(), String> {
+    let mut presets = get_scheduled_presets(app.clone())?;
+
+    // Validate output directory exists
+    if !preset.output_dir.is_empty() {
+        let expanded = if preset.output_dir.starts_with('~') {
+            if let Some(home) = std::env::var("HOME").ok()
+                .or_else(|| std::env::var("USERPROFILE").ok()) {
+                preset.output_dir.replacen('~', &home, 1)
+            } else {
+                preset.output_dir.clone()
+            }
+        } else {
+            preset.output_dir.clone()
+        };
+        let output_path = Path::new(&expanded);
+        if !output_path.exists() {
+            return Err("輸出資料夾無效".to_string());
+        }
+    }
+
+    // Upsert: replace existing or push new
+    if let Some(pos) = presets.iter().position(|p| p.id == preset.id) {
+        presets[pos] = preset;
+    } else {
+        presets.push(preset);
+    }
+
+    let presets_path = get_scheduled_presets_path(&app)?;
+    let content = serde_json::to_string_pretty(&presets)
+        .map_err(|e| format!("Failed to serialize presets: {}", e))?;
+
+    fs::write(&presets_path, content)
+        .map_err(|e| format!("Failed to write presets file: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_scheduled_preset(app: AppHandle, id: String) -> Result<(), String> {
+    let mut presets = get_scheduled_presets(app.clone())?;
+    presets.retain(|p| p.id != id);
+
+    let presets_path = get_scheduled_presets_path(&app)?;
+    let content = serde_json::to_string_pretty(&presets)
+        .map_err(|e| format!("Failed to serialize presets: {}", e))?;
+
+    fs::write(&presets_path, content)
+        .map_err(|e| format!("Failed to write presets file: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+fn toggle_preset_enabled(app: AppHandle, id: String, enabled: bool) -> Result<(), String> {
+    let mut presets = get_scheduled_presets(app.clone())?;
+
+    if let Some(preset) = presets.iter_mut().find(|p| p.id == id) {
+        preset.enabled = enabled;
+    } else {
+        return Err("找不到此預設".to_string());
+    }
+
+    let presets_path = get_scheduled_presets_path(&app)?;
+    let content = serde_json::to_string_pretty(&presets)
+        .map_err(|e| format!("Failed to serialize presets: {}", e))?;
+
+    fs::write(&presets_path, content)
+        .map_err(|e| format!("Failed to write presets file: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn resolve_channel_info(url: String) -> Result<ChannelInfo, String> {
+    let url = url.trim();
+
+    // YouTube channel patterns
+    let yt_channel_id = Regex::new(r"youtube\.com/channel/([a-zA-Z0-9_-]+)").unwrap();
+    let yt_handle = Regex::new(r"youtube\.com/@([a-zA-Z0-9_.-]+)").unwrap();
+    let yt_user = Regex::new(r"youtube\.com/user/([a-zA-Z0-9_-]+)").unwrap();
+    // Twitch channel pattern
+    let twitch_ch = Regex::new(r"(?:https?://)?(?:www\.)?twitch\.tv/([a-zA-Z0-9_]+)(?:/|$)?").unwrap();
+
+    // Determine platform and build canonical URL for yt-dlp
+    let (platform, canonical_url) = if yt_channel_id.is_match(url)
+        || yt_handle.is_match(url)
+        || yt_user.is_match(url)
+        || url.contains("youtube.com")
+    {
+        ("youtube", url.to_string())
+    } else if twitch_ch.is_match(url) || url.contains("twitch.tv") {
+        ("twitch", url.to_string())
+    } else {
+        return Err("無法辨識此頻道".to_string());
+    };
+
+    // Use yt-dlp to get channel metadata
+    // Pass --playlist-items 1 to limit data fetched; use --dump-single-json for channel pages
+    let output = Command::new("yt-dlp")
+        .args([
+            "--dump-single-json",
+            "--flat-playlist",
+            "--playlist-items",
+            "1",
+            "--no-warnings",
+            &canonical_url,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    match output {
+        Ok(result) => {
+            let stdout = String::from_utf8_lossy(&result.stdout);
+            let stderr = String::from_utf8_lossy(&result.stderr);
+
+            if !result.status.success() || stdout.trim().is_empty() {
+                // Try fallback: maybe the URL points to a single video/stream
+                // Extract channel info from stderr hints or URL itself
+                let _ = stderr; // acknowledge
+
+                // For Twitch, extract login from URL directly
+                if platform == "twitch" {
+                    if let Some(caps) = twitch_ch.captures(url) {
+                        let login = caps[1].to_string();
+                        return Ok(ChannelInfo {
+                            channel_id: login.clone(),
+                            channel_name: login,
+                            platform: "twitch".to_string(),
+                        });
+                    }
+                }
+                return Err("無法辨識此頻道".to_string());
+            }
+
+            let json_str = stdout.trim();
+            // Handle multiple JSON objects (newline-delimited); take first
+            let first_line = json_str.lines().next().unwrap_or(json_str);
+            let json: serde_json::Value = serde_json::from_str(first_line)
+                .map_err(|_| "無法辨識此頻道".to_string())?;
+
+            if platform == "youtube" {
+                // For channel pages, uploader_id or channel_id field holds the ID
+                let channel_id = json.get("channel_id")
+                    .or_else(|| json.get("uploader_id"))
+                    .or_else(|| json.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                let channel_name = json.get("channel")
+                    .or_else(|| json.get("uploader"))
+                    .or_else(|| json.get("title"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string();
+
+                if channel_id.is_empty() {
+                    return Err("無法辨識此頻道".to_string());
+                }
+
+                Ok(ChannelInfo {
+                    channel_id,
+                    channel_name,
+                    platform: "youtube".to_string(),
+                })
+            } else {
+                // Twitch
+                let channel_id = json.get("channel_id")
+                    .or_else(|| json.get("uploader_id"))
+                    .or_else(|| json.get("id"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                // Extract fallback login from URL first
+                let url_login = twitch_ch.captures(url)
+                    .map(|caps| caps[1].to_string());
+
+                let channel_name = json.get("channel")
+                    .or_else(|| json.get("uploader"))
+                    .or_else(|| json.get("title"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| url_login.clone())
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                let final_channel_id = if channel_id.is_empty() {
+                    if let Some(login) = url_login {
+                        login
+                    } else {
+                        return Err("無法辨識此頻道".to_string());
+                    }
+                } else {
+                    channel_id
+                };
+
+                Ok(ChannelInfo {
+                    channel_id: final_channel_id,
+                    channel_name,
+                    platform: "twitch".to_string(),
+                })
+            }
+        }
+        Err(_) => Err("找不到 yt-dlp，請安裝後再試".to_string()),
+    }
+}
+
 // Cloud Sync commands
 #[tauri::command]
 fn get_sync_state(app: AppHandle) -> Result<SyncState, String> {
@@ -3760,7 +4026,12 @@ pub fn run() {
             get_app_version,
             get_tool_versions,
             check_for_updates,
-            get_available_hardware_encoders
+            get_available_hardware_encoders,
+            get_scheduled_presets,
+            save_scheduled_preset,
+            delete_scheduled_preset,
+            toggle_preset_enabled,
+            resolve_channel_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

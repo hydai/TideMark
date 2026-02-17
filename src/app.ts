@@ -5,6 +5,7 @@ import { renderHistoryPage } from './pages/history';
 import { renderSettingsPage as renderSettingsPageNew } from './pages/settings';
 import { renderSubtitlesPage } from './pages/subtitles';
 import { renderRecordsPage } from './pages/records';
+import { renderScheduledDownloadsPage } from './pages/scheduled-downloads';
 
 type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings' | 'scheduled-downloads';
 
@@ -131,7 +132,7 @@ function switchTab(tabId: TabId) {
       renderRecordsPage(container);
       break;
     case 'scheduled-downloads':
-      renderScheduledDownloadsPlaceholder(container);
+      renderScheduledDownloadsPage(container);
       break;
     case 'settings':
       renderSettingsPageNew(container);
@@ -150,26 +151,6 @@ export function navigateToDownload(data: any) {
 // Subtitles page is now in pages/subtitles.ts
 // Records page is now in pages/records.ts
 
-function renderScheduledDownloadsPlaceholder(container: HTMLElement) {
-  while (container.firstChild) {
-    container.removeChild(container.firstChild);
-  }
-
-  const page = document.createElement('div');
-  page.className = 'page';
-
-  const title = document.createElement('h1');
-  title.className = 'page-title';
-  title.textContent = '排程下載';
-  page.appendChild(title);
-
-  const placeholder = document.createElement('p');
-  placeholder.className = 'setting-description';
-  placeholder.textContent = '排程下載功能即將推出。';
-  page.appendChild(placeholder);
-
-  container.appendChild(page);
-}
 
 function renderSettingsPage(container: HTMLElement) {
   const config = ConfigManager.get();

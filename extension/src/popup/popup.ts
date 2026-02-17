@@ -1,5 +1,5 @@
-import type { Record, Folder, PlaybackInfo, Platform, StorageData, ContentMessage, RecordGroup, ExportData, SyncUser, SyncStatus } from '../types';
-import { MAX_RECORDS, DEFAULT_TOPIC, UNCATEGORIZED_ID, UNCATEGORIZED_NAME, EXPORT_VERSION } from '../types';
+import type { Record as TidemarkRecord, Folder, PlaybackInfo, Platform, StorageData, ContentMessage, RecordGroup, ExportData, SyncUser, SyncStatus } from '../types';
+import { MAX_RECORDS, UNCATEGORIZED_ID, EXPORT_VERSION } from '../types';
 import {
   loginWithGoogle,
   logout,
@@ -15,6 +15,7 @@ import {
   startSyncPolling,
   updateSyncState,
 } from '../sync';
+import { initI18n, t, setLanguage, getCurrentLanguage, setRerenderCallback, SUPPORTED_LOCALES, type SupportedLocale } from '../i18n';
 
 // DOM elements
 const errorMessage = document.getElementById('error-message') as HTMLDivElement;
@@ -70,10 +71,226 @@ let recordGroups: RecordGroup[] = [];
 let groupCollapsedState: Map<string, boolean> = new Map();
 let pendingImportData: ExportData | null = null;
 
+// ── i18n helpers ──────────────────────────────────────────────────────────────
+
+/** Get the localised default topic string. */
+function defaultTopic(): string {
+  return t('records.defaultTopic');
+}
+
+/** Get the localised uncategorized folder name. */
+function uncategorizedName(): string {
+  return t('extension.folders.uncategorized');
+}
+
+/**
+ * Update all static UI text to the current locale.
+ * Called once on init and again on every language switch.
+ */
+function applyStaticTranslations(): void {
+  // Record form
+  topicInput.placeholder = t('extension.recordForm.topicPlaceholder');
+  recordButton.textContent = t('extension.recordForm.recordButton');
+
+  // Folders header
+  const foldersHeaderEl = document.querySelector('#folders-header h2');
+  if (foldersHeaderEl) {
+    foldersHeaderEl.textContent = t('extension.folders.header');
+  }
+  folderInput.placeholder = t('extension.folders.inputPlaceholder');
+  folderAddButton.title = t('extension.folders.addButtonTitle');
+
+  // Records header
+  const recordsHeaderEl = document.querySelector('#records-header h2');
+  if (recordsHeaderEl) {
+    recordsHeaderEl.textContent = t('extension.records.header');
+  }
+
+  // Settings toggle
+  settingsToggle.textContent = t('extension.settings.toggle');
+
+  // Settings — sync section
+  const syncHeaderEl = document.querySelector('.settings-group:first-child h3');
+  if (syncHeaderEl) {
+    syncHeaderEl.textContent = t('extension.settings.sync.header');
+  }
+  loginButton.textContent = t('extension.settings.sync.loginButton');
+
+  const loginDescEl = syncLoggedOut.querySelector('.settings-description');
+  if (loginDescEl) {
+    loginDescEl.textContent = t('extension.settings.sync.loginDesc');
+  }
+
+  logoutButton.textContent = t('extension.settings.sync.logoutButton');
+
+  const devModeSummary = document.querySelector('.test-mode summary');
+  if (devModeSummary) {
+    devModeSummary.textContent = t('extension.settings.sync.devMode');
+  }
+
+  testJwtInput.placeholder = t('extension.settings.sync.jwtPlaceholder');
+  testJwtButton.textContent = t('extension.settings.sync.setJwtButton');
+
+  // Settings — data backup section
+  const dataBackupHeaderEl = document.querySelector('.settings-group:nth-child(2) h3');
+  if (dataBackupHeaderEl) {
+    dataBackupHeaderEl.textContent = t('extension.settings.dataBackup.header');
+  }
+
+  // Don't overwrite export button if it's in "exporting" state
+  if (!exportButton.disabled) {
+    exportButton.textContent = t('extension.settings.dataBackup.exportButton');
+  }
+
+  const exportDescEl = exportButton.closest('.settings-item')?.querySelector('.settings-description');
+  if (exportDescEl) {
+    exportDescEl.textContent = t('extension.settings.dataBackup.exportDesc');
+  }
+
+  importButton.textContent = t('extension.settings.dataBackup.importButton');
+
+  const importDescEl = importButton.closest('.settings-item')?.querySelector('.settings-description');
+  if (importDescEl) {
+    importDescEl.textContent = t('extension.settings.dataBackup.importDesc');
+  }
+
+  // Import modal static text
+  const importModalTitle = importModal.querySelector('h3');
+  if (importModalTitle) {
+    importModalTitle.textContent = t('extension.importModal.title');
+  }
+  importMergeButton.textContent = t('extension.importModal.mergeButton');
+  importOverwriteButton.textContent = t('extension.importModal.overwriteButton');
+  importCancelButton.textContent = t('extension.importModal.cancelButton');
+
+  const mergeHelp = importModal.querySelector('.modal-help p:first-child');
+  if (mergeHelp) {
+    mergeHelp.textContent = '';
+    const strong = document.createElement('strong');
+    strong.textContent = t('extension.importModal.mergeLabel') + ' ';
+    mergeHelp.appendChild(strong);
+    mergeHelp.appendChild(document.createTextNode(t('extension.importModal.mergeHelp')));
+  }
+  const overwriteHelp = importModal.querySelector('.modal-help p:last-child');
+  if (overwriteHelp) {
+    overwriteHelp.textContent = '';
+    const strong = document.createElement('strong');
+    strong.textContent = t('extension.importModal.overwriteLabel') + ' ';
+    overwriteHelp.appendChild(strong);
+    overwriteHelp.appendChild(document.createTextNode(t('extension.importModal.overwriteHelp')));
+  }
+
+  // No-records empty state
+  noRecords.textContent = t('extension.records.empty');
+
+  // Update language selector if it exists
+  updateLanguageSelector();
+
+  // Update sync status indicator text (without changing icon)
+  const status = syncStatusDisplay.className.replace('settings-item', '').trim();
+  if (status) {
+    updateSyncStatusText(status as SyncStatus);
+  }
+}
+
+// ── Language selector ─────────────────────────────────────────────────────────
+
+const LANGUAGE_SELECTOR_ID = 'language-selector';
+
+/** Insert or update the language selector in the settings panel. */
+function ensureLanguageSelector(): void {
+  if (document.getElementById(LANGUAGE_SELECTOR_ID)) {
+    return; // Already created
+  }
+
+  // Find the settings content area and append the language group
+  const langGroup = document.createElement('div');
+  langGroup.className = 'settings-group';
+  langGroup.id = 'language-settings-group';
+
+  const langHeader = document.createElement('h3');
+  langHeader.id = 'language-settings-header';
+  langHeader.textContent = t('extension.settings.language.header');
+  langGroup.appendChild(langHeader);
+
+  const langItem = document.createElement('div');
+  langItem.className = 'settings-item';
+
+  const langLabel = document.createElement('label');
+  langLabel.htmlFor = LANGUAGE_SELECTOR_ID;
+  langLabel.className = 'settings-label';
+  langLabel.textContent = t('extension.settings.language.label');
+  langItem.appendChild(langLabel);
+
+  const select = document.createElement('select');
+  select.id = LANGUAGE_SELECTOR_ID;
+  select.className = 'language-select';
+
+  const options: Array<{ value: SupportedLocale; label: string }> = [
+    { value: 'zh-TW', label: '繁體中文' },
+    { value: 'en', label: 'English' },
+    { value: 'ja', label: '日本語' },
+  ];
+
+  options.forEach(opt => {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.textContent = opt.label;
+    select.appendChild(option);
+  });
+
+  select.value = getCurrentLanguage();
+
+  select.addEventListener('change', async () => {
+    const selected = select.value as SupportedLocale;
+    if (SUPPORTED_LOCALES.includes(selected)) {
+      await setLanguage(selected);
+    }
+  });
+
+  langItem.appendChild(select);
+  langGroup.appendChild(langItem);
+
+  settingsContent.appendChild(langGroup);
+}
+
+/** Update the language selector value to match the current locale. */
+function updateLanguageSelector(): void {
+  const select = document.getElementById(LANGUAGE_SELECTOR_ID) as HTMLSelectElement | null;
+  if (select) {
+    select.value = getCurrentLanguage();
+  }
+
+  // Update header/label text
+  const langHeader = document.getElementById('language-settings-header');
+  if (langHeader) {
+    langHeader.textContent = t('extension.settings.language.header');
+  }
+
+  const langLabel = document.querySelector(`label[for="${LANGUAGE_SELECTOR_ID}"]`);
+  if (langLabel) {
+    langLabel.textContent = t('extension.settings.language.label');
+  }
+}
+
+// ── App initialization ────────────────────────────────────────────────────────
+
 /**
  * Initialize popup
  */
 async function init() {
+  // Initialize i18n first (loads language preference from Chrome Storage)
+  await initI18n();
+
+  // Register re-render callback for language switches
+  setRerenderCallback(onLanguageSwitch);
+
+  // Apply static translations to DOM
+  applyStaticTranslations();
+
+  // Create language selector in settings panel
+  ensureLanguageSelector();
+
   // Initialize sync state
   await initSyncState();
 
@@ -84,7 +301,7 @@ async function init() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
   if (!tab?.id) {
-    showError('無法取得當前頁面資訊');
+    showError(t('errors.cannotGetPageInfo'));
     return;
   }
 
@@ -92,7 +309,7 @@ async function init() {
   currentPlatform = detectPlatform(tab.url || '');
 
   if (currentPlatform === 'unknown') {
-    showError('請在 YouTube 或 Twitch 頁面使用');
+    showError(t('errors.e1_1a'));
     recordButton.disabled = true;
     return;
   }
@@ -121,6 +338,34 @@ async function init() {
 }
 
 /**
+ * Called after a language switch — re-applies all translations and re-renders
+ * dynamic content (folders, records).
+ */
+function onLanguageSwitch(): void {
+  applyStaticTranslations();
+
+  // Re-render folders (has locale-dependent "Uncategorized" label)
+  renderFolders();
+
+  // Re-render records (has locale-dependent labels and counts)
+  chrome.storage.local.get(['records'], (result) => {
+    const data = result as Partial<StorageData>;
+    const records = data.records || [];
+    const filtered = records.filter(r => {
+      if (selectedFolderId === UNCATEGORIZED_ID) return r.folderId === null;
+      return r.folderId === selectedFolderId;
+    });
+    renderRecords(filtered);
+  });
+
+  // Re-render sync status
+  const status = syncStatusDisplay.dataset.status as SyncStatus | undefined;
+  if (status) {
+    updateSyncStatusIndicator(status);
+  }
+}
+
+/**
  * Detect platform from URL
  */
 function detectPlatform(url: string): Platform {
@@ -140,9 +385,9 @@ function applyPlatformTheme(platform: Platform) {
   header.className = platform;
 
   if (platform === 'youtube') {
-    platformIndicator.textContent = 'YouTube';
+    platformIndicator.textContent = t('extension.platform.youtube');
   } else if (platform === 'twitch') {
-    platformIndicator.textContent = 'Twitch';
+    platformIndicator.textContent = t('extension.platform.twitch');
   }
 }
 
@@ -165,7 +410,7 @@ async function getPlaybackInfo(tabId: number, retry = 0) {
         retryCount = retry + 1;
         setTimeout(() => getPlaybackInfo(tabId, retryCount), 1000);
       } else {
-        showError(response.error || '無法取得播放時間,請確認影片已載入');
+        showError(response.error || t('errors.e1_1b'));
         recordButton.disabled = true;
       }
     }
@@ -174,7 +419,7 @@ async function getPlaybackInfo(tabId: number, retry = 0) {
       retryCount = retry + 1;
       setTimeout(() => getPlaybackInfo(tabId, retryCount), 1000);
     } else {
-      showError('請重新整理頁面');
+      showError(t('errors.e1_1c'));
       recordButton.disabled = true;
     }
   }
@@ -185,7 +430,7 @@ async function getPlaybackInfo(tabId: number, retry = 0) {
  */
 function showVideoInfo(info: PlaybackInfo) {
   videoTitle.textContent = info.title || '';
-  videoTime.textContent = `當前時間: ${info.liveTime || ''}`;
+  videoTime.textContent = t('extension.videoInfo.currentTime', { time: info.liveTime || '' });
   videoInfo.classList.remove('hidden');
   errorMessage.classList.add('hidden');
 }
@@ -256,10 +501,10 @@ async function handleRecord() {
     return;
   }
 
-  const topic = topicInput.value.trim() || DEFAULT_TOPIC;
+  const topic = topicInput.value.trim() || defaultTopic();
 
   // Create record object
-  const record: Record = {
+  const record: TidemarkRecord = {
     id: `record-${Date.now()}`,
     timestamp: new Date().toISOString(),
     liveTime: currentPlaybackInfo.liveTime!,
@@ -281,12 +526,12 @@ async function handleRecord() {
     await loadRecords();
 
     // Visual feedback
-    recordButton.textContent = '✓ 已記錄';
+    recordButton.textContent = t('extension.recordForm.recorded');
     setTimeout(() => {
-      recordButton.textContent = '記錄當前時間';
+      recordButton.textContent = t('extension.recordForm.recordButton');
     }, 1500);
   } catch (error) {
-    showError('儲存失敗,請稍後重試');
+    showError(t('errors.e1_1d'));
     console.error('Save record error:', error);
   }
 }
@@ -294,7 +539,7 @@ async function handleRecord() {
 /**
  * Save record to Chrome Storage
  */
-async function saveRecord(record: Record): Promise<void> {
+async function saveRecord(record: TidemarkRecord): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(['records'], (result) => {
       const data = result as Partial<StorageData>;
@@ -348,18 +593,19 @@ async function loadRecords(): Promise<void> {
 /**
  * Render records list grouped by stream title
  */
-function renderRecords(records: Record[]) {
+function renderRecords(records: TidemarkRecord[]) {
   // Clear existing content
   recordsList.textContent = '';
 
   if (records.length === 0) {
     noRecords.classList.remove('hidden');
+    noRecords.textContent = t('extension.records.empty');
     recordCount.textContent = '';
     return;
   }
 
   noRecords.classList.add('hidden');
-  recordCount.textContent = `共 ${records.length} 筆`;
+  recordCount.textContent = t('extension.records.count', { count: records.length });
 
   // Group records by title
   recordGroups = groupRecordsByTitle(records);
@@ -374,8 +620,8 @@ function renderRecords(records: Record[]) {
 /**
  * Group records by stream title
  */
-function groupRecordsByTitle(records: Record[]): RecordGroup[] {
-  const groupMap = new Map<string, Record[]>();
+function groupRecordsByTitle(records: TidemarkRecord[]): RecordGroup[] {
+  const groupMap = new Map<string, TidemarkRecord[]>();
 
   // Group by title
   records.forEach(record => {
@@ -388,9 +634,9 @@ function groupRecordsByTitle(records: Record[]): RecordGroup[] {
 
   // Convert to array of groups
   const groups: RecordGroup[] = [];
-  groupMap.forEach((records, title) => {
+  groupMap.forEach((recs, title) => {
     // Sort records within group by sortOrder or timestamp
-    records.sort((a, b) => {
+    recs.sort((a, b) => {
       if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
         return a.sortOrder - b.sortOrder;
       }
@@ -399,9 +645,9 @@ function groupRecordsByTitle(records: Record[]): RecordGroup[] {
 
     groups.push({
       title,
-      records,
+      records: recs,
       collapsed: groupCollapsedState.get(title) || false,
-      sortOrder: records[0].sortOrder
+      sortOrder: recs[0].sortOrder
     });
   });
 
@@ -427,9 +673,9 @@ function createGroupElement(group: RecordGroup): HTMLElement {
   div.dataset.title = group.title;
 
   // Group header
-  const header = document.createElement('div');
-  header.className = 'record-group-header';
-  header.draggable = true;
+  const groupHeader = document.createElement('div');
+  groupHeader.className = 'record-group-header';
+  groupHeader.draggable = true;
 
   // Collapse icon
   const collapseIcon = document.createElement('span');
@@ -446,25 +692,25 @@ function createGroupElement(group: RecordGroup): HTMLElement {
   countSpan.className = 'group-count';
   countSpan.textContent = `${group.records.length}`;
 
-  header.appendChild(collapseIcon);
-  header.appendChild(titleSpan);
-  header.appendChild(countSpan);
+  groupHeader.appendChild(collapseIcon);
+  groupHeader.appendChild(titleSpan);
+  groupHeader.appendChild(countSpan);
 
   // Click to toggle collapse
-  header.addEventListener('click', () => {
+  groupHeader.addEventListener('click', () => {
     group.collapsed = !group.collapsed;
     groupCollapsedState.set(group.title, group.collapsed);
     loadRecords();
   });
 
   // Drag group
-  header.addEventListener('dragstart', handleGroupDragStart);
-  header.addEventListener('dragover', handleGroupDragOver);
-  header.addEventListener('drop', handleGroupDrop);
-  header.addEventListener('dragend', handleGroupDragEnd);
-  header.addEventListener('dragleave', handleGroupDragLeave);
+  groupHeader.addEventListener('dragstart', handleGroupDragStart);
+  groupHeader.addEventListener('dragover', handleGroupDragOver);
+  groupHeader.addEventListener('drop', handleGroupDrop);
+  groupHeader.addEventListener('dragend', handleGroupDragEnd);
+  groupHeader.addEventListener('dragleave', handleGroupDragLeave);
 
-  div.appendChild(header);
+  div.appendChild(groupHeader);
 
   // Group content (records)
   if (!group.collapsed) {
@@ -485,7 +731,7 @@ function createGroupElement(group: RecordGroup): HTMLElement {
 /**
  * Create a record element using safe DOM methods
  */
-function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
+function createRecordElement(record: TidemarkRecord, group: RecordGroup): HTMLElement {
   const div = document.createElement('div');
   div.className = 'record-item';
   div.dataset.id = record.id;
@@ -500,8 +746,8 @@ function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
   div.addEventListener('dragleave', handleRecordDragLeave);
 
   // Header
-  const header = document.createElement('div');
-  header.className = 'record-header';
+  const recordHeader = document.createElement('div');
+  recordHeader.className = 'record-header';
 
   const topic = document.createElement('div');
   topic.className = 'record-topic';
@@ -516,8 +762,8 @@ function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
   deleteBtn.dataset.id = record.id;
   deleteBtn.addEventListener('click', handleDelete);
 
-  header.appendChild(topic);
-  header.appendChild(deleteBtn);
+  recordHeader.appendChild(topic);
+  recordHeader.appendChild(deleteBtn);
 
   // Info section
   const info = document.createElement('div');
@@ -526,7 +772,7 @@ function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
   // Time with copy button
   const timeLabel = document.createElement('span');
   timeLabel.className = 'record-label';
-  timeLabel.textContent = '時間:';
+  timeLabel.textContent = t('extension.records.labels.time');
 
   const timeContainer = document.createElement('span');
   timeContainer.className = 'record-value-container';
@@ -538,7 +784,7 @@ function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
   const copyBtn = document.createElement('button');
   copyBtn.className = 'record-copy-btn';
   copyBtn.textContent = '📋';
-  copyBtn.title = '複製時間';
+  copyBtn.title = t('extension.records.copyTimeTitle');
   copyBtn.addEventListener('click', () => handleCopyTime(record.liveTime, copyBtn));
 
   timeContainer.appendChild(timeValue);
@@ -547,7 +793,7 @@ function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
   // Created timestamp
   const createdLabel = document.createElement('span');
   createdLabel.className = 'record-label';
-  createdLabel.textContent = '建立:';
+  createdLabel.textContent = t('extension.records.labels.created');
 
   const createdValue = document.createElement('span');
   createdValue.className = 'record-value';
@@ -556,7 +802,7 @@ function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
   // Platform
   const platformLabel = document.createElement('span');
   platformLabel.className = 'record-label';
-  platformLabel.textContent = '平台:';
+  platformLabel.textContent = t('extension.records.labels.platform');
 
   const platformValue = document.createElement('span');
   platformValue.className = `record-platform ${record.platform}`;
@@ -578,13 +824,16 @@ function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
   link.href = buildVODUrl(record);
   link.target = '_blank';
   link.className = 'record-link';
-  link.textContent = '前往 VOD →';
+  link.textContent = t('extension.records.vodLink');
 
   actions.appendChild(link);
 
-  div.appendChild(header);
+  div.appendChild(recordHeader);
   div.appendChild(info);
   div.appendChild(actions);
+
+  // Suppress unused variable warning for group parameter
+  void group;
 
   return div;
 }
@@ -592,7 +841,7 @@ function createRecordElement(record: Record, group: RecordGroup): HTMLElement {
 /**
  * Build VOD URL with fallback for Twitch
  */
-function buildVODUrl(record: Record): string {
+function buildVODUrl(record: TidemarkRecord): string {
   // E1.3a: If Twitch VOD hasn't been generated, point to channel videos page
   if (record.platform === 'twitch' && record.channelUrl.includes('/videos/')) {
     // Already has VOD URL, use it
@@ -619,7 +868,7 @@ async function handleDelete(event: Event) {
   if (!recordId) return;
 
   // Confirm deletion
-  if (!confirm('確定要刪除這筆記錄嗎?')) {
+  if (!confirm(t('extension.records.deleteConfirm'))) {
     return;
   }
 
@@ -627,7 +876,7 @@ async function handleDelete(event: Event) {
     await deleteRecord(recordId);
     await loadRecords();
   } catch (error) {
-    showError('刪除失敗,請稍後重試');
+    showError(t('errors.e1_2b'));
     console.error('Delete record error:', error);
   }
 }
@@ -663,16 +912,27 @@ function formatTimestamp(isoString: string): string {
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
 
-  if (diffMins < 1) return '剛剛';
-  if (diffMins < 60) return `${diffMins} 分鐘前`;
-  if (diffMins < 1440) return `${Math.floor(diffMins / 60)} 小時前`;
+  if (diffMins < 1) return t('extension.time.justNow');
+  if (diffMins < 60) return t('extension.time.minutesAgo', { count: diffMins });
+  if (diffMins < 1440) return t('extension.time.hoursAgo', { count: Math.floor(diffMins / 60) });
 
-  return date.toLocaleDateString('zh-TW', {
+  return date.toLocaleDateString(currentLocaleForDate(), {
     month: 'numeric',
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   });
+}
+
+/** Map our locale codes to BCP 47 tags for date formatting. */
+function currentLocaleForDate(): string {
+  const locale = getCurrentLanguage();
+  switch (locale) {
+    case 'zh-TW': return 'zh-TW';
+    case 'ja': return 'ja-JP';
+    case 'en': return 'en-US';
+    default: return 'zh-TW';
+  }
 }
 
 /**
@@ -698,7 +958,7 @@ function handleEditTopic(recordId: string) {
 
   // Handle edit completion
   const completeEdit = async () => {
-    const newTopic = input.value.trim() || DEFAULT_TOPIC;
+    const newTopic = input.value.trim() || defaultTopic();
 
     // Restore topic div
     const newTopicDiv = document.createElement('div');
@@ -713,7 +973,7 @@ function handleEditTopic(recordId: string) {
         await updateRecordTopic(recordId, newTopic);
         await loadRecords();
       } catch (error) {
-        showError('更新失敗');
+        showError(t('errors.updateFailed'));
         console.error('Update topic error:', error);
       }
     }
@@ -770,7 +1030,7 @@ async function handleCopyTime(liveTime: string, button: HTMLButtonElement) {
     }, 1500);
   } catch (error) {
     console.error('Copy to clipboard failed:', error);
-    showError('複製失敗');
+    showError(t('errors.copyFailed'));
   }
 }
 
@@ -903,7 +1163,7 @@ async function reorderRecordsInGroup(draggedId: string, targetId: string) {
     await chrome.storage.local.set({ records });
     await loadRecords();
   } catch (error) {
-    showError('操作失敗');
+    showError(t('errors.e1_2b'));
     console.error('Reorder records error:', error);
   }
 }
@@ -1038,7 +1298,7 @@ async function reorderGroups(draggedTitle: string, targetTitle: string) {
     await chrome.storage.local.set({ records });
     await loadRecords();
   } catch (error) {
-    showError('操作失敗');
+    showError(t('errors.e1_2b'));
     console.error('Reorder groups error:', error);
   }
 }
@@ -1073,7 +1333,7 @@ function renderFolders() {
   // Always show "Uncategorized" first
   const uncategorizedItem = createFolderElement({
     id: UNCATEGORIZED_ID,
-    name: UNCATEGORIZED_NAME,
+    name: uncategorizedName(),
     created: new Date().toISOString()
   }, true);
   foldersList.appendChild(uncategorizedItem);
@@ -1180,7 +1440,7 @@ async function handleCreateFolder() {
     await loadFolders();
   } catch (error) {
     // E1.2b: Storage write failure
-    showError('操作失敗');
+    showError(t('errors.e1_2b'));
     console.error('Save folder error:', error);
   }
 }
@@ -1192,22 +1452,22 @@ async function saveFolder(folder: Folder): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(['folders'], (result) => {
       const data = result as Partial<StorageData>;
-      const folders = data.folders || [];
+      const storedFolders = data.folders || [];
 
       // Find index if updating existing folder
-      const existingIndex = folders.findIndex(f => f.id === folder.id);
+      const existingIndex = storedFolders.findIndex(f => f.id === folder.id);
       if (existingIndex !== -1) {
-        folders[existingIndex] = folder;
+        storedFolders[existingIndex] = folder;
       } else {
-        folders.push(folder);
+        storedFolders.push(folder);
       }
 
-      chrome.storage.local.set({ folders }, async () => {
+      chrome.storage.local.set({ folders: storedFolders }, async () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
           // Push to cloud sync if logged in
-          const sortOrder = existingIndex !== -1 ? existingIndex : folders.length - 1;
+          const sortOrder = existingIndex !== -1 ? existingIndex : storedFolders.length - 1;
           await pushFolder(folder, sortOrder);
           resolve();
         }
@@ -1254,7 +1514,7 @@ function handleRenameFolder(folderId: string) {
         await updateFolderName(folderId, newName);
         await loadFolders();
       } catch (error) {
-        showError('操作失敗');
+        showError(t('errors.e1_2b'));
         console.error('Rename folder error:', error);
       }
     }
@@ -1275,14 +1535,14 @@ async function updateFolderName(folderId: string, newName: string): Promise<void
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(['folders'], (result) => {
       const data = result as Partial<StorageData>;
-      const folders = data.folders || [];
+      const storedFolders = data.folders || [];
 
-      const folder = folders.find(f => f.id === folderId);
+      const folder = storedFolders.find(f => f.id === folderId);
       if (folder) {
         folder.name = newName;
       }
 
-      chrome.storage.local.set({ folders }, () => {
+      chrome.storage.local.set({ folders: storedFolders }, () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
@@ -1298,7 +1558,7 @@ async function updateFolderName(folderId: string, newName: string): Promise<void
  */
 async function handleDeleteFolder(folderId: string) {
   // Confirmation dialog
-  if (!confirm('確定要刪除此資料夾嗎？資料夾內的記錄將移至「未分類」')) {
+  if (!confirm(t('extension.folders.deleteConfirm'))) {
     return;
   }
 
@@ -1313,7 +1573,7 @@ async function handleDeleteFolder(folderId: string) {
     await loadFolders();
     await loadRecords();
   } catch (error) {
-    showError('操作失敗');
+    showError(t('errors.e1_2b'));
     console.error('Delete folder error:', error);
   }
 }
@@ -1325,7 +1585,7 @@ async function deleteFolder(folderId: string): Promise<void> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(['folders', 'records'], (result) => {
       const data = result as Partial<StorageData>;
-      const folders = (data.folders || []).filter(f => f.id !== folderId);
+      const storedFolders = (data.folders || []).filter(f => f.id !== folderId);
       const records = data.records || [];
 
       // Move all records in this folder to uncategorized
@@ -1335,7 +1595,7 @@ async function deleteFolder(folderId: string): Promise<void> {
         }
       });
 
-      chrome.storage.local.set({ folders, records }, async () => {
+      chrome.storage.local.set({ folders: storedFolders, records }, async () => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
@@ -1475,7 +1735,7 @@ async function moveRecordToFolder(recordId: string, targetFolderId: string): Pro
     // If moving from current folder, refresh the view
     await loadRecords();
   } catch (error) {
-    showError('操作失敗');
+    showError(t('errors.e1_2b'));
     console.error('Move record error:', error);
   }
 }
@@ -1501,7 +1761,7 @@ async function reorderFolders(draggedId: string, targetId: string) {
     await saveFoldersOrder(folders);
     await loadFolders();
   } catch (error) {
-    showError('操作失敗');
+    showError(t('errors.e1_2b'));
     console.error('Reorder folders error:', error);
   }
 }
@@ -1509,9 +1769,9 @@ async function reorderFolders(draggedId: string, targetId: string) {
 /**
  * Save folders order to storage
  */
-async function saveFoldersOrder(folders: Folder[]): Promise<void> {
+async function saveFoldersOrder(orderedFolders: Folder[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    chrome.storage.local.set({ folders }, () => {
+    chrome.storage.local.set({ folders: orderedFolders }, () => {
       if (chrome.runtime.lastError) {
         reject(chrome.runtime.lastError);
       } else {
@@ -1541,7 +1801,7 @@ async function handleExport() {
   try {
     // Disable button during export
     exportButton.disabled = true;
-    exportButton.textContent = '匯出中...';
+    exportButton.textContent = t('extension.settings.dataBackup.exportingButton');
 
     // Get all data from storage
     const data = await getAllData();
@@ -1570,15 +1830,18 @@ async function handleExport() {
     URL.revokeObjectURL(url);
 
     // Show success message
-    showSuccess(`已匯出 ${exportData.records.length} 筆記錄與 ${exportData.folders.length} 個資料夾`);
+    showSuccess(t('success.exported', {
+      records: exportData.records.length,
+      folders: exportData.folders.length
+    }));
 
   } catch (error) {
     console.error('Export error:', error);
-    showError('匯出失敗，請稍後重試');
+    showError(t('errors.exportFailed'));
   } finally {
     // Re-enable button
     exportButton.disabled = false;
-    exportButton.textContent = '📥 匯出資料';
+    exportButton.textContent = t('extension.settings.dataBackup.exportButton');
   }
 }
 
@@ -1603,7 +1866,7 @@ async function handleImportFileSelected(event: Event) {
       importData = JSON.parse(text);
     } catch (e) {
       // E1.4a: Invalid JSON file
-      showError('檔案格式不正確');
+      showError(t('errors.e1_4a'));
       input.value = ''; // Reset input
       return;
     }
@@ -1611,7 +1874,7 @@ async function handleImportFileSelected(event: Event) {
     // Validate data structure
     if (!validateImportData(importData)) {
       // E1.4b: Incompatible data structure
-      showError('無法匯入：資料版本不相容');
+      showError(t('errors.e1_4b'));
       input.value = ''; // Reset input
       return;
     }
@@ -1622,7 +1885,7 @@ async function handleImportFileSelected(event: Event) {
 
   } catch (error) {
     console.error('Import file read error:', error);
-    showError('讀取檔案失敗');
+    showError(t('errors.e1_5'));
   }
 
   // Reset file input
@@ -1632,39 +1895,43 @@ async function handleImportFileSelected(event: Event) {
 /**
  * Validate import data structure
  */
-function validateImportData(data: any): data is ExportData {
+function validateImportData(data: unknown): data is ExportData {
   // Check required fields
   if (!data || typeof data !== 'object') {
     return false;
   }
 
-  if (!data.version || typeof data.version !== 'string') {
+  const obj = data as Record<string, unknown>;
+
+  if (!obj['version'] || typeof obj['version'] !== 'string') {
     return false;
   }
 
-  if (!data.exportedAt || typeof data.exportedAt !== 'string') {
+  if (!obj['exportedAt'] || typeof obj['exportedAt'] !== 'string') {
     return false;
   }
 
-  if (!Array.isArray(data.records)) {
+  if (!Array.isArray(obj['records'])) {
     return false;
   }
 
-  if (!Array.isArray(data.folders)) {
+  if (!Array.isArray(obj['folders'])) {
     return false;
   }
 
   // Validate each record has required fields
-  for (const record of data.records) {
-    if (!record.id || !record.timestamp || !record.liveTime ||
-        !record.title || !record.topic || !record.channelUrl || !record.platform) {
+  for (const record of obj['records'] as unknown[]) {
+    const r = record as Record<string, unknown>;
+    if (!r['id'] || !r['timestamp'] || !r['liveTime'] ||
+        !r['title'] || !r['topic'] || !r['channelUrl'] || !r['platform']) {
       return false;
     }
   }
 
   // Validate each folder has required fields
-  for (const folder of data.folders) {
-    if (!folder.id || !folder.name || !folder.created) {
+  for (const folder of obj['folders'] as unknown[]) {
+    const f = folder as Record<string, unknown>;
+    if (!f['id'] || !f['name'] || !f['created']) {
       return false;
     }
   }
@@ -1676,7 +1943,22 @@ function validateImportData(data: any): data is ExportData {
  * Show import modal with data stats
  */
 function showImportModal(data: ExportData) {
-  importStats.textContent = `${data.records.length} 筆記錄與 ${data.folders.length} 個資料夾`;
+  const statsText = t('records.exportStats', {
+    records: data.records.length,
+    folders: data.folders.length
+  });
+  importStats.textContent = statsText;
+
+  const modalDesc = importModal.querySelector('.modal-description');
+  if (modalDesc) {
+    modalDesc.textContent = '';
+    modalDesc.appendChild(document.createTextNode(t('extension.importModal.foundData', { stats: '' })));
+    const statsSpan = document.createElement('span');
+    statsSpan.id = 'import-stats';
+    statsSpan.textContent = statsText;
+    modalDesc.appendChild(statsSpan);
+  }
+
   importModal.classList.remove('hidden');
 }
 
@@ -1709,7 +1991,10 @@ async function handleImportConfirm(mode: 'merge' | 'overwrite') {
         folders: pendingImportData.folders
       });
 
-      showSuccess(`已覆寫：匯入 ${pendingImportData.records.length} 筆記錄與 ${pendingImportData.folders.length} 個資料夾`);
+      showSuccess(t('records.importSuccess.overwrite', {
+        records: pendingImportData.records.length,
+        folders: pendingImportData.folders.length
+      }));
 
     } else {
       // Merge: Add to existing data, skip duplicates by ID
@@ -1735,7 +2020,10 @@ async function handleImportConfirm(mode: 'merge' | 'overwrite') {
         folders: mergedFolders
       });
 
-      showSuccess(`已合併：新增 ${newRecords.length} 筆記錄與 ${newFolders.length} 個資料夾`);
+      showSuccess(t('records.importSuccess.merge', {
+        records: newRecords.length,
+        folders: newFolders.length
+      }));
     }
 
     // Close modal
@@ -1747,7 +2035,7 @@ async function handleImportConfirm(mode: 'merge' | 'overwrite') {
 
   } catch (error) {
     console.error('Import error:', error);
-    showError('匯入失敗，請稍後重試');
+    showError(t('errors.importFailed'));
   } finally {
     // Re-enable buttons
     importMergeButton.disabled = false;
@@ -1796,6 +2084,21 @@ async function updateSyncUI() {
     // Show logged in UI
     syncLoggedOut.classList.add('hidden');
     syncLoggedIn.classList.remove('hidden');
+
+    // Update "logged in as" prefix
+    const loggedInDesc = syncLoggedIn.querySelector('.settings-description');
+    if (loggedInDesc) {
+      // Set prefix text node (first text child before <strong>)
+      const firstChild = loggedInDesc.firstChild;
+      if (firstChild && firstChild.nodeType === Node.TEXT_NODE) {
+        firstChild.textContent = t('extension.settings.sync.loggedInAs') + ' ';
+      } else {
+        loggedInDesc.insertBefore(
+          document.createTextNode(t('extension.settings.sync.loggedInAs') + ' '),
+          loggedInDesc.firstChild
+        );
+      }
+    }
     userEmail.textContent = user.email;
   } else {
     // Show logged out UI
@@ -1807,6 +2110,24 @@ async function updateSyncUI() {
   updateSyncStatusIndicator(status);
 }
 
+/** Update sync status text string without changing icon. */
+function updateSyncStatusText(status: SyncStatus): void {
+  switch (status) {
+    case 'offline':
+      syncStatusText.textContent = t('extension.settings.sync.notLoggedIn');
+      break;
+    case 'synced':
+      syncStatusText.textContent = t('extension.settings.sync.synced');
+      break;
+    case 'syncing':
+      syncStatusText.textContent = t('extension.settings.sync.syncing');
+      break;
+    case 'error':
+      syncStatusText.textContent = t('extension.settings.sync.error');
+      break;
+  }
+}
+
 /**
  * Update sync status indicator
  */
@@ -1814,26 +2135,27 @@ function updateSyncStatusIndicator(status: SyncStatus) {
   // Remove all status classes
   syncStatusDisplay.classList.remove('offline', 'synced', 'syncing', 'error');
 
-  // Add current status class
+  // Add current status class and store for re-render
   syncStatusDisplay.classList.add(status);
+  syncStatusDisplay.dataset.status = status;
 
   // Update icon and text
   switch (status) {
     case 'offline':
       syncStatusIcon.textContent = '⚪';
-      syncStatusText.textContent = '未登入';
+      syncStatusText.textContent = t('extension.settings.sync.notLoggedIn');
       break;
     case 'synced':
       syncStatusIcon.textContent = '🟢';
-      syncStatusText.textContent = '已同步';
+      syncStatusText.textContent = t('extension.settings.sync.synced');
       break;
     case 'syncing':
       syncStatusIcon.textContent = '🔵';
-      syncStatusText.textContent = '同步中...';
+      syncStatusText.textContent = t('extension.settings.sync.syncing');
       break;
     case 'error':
       syncStatusIcon.textContent = '🔴';
-      syncStatusText.textContent = '同步錯誤';
+      syncStatusText.textContent = t('extension.settings.sync.error');
       break;
   }
 }
@@ -1844,12 +2166,12 @@ function updateSyncStatusIndicator(status: SyncStatus) {
 async function handleLogin() {
   try {
     loginButton.disabled = true;
-    loginButton.textContent = '登入中...';
+    loginButton.textContent = t('extension.settings.sync.loggingIn');
 
     const result = await loginWithGoogle();
 
     if (result.success) {
-      showSuccess('登入成功！');
+      showSuccess(t('success.loggedIn'));
       await updateSyncUI();
       // Pull initial data
       await pullRemoteChanges();
@@ -1857,14 +2179,14 @@ async function handleLogin() {
       await loadFolders();
       await loadRecords();
     } else {
-      showError(result.error || '登入失敗');
+      showError(result.error || t('errors.loginFailed'));
     }
   } catch (error) {
     console.error('Login error:', error);
-    showError('登入失敗，請稍後重試');
+    showError(t('errors.e1_6a'));
   } finally {
     loginButton.disabled = false;
-    loginButton.textContent = '🔐 使用 Google 登入';
+    loginButton.textContent = t('extension.settings.sync.loginButton');
   }
 }
 
@@ -1875,11 +2197,11 @@ async function handleLogout() {
   try {
     logoutButton.disabled = true;
     await logout();
-    showSuccess('已登出');
+    showSuccess(t('success.loggedOut'));
     await updateSyncUI();
   } catch (error) {
     console.error('Logout error:', error);
-    showError('登出失敗');
+    showError(t('errors.logoutFailed'));
   } finally {
     logoutButton.disabled = false;
   }
@@ -1891,14 +2213,14 @@ async function handleLogout() {
 async function handleTestJwt() {
   const jwt = testJwtInput.value.trim();
   if (!jwt) {
-    showError('請輸入 JWT');
+    showError(t('errors.enterJwt'));
     return;
   }
 
   try {
     // Decode JWT to extract user info
     const payload = JSON.parse(atob(jwt.split('.')[1]));
-    const user = {
+    const user: SyncUser = {
       id: payload.sub,
       email: payload.email,
     };
@@ -1917,14 +2239,14 @@ async function handleTestJwt() {
     // Pull initial data
     await pullRemoteChanges();
 
-    showSuccess('測試 JWT 已設定');
+    showSuccess(t('success.jwtSet'));
     testJwtInput.value = '';
     await updateSyncUI();
     await loadFolders();
     await loadRecords();
   } catch (error) {
     console.error('Test JWT error:', error);
-    showError('無效的 JWT');
+    showError(t('errors.invalidJwt'));
   }
 }
 

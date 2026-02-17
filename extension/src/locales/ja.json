@@ -1,0 +1,136 @@
+{
+  "common": {
+    "actions": {
+      "save": "保存",
+      "cancel": "キャンセル",
+      "confirm": "確認",
+      "delete": "削除",
+      "edit": "編集",
+      "add": "追加",
+      "close": "閉じる",
+      "copy": "コピー",
+      "retry": "再試行"
+    }
+  },
+  "extension": {
+    "title": "Tidemark",
+    "platform": {
+      "youtube": "YouTube",
+      "twitch": "Twitch"
+    },
+    "videoInfo": {
+      "currentTime": "現在時刻: {time}"
+    },
+    "recordForm": {
+      "topicPlaceholder": "トピック名を入力（任意）",
+      "recordButton": "現在時刻を記録",
+      "recorded": "✓ 記録済み"
+    },
+    "folders": {
+      "header": "フォルダー",
+      "inputPlaceholder": "フォルダーを追加...",
+      "addButtonTitle": "フォルダーを追加",
+      "uncategorized": "未分類",
+      "deleteConfirm": "このフォルダーを削除しますか？フォルダー内の記録は「未分類」に移動します。"
+    },
+    "records": {
+      "header": "記録リスト",
+      "count": "{count} 件",
+      "empty": "記録がありません",
+      "labels": {
+        "time": "時刻:",
+        "created": "作成:",
+        "platform": "プラットフォーム:"
+      },
+      "copyTimeTitle": "時刻をコピー",
+      "vodLink": "VOD を開く →",
+      "deleteConfirm": "この記録を削除しますか？"
+    },
+    "settings": {
+      "toggle": "⚙️ 設定",
+      "sync": {
+        "header": "クラウド同期",
+        "notLoggedIn": "未ログイン",
+        "synced": "同期済み",
+        "syncing": "同期中...",
+        "error": "同期エラー",
+        "loginButton": "🔐 Google でログイン",
+        "loginDesc": "ログインすると複数のデバイス間で記録とフォルダーを同期できます",
+        "loggingIn": "ログイン中...",
+        "loggedInAs": "ログイン中:",
+        "logoutButton": "ログアウト",
+        "devMode": "開発テストモード",
+        "jwtPlaceholder": "テスト JWT を貼り付け",
+        "setJwtButton": "テスト JWT を設定"
+      },
+      "dataBackup": {
+        "header": "データのバックアップと復元",
+        "exportButton": "📥 データをエクスポート",
+        "exportDesc": "すべての記録とフォルダーを JSON ファイルとしてエクスポート",
+        "exportingButton": "エクスポート中...",
+        "importButton": "📤 データをインポート",
+        "importDesc": "JSON ファイルから記録とフォルダーをインポート"
+      },
+      "language": {
+        "header": "言語 / Language",
+        "label": "表示言語"
+      }
+    },
+    "importModal": {
+      "title": "インポートモードを選択",
+      "foundData": "{stats} が見つかりました",
+      "mergeButton": "マージ (Merge)",
+      "overwriteButton": "上書き (Overwrite)",
+      "cancelButton": "キャンセル",
+      "mergeHelp": "インポートしたデータを既存データに追加します。ID が重複するものはスキップされます",
+      "overwriteHelp": "すべての既存データを削除し、インポートしたデータに置き換えます",
+      "mergeLabel": "マージ:",
+      "overwriteLabel": "上書き:"
+    },
+    "time": {
+      "justNow": "たった今",
+      "minutesAgo": "{count} 分前",
+      "hoursAgo": "{count} 時間前"
+    }
+  },
+  "records": {
+    "defaultTopic": "トピックなし",
+    "exportStats": "{records} 件の記録と {folders} 個のフォルダー",
+    "importSuccess": {
+      "overwrite": "上書き完了：{records} 件の記録と {folders} 個のフォルダーをインポート",
+      "merge": "マージ完了：{records} 件の記録と {folders} 個のフォルダーを追加"
+    }
+  },
+  "errors": {
+    "e1_1a": "YouTube または Twitch のページで使用してください",
+    "e1_1b": "再生時刻を取得できません。動画が読み込まれているか確認してください",
+    "e1_1c": "ページを更新してください",
+    "e1_1d": "保存に失敗しました。後でもう一度お試しください",
+    "e1_2b": "操作に失敗しました",
+    "e1_4a": "ファイル形式が正しくありません",
+    "e1_4b": "インポートできません：データのバージョンが互換性がありません",
+    "e1_5": "ファイルの読み込みに失敗しました",
+    "e1_6a": "ログインに失敗しました。後でもう一度お試しください",
+    "e1_6d": "{field} が別のデバイスで更新されました",
+    "cannotGetPageInfo": "現在のページ情報を取得できません",
+    "copyFailed": "コピーに失敗しました",
+    "updateFailed": "更新に失敗しました",
+    "exportFailed": "エクスポートに失敗しました。後でもう一度お試しください",
+    "importFailed": "インポートに失敗しました。後でもう一度お試しください",
+    "invalidJwt": "無効な JWT",
+    "enterJwt": "JWT を入力してください",
+    "loginFailed": "ログインに失敗しました",
+    "logoutFailed": "ログアウトに失敗しました"
+  },
+  "success": {
+    "recorded": "✓ 記録済み",
+    "jwtSet": "テスト JWT を設定しました",
+    "loggedIn": "ログインしました！",
+    "loggedOut": "ログアウトしました",
+    "exported": "{records} 件の記録と {folders} 個のフォルダーをエクスポートしました"
+  },
+  "i18n": {
+    "loadFailed": "言語の読み込みに失敗しました",
+    "fallbackMessage": "言語ファイルの読み込みに失敗しました。繁体字中国語にフォールバックします"
+  }
+}

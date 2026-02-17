@@ -1,0 +1,136 @@
+{
+  "common": {
+    "actions": {
+      "save": "儲存",
+      "cancel": "取消",
+      "confirm": "確認",
+      "delete": "刪除",
+      "edit": "編輯",
+      "add": "新增",
+      "close": "關閉",
+      "copy": "複製",
+      "retry": "重試"
+    }
+  },
+  "extension": {
+    "title": "Tidemark",
+    "platform": {
+      "youtube": "YouTube",
+      "twitch": "Twitch"
+    },
+    "videoInfo": {
+      "currentTime": "當前時間: {time}"
+    },
+    "recordForm": {
+      "topicPlaceholder": "輸入主題名稱 (可選)",
+      "recordButton": "記錄當前時間",
+      "recorded": "✓ 已記錄"
+    },
+    "folders": {
+      "header": "資料夾",
+      "inputPlaceholder": "新增資料夾...",
+      "addButtonTitle": "新增資料夾",
+      "uncategorized": "未分類",
+      "deleteConfirm": "確定要刪除此資料夾嗎？資料夾內的記錄將移至「未分類」"
+    },
+    "records": {
+      "header": "記錄列表",
+      "count": "共 {count} 筆",
+      "empty": "尚無記錄",
+      "labels": {
+        "time": "時間:",
+        "created": "建立:",
+        "platform": "平台:"
+      },
+      "copyTimeTitle": "複製時間",
+      "vodLink": "前往 VOD →",
+      "deleteConfirm": "確定要刪除這筆記錄嗎?"
+    },
+    "settings": {
+      "toggle": "⚙️ 設定",
+      "sync": {
+        "header": "雲端同步",
+        "notLoggedIn": "未登入",
+        "synced": "已同步",
+        "syncing": "同步中...",
+        "error": "同步錯誤",
+        "loginButton": "🔐 使用 Google 登入",
+        "loginDesc": "登入後可在多個裝置間同步記錄與資料夾",
+        "loggingIn": "登入中...",
+        "loggedInAs": "已登入為:",
+        "logoutButton": "登出",
+        "devMode": "開發測試模式",
+        "jwtPlaceholder": "貼上測試 JWT",
+        "setJwtButton": "設定測試 JWT"
+      },
+      "dataBackup": {
+        "header": "資料備份與還原",
+        "exportButton": "📥 匯出資料",
+        "exportDesc": "匯出所有記錄與資料夾為 JSON 檔案",
+        "exportingButton": "匯出中...",
+        "importButton": "📤 匯入資料",
+        "importDesc": "從 JSON 檔案匯入記錄與資料夾"
+      },
+      "language": {
+        "header": "語言 / Language",
+        "label": "顯示語言"
+      }
+    },
+    "importModal": {
+      "title": "選擇匯入模式",
+      "foundData": "找到 {stats}",
+      "mergeButton": "合併 (Merge)",
+      "overwriteButton": "覆寫 (Overwrite)",
+      "cancelButton": "取消",
+      "mergeHelp": "將匯入的資料加入現有資料，重複的 ID 會被跳過",
+      "overwriteHelp": "刪除所有現有資料，並替換為匯入的資料",
+      "mergeLabel": "合併:",
+      "overwriteLabel": "覆寫:"
+    },
+    "time": {
+      "justNow": "剛剛",
+      "minutesAgo": "{count} 分鐘前",
+      "hoursAgo": "{count} 小時前"
+    }
+  },
+  "records": {
+    "defaultTopic": "無主題",
+    "exportStats": "{records} 筆記錄與 {folders} 個資料夾",
+    "importSuccess": {
+      "overwrite": "已覆寫：匯入 {records} 筆記錄與 {folders} 個資料夾",
+      "merge": "已合併：新增 {records} 筆記錄與 {folders} 個資料夾"
+    }
+  },
+  "errors": {
+    "e1_1a": "請在 YouTube 或 Twitch 頁面使用",
+    "e1_1b": "無法取得播放時間，請確認影片已載入",
+    "e1_1c": "請重新整理頁面",
+    "e1_1d": "儲存失敗，請稍後重試",
+    "e1_2b": "操作失敗",
+    "e1_4a": "檔案格式不正確",
+    "e1_4b": "無法匯入：資料版本不相容",
+    "e1_5": "讀取檔案失敗",
+    "e1_6a": "登入失敗，請稍後重試",
+    "e1_6d": "{field} 已被其他裝置更新",
+    "cannotGetPageInfo": "無法取得當前頁面資訊",
+    "copyFailed": "複製失敗",
+    "updateFailed": "更新失敗",
+    "exportFailed": "匯出失敗，請稍後重試",
+    "importFailed": "匯入失敗，請稍後重試",
+    "invalidJwt": "無效的 JWT",
+    "enterJwt": "請輸入 JWT",
+    "loginFailed": "登入失敗",
+    "logoutFailed": "登出失敗"
+  },
+  "success": {
+    "recorded": "✓ 已記錄",
+    "jwtSet": "測試 JWT 已設定",
+    "loggedIn": "登入成功！",
+    "loggedOut": "已登出",
+    "exported": "已匯出 {records} 筆記錄與 {folders} 個資料夾"
+  },
+  "i18n": {
+    "loadFailed": "語言載入失敗",
+    "fallbackMessage": "語言檔載入失敗，已切換回繁體中文"
+  }
+}

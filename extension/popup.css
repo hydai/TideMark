@@ -950,3 +950,73 @@ body.youtube #user-email {
 body.twitch #user-email {
   color: #9146ff;
 }
+
+/* ── Language selector ──────────────────────────────────────────────────────── */
+
+.settings-label {
+  display: block;
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 6px;
+}
+
+.language-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 13px;
+  color: #333;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.language-select:hover {
+  border-color: #667eea;
+}
+
+.language-select:focus {
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+body.youtube .language-select:hover,
+body.youtube .language-select:focus {
+  border-color: #ff0000;
+  box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.15);
+}
+
+body.twitch .language-select:hover,
+body.twitch .language-select:focus {
+  border-color: #9146ff;
+  box-shadow: 0 0 0 2px rgba(145, 70, 255, 0.15);
+}
+
+/* ── i18n fallback notice (E9.4a) ──────────────────────────────────────────── */
+
+.i18n-fallback-notice {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 12px;
+  max-width: 240px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: opacity 0.4s ease;
+}
+
+.i18n-fallback-notice-title {
+  font-weight: 600;
+  color: #856404;
+  margin-bottom: 2px;
+}
+
+.i18n-fallback-notice-body {
+  color: #664d03;
+}
+
+.i18n-fallback-notice-fade {
+  opacity: 0;
+}

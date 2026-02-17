@@ -28,12 +28,10 @@
       <input
         type="text"
         id="topic-input"
-        placeholder="輸入主題名稱 (可選)"
+        placeholder=""
         maxlength="100"
       />
-      <button id="record-button" class="primary">
-        記錄當前時間
-      </button>
+      <button id="record-button" class="primary"></button>
     </div>
 
     <!-- Two-panel layout: Folders + Records -->
@@ -41,16 +39,16 @@
       <!-- Left sidebar: Folders -->
       <div id="folders-sidebar">
         <div id="folders-header">
-          <h2>資料夾</h2>
+          <h2></h2>
         </div>
         <div id="folder-create">
           <input
             type="text"
             id="folder-input"
-            placeholder="新增資料夾..."
+            placeholder=""
             maxlength="50"
           />
-          <button id="folder-add-button" title="新增資料夾">+</button>
+          <button id="folder-add-button" title="">+</button>
         </div>
         <div id="folders-list"></div>
       </div>
@@ -58,117 +56,93 @@
       <!-- Right panel: Records -->
       <div id="records-section">
         <div id="records-header">
-          <h2>記錄列表</h2>
+          <h2></h2>
           <div id="record-count"></div>
         </div>
         <div id="records-list"></div>
-        <div id="no-records" class="empty-state hidden">
-          尚無記錄
-        </div>
+        <div id="no-records" class="empty-state hidden"></div>
       </div>
     </div>
 
     <!-- Settings section (collapsed by default) -->
     <div id="settings-section">
-      <button id="settings-toggle" class="settings-toggle">
-        ⚙️ 設定
-      </button>
+      <button id="settings-toggle" class="settings-toggle"></button>
       <div id="settings-content" class="settings-content hidden">
         <!-- Cloud Sync Settings -->
         <div class="settings-group">
-          <h3>雲端同步</h3>
+          <h3></h3>
 
           <div id="sync-status-display" class="settings-item">
             <div class="sync-status">
               <span id="sync-status-icon">⚪</span>
-              <span id="sync-status-text">未登入</span>
+              <span id="sync-status-text"></span>
             </div>
           </div>
 
           <div id="sync-logged-out" class="settings-item">
-            <button id="login-button" class="primary">
-              🔐 使用 Google 登入
-            </button>
-            <p class="settings-description">
-              登入後可在多個裝置間同步記錄與資料夾
-            </p>
+            <button id="login-button" class="primary"></button>
+            <p class="settings-description"></p>
             <details class="test-mode">
-              <summary style="cursor: pointer; color: #999; font-size: 12px; margin-top: 8px;">開發測試模式</summary>
+              <summary style="cursor: pointer; color: #999; font-size: 12px; margin-top: 8px;"></summary>
               <div style="margin-top: 8px;">
                 <input
                   type="text"
                   id="test-jwt-input"
-                  placeholder="貼上測試 JWT"
+                  placeholder=""
                   style="width: 100%; padding: 6px; font-size: 12px; font-family: monospace;"
                 />
-                <button id="test-jwt-button" class="secondary" style="margin-top: 4px; font-size: 12px;">
-                  設定測試 JWT
-                </button>
+                <button id="test-jwt-button" class="secondary" style="margin-top: 4px; font-size: 12px;"></button>
               </div>
             </details>
           </div>
 
           <div id="sync-logged-in" class="settings-item hidden">
             <p class="settings-description">
-              已登入為: <strong id="user-email"></strong>
+              <strong id="user-email"></strong>
             </p>
-            <button id="logout-button" class="secondary">
-              登出
-            </button>
+            <button id="logout-button" class="secondary"></button>
           </div>
         </div>
 
         <div class="settings-group">
-          <h3>資料備份與還原</h3>
+          <h3></h3>
 
           <div class="settings-item">
-            <button id="export-button" class="secondary">
-              📥 匯出資料
-            </button>
-            <p class="settings-description">
-              匯出所有記錄與資料夾為 JSON 檔案
-            </p>
+            <button id="export-button" class="secondary"></button>
+            <p class="settings-description"></p>
           </div>
 
           <div class="settings-item">
-            <button id="import-button" class="secondary">
-              📤 匯入資料
-            </button>
+            <button id="import-button" class="secondary"></button>
             <input
               type="file"
               id="import-file-input"
               accept=".json,application/json"
               style="display: none;"
             />
-            <p class="settings-description">
-              從 JSON 檔案匯入記錄與資料夾
-            </p>
+            <p class="settings-description"></p>
           </div>
         </div>
+
+        <!-- Language selector will be appended here by popup.ts -->
       </div>
     </div>
 
     <!-- Import mode selection modal -->
     <div id="import-modal" class="modal hidden">
       <div class="modal-content">
-        <h3>選擇匯入模式</h3>
+        <h3></h3>
         <p class="modal-description">
-          找到 <span id="import-stats"></span>
+          <span id="import-stats"></span>
         </p>
         <div class="modal-buttons">
-          <button id="import-merge-button" class="primary">
-            合併 (Merge)
-          </button>
-          <button id="import-overwrite-button" class="secondary">
-            覆寫 (Overwrite)
-          </button>
-          <button id="import-cancel-button" class="tertiary">
-            取消
-          </button>
+          <button id="import-merge-button" class="primary"></button>
+          <button id="import-overwrite-button" class="secondary"></button>
+          <button id="import-cancel-button" class="tertiary"></button>
         </div>
         <div class="modal-help">
-          <p><strong>合併:</strong> 將匯入的資料加入現有資料，重複的 ID 會被跳過</p>
-          <p><strong>覆寫:</strong> 刪除所有現有資料，並替換為匯入的資料</p>
+          <p><strong></strong></p>
+          <p><strong></strong></p>
         </div>
       </div>
     </div>

@@ -1,0 +1,136 @@
+{
+  "common": {
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "delete": "Delete",
+      "edit": "Edit",
+      "add": "Add",
+      "close": "Close",
+      "copy": "Copy",
+      "retry": "Retry"
+    }
+  },
+  "extension": {
+    "title": "Tidemark",
+    "platform": {
+      "youtube": "YouTube",
+      "twitch": "Twitch"
+    },
+    "videoInfo": {
+      "currentTime": "Current time: {time}"
+    },
+    "recordForm": {
+      "topicPlaceholder": "Enter topic name (optional)",
+      "recordButton": "Record Current Time",
+      "recorded": "✓ Recorded"
+    },
+    "folders": {
+      "header": "Folders",
+      "inputPlaceholder": "Add folder...",
+      "addButtonTitle": "Add folder",
+      "uncategorized": "Uncategorized",
+      "deleteConfirm": "Delete this folder? Records inside will be moved to \"Uncategorized\"."
+    },
+    "records": {
+      "header": "Record List",
+      "count": "{count} records",
+      "empty": "No records yet",
+      "labels": {
+        "time": "Time:",
+        "created": "Created:",
+        "platform": "Platform:"
+      },
+      "copyTimeTitle": "Copy time",
+      "vodLink": "Go to VOD →",
+      "deleteConfirm": "Delete this record?"
+    },
+    "settings": {
+      "toggle": "⚙️ Settings",
+      "sync": {
+        "header": "Cloud Sync",
+        "notLoggedIn": "Not logged in",
+        "synced": "Synced",
+        "syncing": "Syncing...",
+        "error": "Sync error",
+        "loginButton": "🔐 Sign in with Google",
+        "loginDesc": "Sign in to sync records and folders across devices",
+        "loggingIn": "Signing in...",
+        "loggedInAs": "Signed in as:",
+        "logoutButton": "Sign out",
+        "devMode": "Developer test mode",
+        "jwtPlaceholder": "Paste test JWT",
+        "setJwtButton": "Set test JWT"
+      },
+      "dataBackup": {
+        "header": "Data Backup & Restore",
+        "exportButton": "📥 Export Data",
+        "exportDesc": "Export all records and folders as a JSON file",
+        "exportingButton": "Exporting...",
+        "importButton": "📤 Import Data",
+        "importDesc": "Import records and folders from a JSON file"
+      },
+      "language": {
+        "header": "Language / 語言",
+        "label": "Display language"
+      }
+    },
+    "importModal": {
+      "title": "Select Import Mode",
+      "foundData": "Found {stats}",
+      "mergeButton": "Merge",
+      "overwriteButton": "Overwrite",
+      "cancelButton": "Cancel",
+      "mergeHelp": "Add imported data to existing data; duplicate IDs are skipped",
+      "overwriteHelp": "Delete all existing data and replace with imported data",
+      "mergeLabel": "Merge:",
+      "overwriteLabel": "Overwrite:"
+    },
+    "time": {
+      "justNow": "Just now",
+      "minutesAgo": "{count} min ago",
+      "hoursAgo": "{count} hr ago"
+    }
+  },
+  "records": {
+    "defaultTopic": "No topic",
+    "exportStats": "{records} records and {folders} folders",
+    "importSuccess": {
+      "overwrite": "Overwritten: imported {records} records and {folders} folders",
+      "merge": "Merged: added {records} records and {folders} folders"
+    }
+  },
+  "errors": {
+    "e1_1a": "Please use on a YouTube or Twitch page",
+    "e1_1b": "Cannot get playback time, please make sure the video is loaded",
+    "e1_1c": "Please refresh the page",
+    "e1_1d": "Save failed, please try again",
+    "e1_2b": "Operation failed",
+    "e1_4a": "Invalid file format",
+    "e1_4b": "Cannot import: incompatible data version",
+    "e1_5": "Failed to read file",
+    "e1_6a": "Sign in failed, please try again",
+    "e1_6d": "{field} was updated by another device",
+    "cannotGetPageInfo": "Cannot get current page info",
+    "copyFailed": "Copy failed",
+    "updateFailed": "Update failed",
+    "exportFailed": "Export failed, please try again",
+    "importFailed": "Import failed, please try again",
+    "invalidJwt": "Invalid JWT",
+    "enterJwt": "Please enter a JWT",
+    "loginFailed": "Sign in failed",
+    "logoutFailed": "Sign out failed"
+  },
+  "success": {
+    "recorded": "✓ Recorded",
+    "jwtSet": "Test JWT set",
+    "loggedIn": "Signed in!",
+    "loggedOut": "Signed out",
+    "exported": "Exported {records} records and {folders} folders"
+  },
+  "i18n": {
+    "loadFailed": "Language load failed",
+    "fallbackMessage": "Failed to load language file, falling back to Traditional Chinese"
+  }
+}

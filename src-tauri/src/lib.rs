@@ -6590,7 +6590,7 @@ async fn fetch_channel_videos(
     platform: String,
     count: u32,
 ) -> Result<Vec<ChannelVideo>, String> {
-    let limit = (count as usize).max(1).min(20);
+    let limit = (count as usize).clamp(1, 20);
 
     match platform.as_str() {
         "youtube" => {

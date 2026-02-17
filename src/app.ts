@@ -175,6 +175,18 @@ export async function initGlobalToastListener() {
   });
 }
 
+/** Initialize the cross-tab navigation listener. Called once at app startup.
+ *  Pages dispatch 'app:navigate-bookmarks' on window to request switching to the
+ *  channel-bookmarks tab and optionally highlighting a specific bookmark card. */
+export function initNavigationListener() {
+  window.addEventListener('app:navigate-bookmarks', (e: Event) => {
+    const detail = (e as CustomEvent<{ channelId: string; platform: string }>).detail;
+    // Store focus target so the bookmarks page can read it on render
+    (window as any).__bookmarksFocusTarget = detail;
+    switchTab('channel-bookmarks');
+  });
+}
+
 function switchTab(tabId: TabId) {
   currentTab = tabId;
 

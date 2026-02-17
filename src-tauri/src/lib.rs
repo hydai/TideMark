@@ -415,12 +415,9 @@ fn handle_pubsub_message(
                         );
                         // Update global live status state.
                         let status_key = format!("twitch:{}", channel_id);
-                        let app_status = app.clone();
                         tokio::spawn(async move {
                             let mut st = live_status_state().lock().await;
                             st.statuses.insert(status_key, true);
-                            drop(st);
-                            drop(app_status);
                         });
                         // Trigger auto-download only if this channel has a preset.
                         if !is_bookmark_only {
@@ -469,12 +466,9 @@ fn handle_pubsub_message(
                         );
                         // Update global live status state.
                         let status_key = format!("twitch:{}", channel_id);
-                        let app_status = app.clone();
                         tokio::spawn(async move {
                             let mut st = live_status_state().lock().await;
                             st.statuses.insert(status_key, false);
-                            drop(st);
-                            drop(app_status);
                         });
                     }
                     _ => {}
@@ -2322,6 +2316,17 @@ pub struct ChannelInfo {
     pub channel_id: String,
     pub channel_name: String,
     pub platform: String,
+}
+
+// Channel metadata cache structure
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChannelMetadata {
+    pub channel_id: String,
+    pub platform: String,
+    pub avatar_url: Option<String>,
+    pub follower_count: Option<u64>,
+    pub last_stream_at: Option<String>,  // ISO 8601
+    pub last_refreshed_at: String,        // ISO 8601
 }
 
 // Channel bookmarks structures
@@ -6127,6 +6132,680 @@ fn reorder_channel_bookmarks(app: AppHandle, orders: Vec<BookmarkSortOrder>) -> 
     Ok(())
 }
 
+// ── Channel Metadata Cache commands ───────────────────────────────────────────
+
+fn get_channel_metadata_cache_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let tidemark_dir = app_data_dir.join("tidemark");
+    fs::create_dir_all(&tidemark_dir)
+        .map_err(|e| format!("Failed to create tidemark dir: {}", e))?;
+
+    Ok(tidemark_dir.join("channel_metadata_cache.json"))
+}
+
+#[tauri::command]
+fn get_channel_metadata_cache(app: AppHandle) -> Result<Vec<ChannelMetadata>, String> {
+    let path = get_channel_metadata_cache_path(&app)?;
+
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read metadata cache: {}", e))?;
+
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse metadata cache: {}", e))
+}
+
+#[tauri::command]
+fn save_channel_metadata_cache(app: AppHandle, cache: Vec<ChannelMetadata>) -> Result<(), String> {
+    let path = get_channel_metadata_cache_path(&app)?;
+
+    let content = serde_json::to_string_pretty(&cache)
+        .map_err(|e| format!("Failed to serialize metadata cache: {}", e))?;
+
+    fs::write(&path, content)
+        .map_err(|e| format!("Failed to write metadata cache: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn fetch_channel_metadata(
+    app: AppHandle,
+    channel_id: String,
+    platform: String,
+) -> Result<ChannelMetadata, String> {
+    let now = Utc::now().to_rfc3339();
+
+    if platform == "twitch" {
+        fetch_twitch_channel_metadata(app, channel_id, now).await
+    } else if platform == "youtube" {
+        fetch_youtube_channel_metadata(app, channel_id, now).await
+    } else {
+        Err(format!("Unknown platform: {}", platform))
+    }
+}
+
+async fn fetch_twitch_channel_metadata(
+    app: AppHandle,
+    channel_id: String,
+    now: String,
+) -> Result<ChannelMetadata, String> {
+    // Load auth config to get Twitch token if available
+    let auth_config: AuthConfig = {
+        let auth_path = get_auth_config_path(&app).unwrap_or_default();
+        if auth_path.exists() {
+            fs::read_to_string(&auth_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(AuthConfig {
+                    twitch_token: None,
+                    youtube_cookies_path: None,
+                    openai_api_key: None,
+                    groq_api_key: None,
+                    elevenlabs_api_key: None,
+                })
+        } else {
+            AuthConfig {
+                twitch_token: None,
+                youtube_cookies_path: None,
+                openai_api_key: None,
+                groq_api_key: None,
+                elevenlabs_api_key: None,
+            }
+        }
+    };
+
+    // Use Twitch GQL to query user profile info
+    // Public client ID from Twitch web app
+    let client_id = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+
+    let gql_query = serde_json::json!([{
+        "operationName": "ChannelRoot_AboutPanel",
+        "variables": {
+            "channelLogin": channel_id,
+            "skipSchedule": true
+        },
+        "extensions": {
+            "persistedQuery": {
+                "version": 1,
+                "sha256Hash": "6089531acef6c09ece01b440c41978f4c8dc60cb4fa0124c9a9d3f896709b6c6"
+            }
+        }
+    }]);
+
+    let client = reqwest::Client::new();
+    let mut req = client
+        .post("https://gql.twitch.tv/gql")
+        .header("Client-Id", client_id)
+        .header("Content-Type", "application/json")
+        .json(&gql_query);
+
+    if let Some(token) = &auth_config.twitch_token {
+        if !token.is_empty() {
+            req = req.header("Authorization", format!("OAuth {}", token));
+        }
+    }
+
+    let response = req.send().await
+        .map_err(|e| format!("GQL request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("GQL request returned status {}", response.status()));
+    }
+
+    let body: serde_json::Value = response.json().await
+        .map_err(|e| format!("Failed to parse GQL response: {}", e))?;
+
+    // GQL response is an array; first element has data.user
+    let user = body
+        .as_array()
+        .and_then(|arr| arr.first())
+        .and_then(|item| item.get("data"))
+        .and_then(|data| data.get("user"));
+
+    let (avatar_url, follower_count, last_stream_at) = if let Some(user) = user {
+        let avatar = user
+            .get("profileImageURL")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let followers = user
+            .get("followers")
+            .and_then(|f| f.get("totalCount"))
+            .and_then(|v| v.as_u64());
+
+        let last_stream = user
+            .get("lastBroadcast")
+            .and_then(|lb| lb.get("startedAt"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        (avatar, followers, last_stream)
+    } else {
+        // GQL returned no user - fallback with empty data
+        (None, None, None)
+    };
+
+    Ok(ChannelMetadata {
+        channel_id,
+        platform: "twitch".to_string(),
+        avatar_url,
+        follower_count,
+        last_stream_at,
+        last_refreshed_at: now,
+    })
+}
+
+async fn fetch_youtube_channel_metadata(
+    _app: AppHandle,
+    channel_id: String,
+    now: String,
+) -> Result<ChannelMetadata, String> {
+    use tokio::process::Command as TokioCommand;
+
+    // Use yt-dlp --dump-single-json on the channel URL to get metadata
+    let channel_url = if channel_id.starts_with("UC") && channel_id.len() > 20 {
+        format!("https://www.youtube.com/channel/{}", channel_id)
+    } else if channel_id.starts_with('@') {
+        format!("https://www.youtube.com/{}", channel_id)
+    } else {
+        format!("https://www.youtube.com/@{}", channel_id)
+    };
+
+    let output = TokioCommand::new("yt-dlp")
+        .args([
+            "--dump-single-json",
+            "--flat-playlist",
+            "--playlist-items",
+            "1",
+            "--no-warnings",
+            &channel_url,
+        ])
+        .output()
+        .await
+        .map_err(|_| "找不到 yt-dlp，請安裝後再試".to_string())?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let first_line = stdout.trim().lines().next().unwrap_or("").to_string();
+
+    if first_line.is_empty() {
+        return Ok(ChannelMetadata {
+            channel_id,
+            platform: "youtube".to_string(),
+            avatar_url: None,
+            follower_count: None,
+            last_stream_at: None,
+            last_refreshed_at: now,
+        });
+    }
+
+    let json: serde_json::Value = serde_json::from_str(&first_line)
+        .map_err(|e| format!("Failed to parse yt-dlp output: {}", e))?;
+
+    // yt-dlp channel dump provides thumbnail, channel_follower_count
+    let avatar_url = json
+        .get("thumbnails")
+        .and_then(|t| t.as_array())
+        .and_then(|arr| arr.last())
+        .and_then(|thumb| thumb.get("url"))
+        .and_then(|v| v.as_str())
+        .or_else(|| json.get("thumbnail").and_then(|v| v.as_str()))
+        .map(|s| s.to_string());
+
+    let follower_count = json
+        .get("channel_follower_count")
+        .and_then(|v| v.as_u64());
+
+    Ok(ChannelMetadata {
+        channel_id,
+        platform: "youtube".to_string(),
+        avatar_url,
+        follower_count,
+        last_stream_at: None,
+        last_refreshed_at: now,
+    })
+}
+
+/// Entry describing a single channel's live status.
+#[derive(Serialize)]
+struct ChannelLiveStatus {
+    channel_id: String,
+    platform: String,
+    is_live: bool,
+}
+
+#[tauri::command]
+async fn get_channel_live_statuses() -> Result<Vec<ChannelLiveStatus>, String> {
+    let st = live_status_state().lock().await;
+    let statuses: Vec<ChannelLiveStatus> = st
+        .statuses
+        .iter()
+        .filter_map(|(key, &is_live)| {
+            // Key format: "platform:channel_id"
+            let mut parts = key.splitn(2, ':');
+            let platform = parts.next()?.to_string();
+            let channel_id = parts.next()?.to_string();
+            Some(ChannelLiveStatus { channel_id, platform, is_live })
+        })
+        .collect();
+    Ok(statuses)
+}
+
+// ── Channel Videos (F8.4) ────────────────────────────────────────────────────
+
+/// A single video entry for a bookmarked channel's recent videos list.
+#[derive(Debug, Serialize, Clone)]
+struct ChannelVideo {
+    video_id: String,
+    title: String,
+    url: String,
+    thumbnail_url: Option<String>,
+    published_at: String,     // ISO 8601
+    duration: Option<String>, // e.g. "1:23:45"
+    view_count: Option<u64>,
+    content_type: String,     // "video" / "clip" / "stream"
+}
+
+/// Parse a YouTube Atom RSS feed and extract full video metadata.
+/// Extracts title, published date, thumbnail URL, view count, and video ID.
+fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
+    use quick_xml::Reader;
+    use quick_xml::events::Event;
+
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(true);
+
+    let mut videos: Vec<ChannelVideo> = Vec::new();
+    let mut buf = Vec::new();
+
+    // Per-entry accumulators
+    let mut in_entry = false;
+    let mut cur_video_id = String::new();
+    let mut cur_title = String::new();
+    let mut cur_published = String::new();
+    let mut cur_thumbnail: Option<String> = None;
+    let mut cur_views: Option<u64> = None;
+
+    // Tag tracking flags
+    let mut inside_video_id = false;
+    let mut inside_title = false;
+    let mut inside_published = false;
+    // Skip the feed-level <title> (appears before any <entry>)
+    let mut feed_title_done = false;
+
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) => {
+                let name_bytes = e.name();
+                let name_str = std::str::from_utf8(name_bytes.as_ref()).unwrap_or("");
+                let local = e.local_name();
+                let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
+
+                match local_str {
+                    "entry" => {
+                        in_entry = true;
+                        cur_video_id.clear();
+                        cur_title.clear();
+                        cur_published.clear();
+                        cur_thumbnail = None;
+                        cur_views = None;
+                    }
+                    "title" if in_entry => {
+                        inside_title = true;
+                    }
+                    "title" if !in_entry && !feed_title_done => {
+                        // Will be consumed as text; mark done when End is seen
+                    }
+                    "published" if in_entry => {
+                        inside_published = true;
+                    }
+                    "videoId" if in_entry && name_str.starts_with("yt:") => {
+                        inside_video_id = true;
+                    }
+                    "thumbnail" if in_entry => {
+                        for attr in e.attributes().flatten() {
+                            let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                            if key == "url" {
+                                if let Ok(val) = attr.unescape_value() {
+                                    cur_thumbnail = Some(val.into_owned());
+                                }
+                            }
+                        }
+                    }
+                    "statistics" if in_entry => {
+                        for attr in e.attributes().flatten() {
+                            let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                            if key == "views" {
+                                if let Ok(val) = attr.unescape_value() {
+                                    cur_views = val.parse::<u64>().ok();
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Empty(ref e)) => {
+                if in_entry {
+                    let local = e.local_name();
+                    let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
+                    match local_str {
+                        "thumbnail" => {
+                            for attr in e.attributes().flatten() {
+                                let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                                if key == "url" {
+                                    if let Ok(val) = attr.unescape_value() {
+                                        cur_thumbnail = Some(val.into_owned());
+                                    }
+                                }
+                            }
+                        }
+                        "statistics" => {
+                            for attr in e.attributes().flatten() {
+                                let key = std::str::from_utf8(attr.key.as_ref()).unwrap_or("");
+                                if key == "views" {
+                                    if let Ok(val) = attr.unescape_value() {
+                                        cur_views = val.parse::<u64>().ok();
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Ok(Event::Text(e)) => {
+                if let Ok(text) = e.unescape() {
+                    let t = text.trim().to_string();
+                    if inside_video_id {
+                        cur_video_id = t;
+                        inside_video_id = false;
+                    } else if inside_title && in_entry {
+                        cur_title = t;
+                        inside_title = false;
+                    } else if inside_published && in_entry {
+                        cur_published = t;
+                        inside_published = false;
+                    } else if !in_entry && !feed_title_done {
+                        // Consume the feed-level title text
+                        feed_title_done = true;
+                    }
+                }
+            }
+            Ok(Event::End(ref e)) => {
+                let local = e.local_name();
+                let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
+                match local_str {
+                    "entry" if in_entry => {
+                        if !cur_video_id.is_empty() && videos.len() < max_entries {
+                            let url = format!(
+                                "https://www.youtube.com/watch?v={}",
+                                cur_video_id
+                            );
+                            videos.push(ChannelVideo {
+                                video_id: cur_video_id.clone(),
+                                title: if cur_title.is_empty() {
+                                    cur_video_id.clone()
+                                } else {
+                                    cur_title.clone()
+                                },
+                                url,
+                                thumbnail_url: cur_thumbnail.clone(),
+                                published_at: cur_published.clone(),
+                                duration: None, // Not available in RSS feed
+                                view_count: cur_views,
+                                content_type: "video".to_string(),
+                            });
+                        }
+                        in_entry = false;
+                        inside_video_id = false;
+                        inside_title = false;
+                        inside_published = false;
+                    }
+                    "title" => { inside_title = false; }
+                    "published" => { inside_published = false; }
+                    "videoId" => { inside_video_id = false; }
+                    _ => {}
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(e) => {
+                log::warn!("[ChannelVideos] YouTube RSS XML parse error: {}", e);
+                break;
+            }
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    videos
+}
+
+/// Convert a Twitch duration string (e.g. "1h2m3s", "45m30s") to "H:MM:SS" format.
+fn parse_twitch_duration(s: &str) -> Option<String> {
+    if s.is_empty() {
+        return None;
+    }
+
+    let mut hours: u64 = 0;
+    let mut minutes: u64 = 0;
+    let mut seconds: u64 = 0;
+    let mut current = String::new();
+
+    for ch in s.chars() {
+        if ch.is_ascii_digit() {
+            current.push(ch);
+        } else {
+            let n: u64 = current.parse().unwrap_or(0);
+            current.clear();
+            match ch {
+                'h' => hours = n,
+                'm' => minutes = n,
+                's' => seconds = n,
+                _ => {}
+            }
+        }
+    }
+
+    if hours == 0 && minutes == 0 && seconds == 0 {
+        return None;
+    }
+
+    Some(format!("{}:{:02}:{:02}", hours, minutes, seconds))
+}
+
+/// Fetch the latest videos for a bookmarked channel.
+/// - YouTube: parses the public RSS feed
+/// - Twitch: queries the GQL API using the public client ID + stored OAuth token
+#[tauri::command]
+async fn fetch_channel_videos(
+    app: AppHandle,
+    channel_id: String,
+    platform: String,
+    count: u32,
+) -> Result<Vec<ChannelVideo>, String> {
+    let limit = (count as usize).max(1).min(20);
+
+    match platform.as_str() {
+        "youtube" => {
+            let rss_url = format!(
+                "https://www.youtube.com/feeds/videos.xml?channel_id={}",
+                channel_id
+            );
+
+            let resp = reqwest::get(&rss_url)
+                .await
+                .map_err(|e| format!("Failed to fetch YouTube RSS: {}", e))?;
+
+            if resp.status() == reqwest::StatusCode::NOT_FOUND {
+                return Ok(Vec::new());
+            }
+
+            if !resp.status().is_success() {
+                return Err(format!(
+                    "YouTube RSS returned status {}",
+                    resp.status()
+                ));
+            }
+
+            let body = resp
+                .text()
+                .await
+                .map_err(|e| format!("Failed to read YouTube RSS body: {}", e))?;
+
+            let mut videos = parse_youtube_rss_full(&body, limit);
+
+            // Sort newest first
+            videos.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+
+            Ok(videos)
+        }
+        "twitch" => {
+            // Load auth config to get Twitch token
+            let auth_config: AuthConfig = {
+                let auth_path = get_auth_config_path(&app).unwrap_or_default();
+                if auth_path.exists() {
+                    fs::read_to_string(&auth_path)
+                        .ok()
+                        .and_then(|s| serde_json::from_str(&s).ok())
+                        .unwrap_or(AuthConfig {
+                            twitch_token: None,
+                            youtube_cookies_path: None,
+                            openai_api_key: None,
+                            groq_api_key: None,
+                            elevenlabs_api_key: None,
+                        })
+                } else {
+                    AuthConfig {
+                        twitch_token: None,
+                        youtube_cookies_path: None,
+                        openai_api_key: None,
+                        groq_api_key: None,
+                        elevenlabs_api_key: None,
+                    }
+                }
+            };
+
+            let client_id = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+
+            // Use Twitch GQL to query the channel's recent VODs.
+            // The FilterableVideoTower query returns VideoEdge nodes with video metadata.
+            let gql_query = serde_json::json!([{
+                "operationName": "FilterableVideoTower_Videos",
+                "variables": {
+                    "limit": limit,
+                    "channelOwnerLogin": channel_id,
+                    "broadcastType": "ARCHIVE",
+                    "videoSort": "TIME"
+                },
+                "extensions": {
+                    "persistedQuery": {
+                        "version": 1,
+                        "sha256Hash": "a937f1d22e269e39a03b509f65a7490f9fc247d7f83d6ac1421523e3b68042cb"
+                    }
+                }
+            }]);
+
+            let client = reqwest::Client::new();
+            let mut req = client
+                .post("https://gql.twitch.tv/gql")
+                .header("Client-Id", client_id)
+                .header("Content-Type", "application/json")
+                .json(&gql_query);
+
+            if let Some(ref token) = auth_config.twitch_token {
+                if !token.is_empty() {
+                    req = req.header("Authorization", format!("OAuth {}", token));
+                }
+            }
+
+            let response = req
+                .send()
+                .await
+                .map_err(|e| format!("GQL request failed: {}", e))?;
+
+            if !response.status().is_success() {
+                return Err(format!(
+                    "Twitch GQL returned status {}",
+                    response.status()
+                ));
+            }
+
+            let body: serde_json::Value = response
+                .json()
+                .await
+                .map_err(|e| format!("Failed to parse Twitch GQL response: {}", e))?;
+
+            // Response is an array; first element contains data.user.videos.edges
+            let empty_arr = vec![];
+            let edges = body
+                .as_array()
+                .and_then(|arr| arr.first())
+                .and_then(|item| item.get("data"))
+                .and_then(|data| data.get("user"))
+                .and_then(|user| user.get("videos"))
+                .and_then(|vids| vids.get("edges"))
+                .and_then(|e| e.as_array())
+                .unwrap_or(&empty_arr);
+
+            let mut videos: Vec<ChannelVideo> = edges
+                .iter()
+                .filter_map(|edge| {
+                    let node = edge.get("node")?;
+                    let id = node["id"].as_str()?.to_string();
+                    let title = node["title"].as_str().unwrap_or("").to_string();
+                    let published_at = node["publishedAt"].as_str().unwrap_or("").to_string();
+                    let duration_secs = node["lengthSeconds"].as_u64().unwrap_or(0);
+                    let view_count = node["viewCount"].as_u64();
+
+                    // Convert seconds to H:MM:SS
+                    let duration = if duration_secs > 0 {
+                        let h = duration_secs / 3600;
+                        let m = (duration_secs % 3600) / 60;
+                        let s = duration_secs % 60;
+                        Some(format!("{}:{:02}:{:02}", h, m, s))
+                    } else {
+                        None
+                    };
+
+                    // Thumbnail: prefer animatedPreviewURL, fall back to previewThumbnailURL
+                    let thumbnail_url = node["previewThumbnailURL"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string());
+
+                    let url = format!("https://www.twitch.tv/videos/{}", id);
+
+                    Some(ChannelVideo {
+                        video_id: id,
+                        title,
+                        url,
+                        thumbnail_url,
+                        published_at,
+                        duration,
+                        view_count,
+                        content_type: "video".to_string(),
+                    })
+                })
+                .collect();
+
+            // Sort newest first
+            videos.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+            videos.truncate(limit);
+
+            Ok(videos)
+        }
+        _ => Err(format!("Unknown platform: {}", platform)),
+    }
+}
+
 /// Check whether OS notifications are available/permitted.
 /// Returns "granted", "denied", or "unknown".
 #[tauri::command]
@@ -6374,7 +7053,12 @@ pub fn run() {
             get_scheduled_download_queue,
             cancel_scheduled_download,
             retry_scheduled_download,
-            check_notification_permission
+            check_notification_permission,
+            get_channel_live_statuses,
+            get_channel_metadata_cache,
+            save_channel_metadata_cache,
+            fetch_channel_metadata,
+            fetch_channel_videos
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -2687,6 +2687,7 @@ body {
 .bookmark-card {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -2811,4 +2812,362 @@ body {
 .bookmark-delete-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* Live status badge */
+.bookmark-live-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 2px 8px;
+  user-select: none;
+}
+
+.bookmark-live-badge.live {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.4);
+}
+
+.bookmark-live-badge.live::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e74c3c;
+  animation: live-pulse 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.bookmark-live-badge.offline {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.bookmark-live-badge.offline::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+/* Hint banner when scheduled downloads are disabled */
+.bookmark-status-hint {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--accent-color);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+/* Preset status badge on bookmark cards (F8.7) */
+.bookmark-preset-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.bookmark-preset-badge.enabled {
+  background: rgba(46, 160, 67, 0.15);
+  color: #2ea043;
+  border: 1px solid rgba(46, 160, 67, 0.3);
+}
+
+:root[data-theme="light"] .bookmark-preset-badge.enabled {
+  background: rgba(46, 160, 67, 0.12);
+  color: #1a7f37;
+  border-color: rgba(46, 160, 67, 0.25);
+}
+
+.bookmark-preset-badge.disabled {
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  border: 1px solid var(--border-color);
+}
+
+/* Highlight animation for a focused bookmark card (F8.7 navigation) */
+.bookmark-card-highlight {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+  animation: bookmark-highlight-fade 2s ease-out forwards;
+}
+
+@keyframes bookmark-highlight-fade {
+  0%   { outline-color: var(--accent-color); }
+  100% { outline-color: transparent; }
+}
+
+/* Bookmark icon button on preset rows (F8.7) */
+.preset-bookmark-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0.7;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.preset-bookmark-icon-btn:hover {
+  opacity: 1;
+  background: var(--bg-tertiary);
+}
+
+/* ── Channel Metadata Display (F8.3) ─────────────────────────────────────── */
+
+/* Avatar wrapper: circular 40x40 frame */
+.bookmark-avatar-wrapper {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bookmark-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.bookmark-avatar-placeholder {
+  font-size: 20px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* Metadata row inside .bookmark-info */
+.bookmark-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* Follower / subscriber count */
+.bookmark-follower-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Last stream time */
+.bookmark-last-stream {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* Refresh metadata button */
+.bookmark-refresh-btn {
+  flex-shrink: 0;
+  font-size: 14px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.2s;
+}
+
+.bookmark-refresh-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.bookmark-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+/* ── Channel Video List (F8.4) ───────────────────────────────────────────── */
+
+/* Expand/collapse toggle button on bookmark cards */
+.bookmark-expand-btn {
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.bookmark-expand-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+/* Video list container — sits below the card header row */
+.bookmark-video-list {
+  width: 100%;
+  /* flex-basis: 100% ensures it wraps to its own row in the flex card */
+  flex-basis: 100%;
+  margin-top: 8px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Loading state */
+.bookmark-video-loading {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 8px 4px;
+  text-align: center;
+}
+
+/* Error state */
+.bookmark-video-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 6px 4px;
+}
+
+.bookmark-video-retry-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+/* Empty state */
+.bookmark-video-empty {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  padding: 8px 4px;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Individual video card */
+.bookmark-video-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 4px;
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.bookmark-video-item:hover {
+  background: var(--bg-tertiary);
+}
+
+/* Thumbnail placeholder box */
+.bookmark-video-thumb {
+  flex-shrink: 0;
+  width: 120px;
+  height: 68px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bookmark-video-thumb img {
+  width: 120px;
+  height: 68px;
+  object-fit: cover;
+  display: block;
+  border-radius: 4px;
+}
+
+/* Video info column */
+.bookmark-video-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Title — clamp to 2 lines */
+.bookmark-video-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Meta row (date · duration · views) */
+.bookmark-video-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.bookmark-video-sep {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
+.bookmark-video-date,
+.bookmark-video-duration,
+.bookmark-video-views {
+  white-space: nowrap;
 }

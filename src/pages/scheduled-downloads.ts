@@ -127,9 +127,17 @@ interface DiskFullEvent {
   required_bytes: number;
 }
 
+// Minimal bookmark shape needed for association display
+interface BookmarkLink {
+  channel_id: string;
+  platform: string;
+}
+
 const DEFAULT_FILENAME_TEMPLATE = '[{type}] [{channel_name}] [{date}] {title}';
 
 let presets: DownloadPreset[] = [];
+// bookmarkLinks: set of "platform:channel_id" strings for quick lookup
+const bookmarkLinks: Set<string> = new Set();
 let containerEl: HTMLElement | null = null;
 // Track modal state: null = closed, 'new' | preset id = editing
 let editingPresetId: string | null = null;
@@ -163,6 +171,7 @@ export async function renderScheduledDownloadsPage(container: HTMLElement) {
   }
 
   await loadPresets();
+  await loadBookmarkLinks();
   await loadScheduledQueue();
 
   // Load current Twitch PubSub status from backend.
@@ -206,6 +215,19 @@ async function loadScheduledQueue() {
   } catch (error) {
     console.error('Failed to load scheduled queue:', error);
     scheduledQueue = [];
+  }
+}
+
+async function loadBookmarkLinks() {
+  bookmarkLinks.clear();
+  try {
+    const bms = await invoke<BookmarkLink[]>('get_channel_bookmarks');
+    for (const bm of bms) {
+      bookmarkLinks.add(`${bm.platform}:${bm.channel_id}`);
+    }
+  } catch (error) {
+    // Channel bookmarks may be disabled — that's fine
+    console.debug('Failed to load channel bookmarks for link display:', error);
   }
 }
 
@@ -908,6 +930,23 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
   // Actions
   const actionsTd = document.createElement('td');
   actionsTd.className = 'preset-actions';
+
+  // Bookmark icon — shown when a matching channel bookmark exists
+  const presetKey = `${preset.platform}:${preset.channel_id}`;
+  if (bookmarkLinks.has(presetKey)) {
+    const bookmarkBtn = document.createElement('button');
+    bookmarkBtn.className = 'action-btn preset-bookmark-icon-btn';
+    bookmarkBtn.title = '跳轉至頻道書籤';
+    bookmarkBtn.textContent = '🔖';
+    bookmarkBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // Dispatch custom event to app.ts navigation handler (avoids circular import)
+      window.dispatchEvent(new CustomEvent('app:navigate-bookmarks', {
+        detail: { channelId: preset.channel_id, platform: preset.platform },
+      }));
+    });
+    actionsTd.appendChild(bookmarkBtn);
+  }
 
   const editBtn = document.createElement('button');
   editBtn.className = 'action-btn edit-btn';

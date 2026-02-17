@@ -1,7 +1,7 @@
 import './style.css';
 import { ConfigManager } from './config';
 import { ThemeManager } from './theme';
-import { renderApp, initGlobalToastListener } from './app';
+import { renderApp, initGlobalToastListener, initNavigationListener } from './app';
 
 async function init() {
   // Initialize config manager
@@ -15,6 +15,9 @@ async function init() {
 
   // Start global toast listener for scheduled download notifications
   await initGlobalToastListener();
+
+  // Start cross-tab navigation listener (e.g. preset → channel bookmarks)
+  initNavigationListener();
 }
 
 init();

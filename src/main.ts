@@ -1,7 +1,7 @@
 import './style.css';
 import { ConfigManager } from './config';
 import { ThemeManager } from './theme';
-import { renderApp } from './app';
+import { renderApp, initGlobalToastListener } from './app';
 
 async function init() {
   // Initialize config manager
@@ -12,6 +12,9 @@ async function init() {
 
   // Render the app
   renderApp();
+
+  // Start global toast listener for scheduled download notifications
+  await initGlobalToastListener();
 }
 
 init();

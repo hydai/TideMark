@@ -535,6 +535,22 @@ function createScheduledDownloadsSection(): HTMLElement {
   );
   section.appendChild(notificationGroup);
 
+  // Notification permission hint (shown asynchronously after render)
+  const notifHint = document.createElement('p');
+  notifHint.id = 'notification-permission-hint';
+  notifHint.className = 'setting-hint';
+  notifHint.style.display = 'none';
+  section.appendChild(notifHint);
+  // Check OS notification permission and surface hint if denied.
+  invoke<string>('check_notification_permission').then((state) => {
+    if (state === 'denied') {
+      notifHint.textContent = '系統通知權限已被拒絕。請在系統設定中允許 Tidemark 發送通知，否則僅 Toast 通知有效。';
+      notifHint.style.display = 'block';
+    }
+  }).catch(() => {
+    // Permission check failed; silently ignore.
+  });
+
   // Scheduled download auto transcribe
   const autoTranscribeGroup = createToggleGroup(
     'scheduled-download-auto-transcribe',

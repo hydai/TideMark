@@ -6,6 +6,7 @@ import { renderSettingsPage as renderSettingsPageNew } from './pages/settings';
 import { renderSubtitlesPage } from './pages/subtitles';
 import { renderRecordsPage } from './pages/records';
 import { renderScheduledDownloadsPage } from './pages/scheduled-downloads';
+import { listen } from '@tauri-apps/api/event';
 
 type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings' | 'scheduled-downloads';
 
@@ -100,6 +101,73 @@ export function renderApp() {
 export function refreshAppNav() {
   // Re-render the entire app to reflect config changes (e.g. enabling scheduled downloads).
   renderApp();
+}
+
+// ── Global toast notification system ─────────────────────────────────────────
+
+interface ScheduledToastPayload {
+  title: string;
+  body: string;
+  level: 'info' | 'warning' | 'critical';
+}
+
+function getOrCreateToastContainer(): HTMLElement {
+  let container = document.getElementById('global-toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'global-toast-container';
+    container.className = 'global-toast-container';
+    document.body.appendChild(container);
+  }
+  return container;
+}
+
+function showGlobalToast(payload: ScheduledToastPayload) {
+  const container = getOrCreateToastContainer();
+
+  const el = document.createElement('div');
+  el.className = `global-toast global-toast-${payload.level}`;
+
+  const titleEl = document.createElement('div');
+  titleEl.className = 'global-toast-title';
+  titleEl.textContent = payload.title;
+  el.appendChild(titleEl);
+
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'global-toast-body';
+  bodyEl.textContent = payload.body;
+  el.appendChild(bodyEl);
+
+  // Auto-dismiss: info=3s, warning=5s, critical stays until dismissed
+  const duration =
+    payload.level === 'critical' ? 0 :
+    payload.level === 'warning' ? 5000 : 3000;
+
+  if (duration > 0) {
+    container.appendChild(el);
+    setTimeout(() => {
+      el.classList.add('global-toast-fade-out');
+      setTimeout(() => el.remove(), 400);
+    }, duration);
+  } else {
+    // Critical: add close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'global-toast-close';
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => {
+      el.classList.add('global-toast-fade-out');
+      setTimeout(() => el.remove(), 400);
+    });
+    el.appendChild(closeBtn);
+    container.appendChild(el);
+  }
+}
+
+/** Initialize the global scheduled-notification-toast listener. Called once at app startup. */
+export async function initGlobalToastListener() {
+  await listen<ScheduledToastPayload>('scheduled-notification-toast', (event) => {
+    showGlobalToast(event.payload);
+  });
 }
 
 function switchTab(tabId: TabId) {

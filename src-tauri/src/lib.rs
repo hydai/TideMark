@@ -109,6 +109,9 @@ async fn run_pubsub_connection(
 
     let url = "wss://pubsub-edge.twitch.tv";
     let mut backoff_secs: u64 = 1;
+    // Track whether we've already sent a "disconnect" notification this outage.
+    // Reset to false after a successful (re)connection.
+    let mut notified_disconnect = false;
 
     loop {
         // Check for shutdown before each connection attempt.
@@ -132,6 +135,19 @@ async fn run_pubsub_connection(
                 {
                     let mut st = pubsub_state().lock().await;
                     st.connected = false;
+                }
+                // Send disconnect notification only on first disconnect.
+                if !notified_disconnect {
+                    notified_disconnect = true;
+                    let app_n = app.clone();
+                    tokio::spawn(async move {
+                        send_scheduled_notification(
+                            &app_n,
+                            "連線中斷",
+                            "Twitch 監聽連線中斷，重試中…",
+                            "warning",
+                        ).await;
+                    });
                 }
                 let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs));
                 tokio::pin!(sleep);
@@ -159,6 +175,8 @@ async fn run_pubsub_connection(
                     let mut st = pubsub_state().lock().await;
                     st.connected = true;
                 }
+                // Reset disconnect notification flag on successful (re)connection.
+                notified_disconnect = false;
 
                 let (mut writer, mut reader) = ws_stream.split();
 
@@ -250,6 +268,19 @@ async fn run_pubsub_connection(
                             "message": format!("Twitch 連線中斷，重試中… ({}s)", backoff_secs),
                         }),
                     );
+                    // Send disconnect notification only on first disconnect of this outage.
+                    if !notified_disconnect {
+                        notified_disconnect = true;
+                        let app_n = app.clone();
+                        tokio::spawn(async move {
+                            send_scheduled_notification(
+                                &app_n,
+                                "連線中斷",
+                                "Twitch 監聽連線中斷，重試中…",
+                                "warning",
+                            ).await;
+                        });
+                    }
                     let sleep =
                         tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs));
                     tokio::pin!(sleep);
@@ -620,6 +651,8 @@ async fn run_youtube_polling(
 
     // Rate-limit state: optional until-timestamp after which to restore.
     let mut rate_limit_until: Option<Instant> = None;
+    // Track whether we've already sent a rate-limit/outage notification.
+    let mut notified_polling_error = false;
 
     // Emit initial status.
     let _ = app.emit(
@@ -832,6 +865,22 @@ async fn run_youtube_polling(
             rate_limit_until =
                 Some(Instant::now() + tokio::time::Duration::from_secs(300));
             log::warn!("[YouTube] Rate limit hit; doubling interval for 5 minutes");
+            // Notify user about YouTube polling disruption (only on first occurrence).
+            if !notified_polling_error {
+                notified_polling_error = true;
+                let app_n = app.clone();
+                tokio::spawn(async move {
+                    send_scheduled_notification(
+                        &app_n,
+                        "連線中斷",
+                        "YouTube 輪詢連線中斷",
+                        "warning",
+                    ).await;
+                });
+            }
+        } else if !got_rate_limit && rate_limit_until.is_none() && notified_polling_error {
+            // Rate limit has cleared; reset notification flag.
+            notified_polling_error = false;
         }
 
         // Disable invalid channels.
@@ -1062,6 +1111,48 @@ fn check_disk_space(_path: &str) -> Result<u64, String> {
 /// Minimum free disk space required before starting a scheduled download (500 MB).
 const MIN_FREE_BYTES: u64 = 500 * 1024 * 1024;
 
+/// Send a scheduled-download notification based on the user's preference:
+/// - "os"   → OS-level system notification only
+/// - "toast" → in-app toast via Tauri event only
+/// - "both"  → both OS and in-app toast
+/// - "none"  → no notifications
+/// level: "info" | "warning" | "critical"
+async fn send_scheduled_notification(app: &AppHandle, title: &str, body: &str, level: &str) {
+    let mode = match load_config(app.clone()) {
+        Ok(cfg) => cfg.scheduled_download_notification,
+        Err(_) => "both".to_string(),
+    };
+
+    if mode == "none" {
+        return;
+    }
+
+    // Send OS notification
+    if mode == "os" || mode == "both" {
+        use tauri_plugin_notification::NotificationExt;
+        app.notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+            .unwrap_or_else(|e| {
+                log::warn!("[Notification] OS notification failed: {}", e);
+            });
+    }
+
+    // Send in-app toast event
+    if mode == "toast" || mode == "both" {
+        let _ = app.emit(
+            "scheduled-notification-toast",
+            serde_json::json!({
+                "title": title,
+                "body": body,
+                "level": level,
+            }),
+        );
+    }
+}
+
 /// Core trigger function: called when a stream-up event is received.
 /// Finds a matching preset, checks duplicates/cooldown, and enqueues a download.
 async fn trigger_scheduled_download(
@@ -1163,6 +1254,18 @@ async fn trigger_scheduled_download(
                     "required_bytes": MIN_FREE_BYTES,
                 }),
             );
+            // Notify user: disk space critically low.
+            {
+                let app_n = app.clone();
+                tokio::spawn(async move {
+                    send_scheduled_notification(
+                        &app_n,
+                        "磁碟空間不足",
+                        "磁碟空間不足，已暫停所有排程下載",
+                        "critical",
+                    ).await;
+                });
+            }
             return;
         }
         Err(e) => {
@@ -1213,6 +1316,20 @@ async fn trigger_scheduled_download(
             "platform": platform,
         }),
     );
+
+    // Notify user: live detected and download started.
+    {
+        let app_n = app.clone();
+        let ch_name_n = channel_name.clone();
+        tokio::spawn(async move {
+            send_scheduled_notification(
+                &app_n,
+                "直播偵測",
+                &format!("{} 正在直播，已啟動自動下載", ch_name_n),
+                "info",
+            ).await;
+        });
+    }
 
     // 9. Update preset's last_triggered_at and trigger_count.
     {
@@ -1490,15 +1607,34 @@ async fn start_scheduled_task(
                         "file_size": file_size,
                     }),
                 );
+                // Notify user: download completed.
+                let size_str = file_size.map(|s| format!("{:.1} MB", s as f64 / (1024.0 * 1024.0)))
+                    .unwrap_or_else(|| "?".to_string());
+                send_scheduled_notification(
+                    &app2,
+                    "排程下載完成",
+                    &format!("{} 的直播錄製已完成（{}）", channel_name2, size_str),
+                    "info",
+                ).await;
             } else {
+                let err_msg = error.unwrap_or_else(|| "錄製失敗".to_string());
                 let _ = app2.emit(
                     "scheduled-download-failed",
                     serde_json::json!({
                         "task_id": sched_task_id,
                         "channel_name": channel_name2,
-                        "error": error.unwrap_or_else(|| "錄製失敗".to_string()),
+                        "error": err_msg.clone(),
                     }),
                 );
+                // Notify user: download failed.
+                // Truncate error to a short summary.
+                let err_summary: String = err_msg.chars().take(60).collect();
+                send_scheduled_notification(
+                    &app2,
+                    "排程下載失敗",
+                    &format!("{} 的下載失敗：{}", channel_name2, err_summary),
+                    "warning",
+                ).await;
             }
 
             emit_queue_update(&app2).await;
@@ -1532,6 +1668,14 @@ async fn mark_scheduled_task_failed(app: &AppHandle, task_id: &str, error: &str)
             "error": error,
         }),
     );
+    // Notify user: task failed.
+    let err_summary: String = error.chars().take(60).collect();
+    send_scheduled_notification(
+        app,
+        "排程下載失敗",
+        &format!("{} 的下載失敗：{}", channel_name, err_summary),
+        "warning",
+    ).await;
     emit_queue_update(app).await;
 }
 
@@ -5591,6 +5735,17 @@ fn check_has_enabled_presets(app: AppHandle) -> Result<bool, String> {
     Ok(presets.iter().any(|p| p.enabled))
 }
 
+/// Check whether OS notifications are available/permitted.
+/// Returns "granted", "denied", or "unknown".
+#[tauri::command]
+fn check_notification_permission(app: AppHandle) -> String {
+    use tauri_plugin_notification::NotificationExt;
+    match app.notification().permission_state() {
+        Ok(state) => format!("{:?}", state).to_lowercase(),
+        Err(_) => "unknown".to_string(),
+    }
+}
+
 #[tauri::command]
 fn force_quit(app: AppHandle) {
     FORCE_QUIT.store(true, Ordering::SeqCst);
@@ -5621,6 +5776,7 @@ pub fn run() {
     let download_tasks: DownloadTasks = Arc::new(Mutex::new(HashMap::new()));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(download_tasks)
@@ -5820,7 +5976,8 @@ pub fn run() {
             get_youtube_polling_status,
             get_scheduled_download_queue,
             cancel_scheduled_download,
-            retry_scheduled_download
+            retry_scheduled_download,
+            check_notification_permission
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

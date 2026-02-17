@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import * as CloudSync from '../sync';
 import { navigateToDownload } from '../app';
 import { ConfigManager } from '../config';
+import { t } from '../i18n';
 
 interface Record {
   id: string;
@@ -82,7 +83,7 @@ async function loadRecords() {
     currentData = await invoke<RecordsData>('get_local_records');
   } catch (error) {
     console.error('Failed to load records:', error);
-    alert(`載入記錄失敗: ${error}`);
+    alert(t('records.error.loadFailed', { error: String(error) }));
   }
 }
 
@@ -119,13 +120,13 @@ function createSyncSection(): HTMLElement {
     // Not logged in - show login button
     const loginBtn = document.createElement('button');
     loginBtn.className = 'sync-login-btn';
-    loginBtn.textContent = 'Login with Google';
+    loginBtn.textContent = t('records.sync.loginWithGoogle');
     loginBtn.onclick = handleLogin;
     section.appendChild(loginBtn);
 
     const localModeText = document.createElement('p');
     localModeText.className = 'sync-local-mode';
-    localModeText.textContent = '本機模式 (未同步)';
+    localModeText.textContent = t('records.sync.localMode');
     section.appendChild(localModeText);
   } else {
     // Logged in - show user info and status
@@ -150,7 +151,7 @@ function createSyncSection(): HTMLElement {
 
     const logoutBtn = document.createElement('button');
     logoutBtn.className = 'sync-logout-btn';
-    logoutBtn.textContent = '登出';
+    logoutBtn.textContent = t('records.sync.logout');
     logoutBtn.onclick = handleLogout;
     section.appendChild(logoutBtn);
   }
@@ -161,14 +162,14 @@ function createSyncSection(): HTMLElement {
 function getSyncStatusText(status: string): string {
   switch (status) {
     case 'synced':
-      return '已同步';
+      return t('records.sync.status.synced');
     case 'syncing':
-      return '同步中...';
+      return t('records.sync.status.syncing');
     case 'error':
-      return '同步錯誤';
+      return t('records.sync.status.error');
     case 'offline':
     default:
-      return '離線';
+      return t('records.sync.status.offline');
   }
 }
 
@@ -187,7 +188,7 @@ async function handleLogin() {
 }
 
 async function handleLogout() {
-  if (confirm('確定要登出嗎？本機資料將保留，但不會再同步至雲端。')) {
+  if (confirm(t('records.confirm.logout'))) {
     await CloudSync.logout();
     syncState = await CloudSync.getSyncState();
     if (containerElement) {
@@ -208,7 +209,7 @@ function createSidebar(): HTMLElement {
   const header = document.createElement('div');
   header.className = 'sidebar-header';
   const h2 = document.createElement('h2');
-  h2.textContent = '資料夾';
+  h2.textContent = t('records.sidebar.folders');
   header.appendChild(h2);
   aside.appendChild(header);
 
@@ -225,10 +226,10 @@ function createSidebar(): HTMLElement {
 
   // Add virtual folders based on config
   if (showAllRecords) {
-    folders.push({ id: ALL_RECORDS_ID, name: '所有記錄', isVirtual: true });
+    folders.push({ id: ALL_RECORDS_ID, name: t('records.sidebar.allRecords'), isVirtual: true });
   }
   if (showUncategorized) {
-    folders.push({ id: UNCATEGORIZED_ID, name: '未分類', isSystem: true });
+    folders.push({ id: UNCATEGORIZED_ID, name: t('records.sidebar.uncategorized'), isSystem: true });
   }
 
   // Add user folders in order
@@ -259,14 +260,14 @@ function createSidebar(): HTMLElement {
   const input = document.createElement('input');
   input.type = 'text';
   input.id = 'new-folder-input';
-  input.placeholder = '新資料夾名稱';
+  input.placeholder = t('records.sidebar.folderNamePlaceholder');
   input.className = 'folder-name-input';
   actions.appendChild(input);
 
   const button = document.createElement('button');
   button.id = 'create-folder-btn';
   button.className = 'primary-button';
-  button.textContent = '新增資料夾';
+  button.textContent = t('records.sidebar.newFolder');
   actions.appendChild(button);
 
   aside.appendChild(actions);
@@ -310,7 +311,7 @@ function createFolderItem(folder: { id: string; name: string; isVirtual?: boolea
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-folder-btn';
     deleteBtn.dataset.folderId = folder.id;
-    deleteBtn.title = '刪除資料夾';
+    deleteBtn.title = t('records.actions.deleteFolder');
     deleteBtn.textContent = '×';
     div.appendChild(deleteBtn);
   }
@@ -337,7 +338,7 @@ function createMainContent(): HTMLElement {
   const searchInput = document.createElement('input');
   searchInput.type = 'text';
   searchInput.id = 'search-input';
-  searchInput.placeholder = '搜尋標題、主題或頻道...';
+  searchInput.placeholder = t('records.search.placeholder');
   searchInput.value = searchQuery;
   searchInput.className = 'search-input';
   searchBox.appendChild(searchInput);
@@ -353,7 +354,7 @@ function createMainContent(): HTMLElement {
   if (records.length === 0) {
     const emptyMsg = document.createElement('p');
     emptyMsg.className = 'empty-message';
-    emptyMsg.textContent = '沒有記錄';
+    emptyMsg.textContent = t('records.empty');
     content.appendChild(emptyMsg);
   } else {
     const groups = groupRecordsByTitle(records);
@@ -469,7 +470,7 @@ function createRecordElement(record: Record): HTMLElement {
   const downloadBtn = document.createElement('button');
   downloadBtn.className = 'record-action-btn download-btn';
   downloadBtn.dataset.recordId = record.id;
-  downloadBtn.title = '下載片段';
+  downloadBtn.title = t('records.actions.download');
   downloadBtn.textContent = '📥';
   actions.appendChild(downloadBtn);
 
@@ -477,14 +478,14 @@ function createRecordElement(record: Record): HTMLElement {
   linkBtn.href = record.channel_url;
   linkBtn.target = '_blank';
   linkBtn.className = 'record-action-btn link-btn';
-  linkBtn.title = '前往 VOD';
+  linkBtn.title = t('records.actions.openVod');
   linkBtn.textContent = '🔗';
   actions.appendChild(linkBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'record-action-btn delete-btn';
   deleteBtn.dataset.recordId = record.id;
-  deleteBtn.title = '刪除記錄';
+  deleteBtn.title = t('records.actions.deleteRecord');
   deleteBtn.textContent = '🗑️';
   actions.appendChild(deleteBtn);
 
@@ -494,11 +495,11 @@ function createRecordElement(record: Record): HTMLElement {
 }
 
 function getFolderTitle(): string {
-  if (currentFolderId === ALL_RECORDS_ID) return '所有記錄';
-  if (currentFolderId === UNCATEGORIZED_ID) return '未分類';
+  if (currentFolderId === ALL_RECORDS_ID) return t('records.currentFolder.allRecords');
+  if (currentFolderId === UNCATEGORIZED_ID) return t('records.currentFolder.uncategorized');
 
   const folder = currentData.folders.find(f => f.id === currentFolderId);
-  return folder ? folder.name : '記錄';
+  return folder ? folder.name : t('records.currentFolder.default');
 }
 
 function getRecordCountForFolder(folderId: string): number {
@@ -623,7 +624,7 @@ function attachEventListeners(container: HTMLElement) {
 
       renderPage(container);
     } catch (error) {
-      alert(`建立資料夾失敗: ${error}`);
+      alert(t('records.error.createFolderFailed', { error: String(error) }));
     }
   });
 
@@ -688,7 +689,7 @@ function attachEventListeners(container: HTMLElement) {
             editingFolderId = null;
             renderPage(container);
           } catch (error) {
-            alert(`重新命名資料夾失敗: ${error}`);
+            alert(t('records.error.renameFolderFailed', { error: String(error) }));
           }
         }
       } else {
@@ -714,7 +715,7 @@ function attachEventListeners(container: HTMLElement) {
       const folder = currentData.folders.find(f => f.id === folderId);
       if (!folder) return;
 
-      if (confirm(`確定要刪除資料夾「${folder.name}」嗎？其中的記錄將移至「未分類」。`)) {
+      if (confirm(t('records.confirm.deleteFolder', { name: folder.name }))) {
         try {
           await invoke('delete_folder', { id: folderId });
 
@@ -740,7 +741,7 @@ function attachEventListeners(container: HTMLElement) {
           }
           renderPage(container);
         } catch (error) {
-          alert(`刪除資料夾失敗: ${error}`);
+          alert(t('records.error.deleteFolderFailed', { error: String(error) }));
         }
       }
     });
@@ -799,7 +800,7 @@ function attachEventListeners(container: HTMLElement) {
 
           renderPage(container);
         } catch (error) {
-          alert(`重新排序資料夾失敗: ${error}`);
+          alert(t('records.error.reorderFolderFailed', { error: String(error) }));
         }
       }
     });
@@ -866,7 +867,7 @@ function attachEventListeners(container: HTMLElement) {
             editingRecordId = null;
             renderPage(container);
           } catch (error) {
-            alert(`更新記錄失敗: ${error}`);
+            alert(t('records.error.updateRecordFailed', { error: String(error) }));
           }
         }
       } else {
@@ -891,7 +892,7 @@ function attachEventListeners(container: HTMLElement) {
       const record = currentData.records.find(r => r.id === recordId);
       if (!record) return;
 
-      if (confirm(`確定要刪除記錄「${record.topic}」嗎？`)) {
+      if (confirm(t('records.confirm.deleteRecord', { title: record.topic }))) {
         try {
           await invoke('delete_record', { id: recordId });
 
@@ -901,7 +902,7 @@ function attachEventListeners(container: HTMLElement) {
           currentData.records = currentData.records.filter(r => r.id !== recordId);
           renderPage(container);
         } catch (error) {
-          alert(`刪除記錄失敗: ${error}`);
+          alert(t('records.error.deleteRecordFailed', { error: String(error) }));
         }
       }
     });
@@ -935,7 +936,7 @@ function attachEventListeners(container: HTMLElement) {
 
         // Check if VOD URL is valid
         if (!record.channel_url || record.channel_url.trim() === '') {
-          alert('無法解析此記錄的連結');
+          alert(t('records.error.cannotParseUrl'));
           return;
         }
 
@@ -947,7 +948,7 @@ function attachEventListeners(container: HTMLElement) {
         });
       } catch (error) {
         console.error('Failed to prepare download:', error);
-        alert('無法準備下載: ' + error);
+        alert(t('records.error.cannotPrepareDownload', { error: String(error) }));
       }
     });
   });

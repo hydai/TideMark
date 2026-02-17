@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { t } from '../i18n';
 
 interface DownloadHistory {
   id: string;
@@ -26,7 +27,7 @@ export async function renderHistoryPage(container: HTMLElement) {
   container.innerHTML = `
     <div class="page">
       <div class="page-header">
-        <h1 class="page-title">歷程</h1>
+        <h1 class="page-title">${t('history.title')}</h1>
       </div>
 
       <div class="history-controls">
@@ -35,30 +36,30 @@ export async function renderHistoryPage(container: HTMLElement) {
             type="text"
             id="history-search"
             class="search-input"
-            placeholder="搜尋標題或頻道..."
+            placeholder="${t('history.search.placeholder')}"
           />
         </div>
 
         <div class="filter-controls">
           <select id="status-filter" class="filter-select">
-            <option value="all">全部狀態</option>
-            <option value="completed">已完成</option>
-            <option value="failed">失敗</option>
-            <option value="cancelled">已取消</option>
+            <option value="all">${t('history.filter.allStatus')}</option>
+            <option value="completed">${t('history.filter.completed')}</option>
+            <option value="failed">${t('history.filter.failed')}</option>
+            <option value="cancelled">${t('history.filter.cancelled')}</option>
           </select>
 
           <select id="sort-by" class="filter-select">
-            <option value="date">依日期排序</option>
-            <option value="title">依標題排序</option>
-            <option value="channel">依頻道排序</option>
+            <option value="date">${t('history.sort.byDate')}</option>
+            <option value="title">${t('history.sort.byTitle')}</option>
+            <option value="channel">${t('history.sort.byChannel')}</option>
           </select>
 
-          <button id="clear-all-btn" class="clear-all-btn">清空全部</button>
+          <button id="clear-all-btn" class="clear-all-btn">${t('history.actions.clearAll')}</button>
         </div>
       </div>
 
       <div id="history-list" class="history-list">
-        <p class="loading-text">載入中...</p>
+        <p class="loading-text">${t('history.loading')}</p>
       </div>
     </div>
   `;
@@ -100,9 +101,9 @@ async function loadHistory() {
       const errorDiv = document.createElement('div');
       errorDiv.className = 'error-message';
       const errorText = document.createElement('p');
-      errorText.textContent = `載入歷程失敗: ${error}`;
+      errorText.textContent = t('history.error.loadFailed');
       errorDiv.appendChild(errorText);
-      listContainer.innerHTML = '';
+      listContainer.textContent = '';
       listContainer.appendChild(errorDiv);
     }
   }
@@ -147,13 +148,13 @@ function renderHistoryList() {
   const listContainer = document.getElementById('history-list');
   if (!listContainer) return;
 
-  listContainer.innerHTML = '';
+  listContainer.textContent = '';
 
   if (filteredHistory.length === 0) {
     const emptyDiv = document.createElement('div');
     emptyDiv.className = 'empty-state';
     const emptyText = document.createElement('p');
-    emptyText.textContent = '無下載歷程';
+    emptyText.textContent = t('history.empty');
     emptyDiv.appendChild(emptyText);
     listContainer.appendChild(emptyDiv);
     return;
@@ -211,11 +212,11 @@ function createHistoryEntryElement(entry: DownloadHistory): HTMLElement {
   const fileSize = entry.file_size ? formatBytes(entry.file_size) : '-';
   const filePath = entry.file_path || '-';
 
-  metadataDiv.appendChild(createMetadataItem('下載日期:', date));
-  metadataDiv.appendChild(createMetadataItem('檔案大小:', fileSize));
-  metadataDiv.appendChild(createMetadataItem('解析度:', entry.resolution || '-'));
+  metadataDiv.appendChild(createMetadataItem(t('history.metadata.downloadDate'), date));
+  metadataDiv.appendChild(createMetadataItem(t('history.metadata.fileSize'), fileSize));
+  metadataDiv.appendChild(createMetadataItem(t('history.metadata.resolution'), entry.resolution || '-'));
 
-  const pathItem = createMetadataItem('檔案路徑:', filePath);
+  const pathItem = createMetadataItem(t('history.metadata.filePath'), filePath);
   pathItem.querySelector('.metadata-value')?.classList.add('file-path');
   metadataDiv.appendChild(pathItem);
 
@@ -228,7 +229,7 @@ function createHistoryEntryElement(entry: DownloadHistory): HTMLElement {
 
     const errorLabel = document.createElement('span');
     errorLabel.className = 'error-label';
-    errorLabel.textContent = '錯誤訊息:';
+    errorLabel.textContent = t('history.error.errorMessage');
 
     const errorText = document.createElement('span');
     errorText.className = 'error-text';
@@ -246,14 +247,14 @@ function createHistoryEntryElement(entry: DownloadHistory): HTMLElement {
   if (entry.status === 'completed' && entry.file_path) {
     const openFileBtn = document.createElement('button');
     openFileBtn.className = 'action-btn open-file-btn';
-    openFileBtn.textContent = '開啟檔案';
+    openFileBtn.textContent = t('history.actions.openFile');
     openFileBtn.dataset.path = entry.file_path;
     openFileBtn.addEventListener('click', () => handleOpenFile(entry.file_path!));
     actionsDiv.appendChild(openFileBtn);
 
     const showFolderBtn = document.createElement('button');
     showFolderBtn.className = 'action-btn show-folder-btn';
-    showFolderBtn.textContent = '在資料夾中顯示';
+    showFolderBtn.textContent = t('history.actions.showInFolder');
     showFolderBtn.dataset.path = entry.file_path;
     showFolderBtn.addEventListener('click', () => handleShowInFolder(entry.file_path!));
     actionsDiv.appendChild(showFolderBtn);
@@ -261,7 +262,7 @@ function createHistoryEntryElement(entry: DownloadHistory): HTMLElement {
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'action-btn delete-btn';
-  deleteBtn.textContent = '刪除記錄';
+  deleteBtn.textContent = t('history.actions.deleteRecord');
   deleteBtn.dataset.id = entry.id;
   deleteBtn.addEventListener('click', () => handleDeleteEntry(entry.id));
   actionsDiv.appendChild(deleteBtn);
@@ -296,19 +297,19 @@ function createStatusBadge(status: string): HTMLElement {
   switch (status) {
     case 'completed':
       badge.classList.add('status-completed');
-      badge.textContent = '已完成';
+      badge.textContent = t('history.status.completed');
       break;
     case 'failed':
       badge.classList.add('status-failed');
-      badge.textContent = '失敗';
+      badge.textContent = t('history.status.failed');
       break;
     case 'cancelled':
       badge.classList.add('status-cancelled');
-      badge.textContent = '已取消';
+      badge.textContent = t('history.status.cancelled');
       break;
     case 'stream_interrupted':
       badge.classList.add('status-warning');
-      badge.textContent = '串流中斷';
+      badge.textContent = t('history.status.streamInterrupted');
       break;
     default:
       badge.classList.add('status-unknown');
@@ -323,14 +324,14 @@ async function handleOpenFile(path: string) {
     // Check if file exists
     const exists = await invoke<boolean>('check_file_exists', { path });
     if (!exists) {
-      alert('檔案不存在');
+      alert(t('history.error.fileNotFound'));
       return;
     }
 
     await invoke('open_file', { path });
   } catch (error) {
     console.error('開啟檔案失敗:', error);
-    alert(`開啟檔案失敗: ${error}`);
+    alert(t('history.error.openFileFailed'));
   }
 }
 
@@ -339,12 +340,12 @@ async function handleShowInFolder(path: string) {
     await invoke('show_in_folder', { path });
   } catch (error) {
     console.error('開啟資料夾失敗:', error);
-    alert(`開啟資料夾失敗: ${error}`);
+    alert(t('history.error.showFolderFailed'));
   }
 }
 
 async function handleDeleteEntry(id: string) {
-  const confirmed = confirm('確定要刪除此記錄嗎？（不會刪除實際檔案）');
+  const confirmed = confirm(t('common.confirm.deleteRecord'));
   if (!confirmed) return;
 
   try {
@@ -353,12 +354,12 @@ async function handleDeleteEntry(id: string) {
     await loadHistory();
   } catch (error) {
     console.error('刪除記錄失敗:', error);
-    alert(`刪除記錄失敗: ${error}`);
+    alert(t('history.error.deleteEntryFailed'));
   }
 }
 
 async function handleClearAll() {
-  const confirmed = confirm('確定要清空全部歷程記錄嗎？（不會刪除實際檔案）');
+  const confirmed = confirm(t('common.confirm.clearAllHistory'));
   if (!confirmed) return;
 
   try {
@@ -367,7 +368,7 @@ async function handleClearAll() {
     await loadHistory();
   } catch (error) {
     console.error('清空歷程失敗:', error);
-    alert(`清空歷程失敗: ${error}`);
+    alert(t('history.error.clearAllFailed'));
   }
 }
 

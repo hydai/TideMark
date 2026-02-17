@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
+import { t } from '../i18n';
 
 interface DownloadPreset {
   id: string;
@@ -192,9 +193,7 @@ export async function renderScheduledDownloadsPage(container: HTMLElement) {
   try {
     const status = await invoke<PubSubStatus>('get_twitch_pubsub_status');
     pubsubConnected = status.connected;
-    pubsubMessage = status.connected
-      ? `已連線 (${status.subscribed_channels.length} 個頻道)`
-      : '';
+    pubsubMessage = '';
   } catch {
     pubsubConnected = false;
   }
@@ -205,7 +204,7 @@ export async function renderScheduledDownloadsPage(container: HTMLElement) {
     youtubePollingActive = ytStatus.active;
     youtubePollingChannelsCount = ytStatus.polling_channels.length;
     youtubePollingIntervalSecs = ytStatus.interval_seconds;
-    youtubePollingMessage = ytStatus.active ? '輪詢中' : '';
+    youtubePollingMessage = '';
   } catch {
     youtubePollingActive = false;
   }
@@ -276,7 +275,7 @@ async function setupPubSubListeners() {
   });
 
   const ytChannelErrorUn = await listen<YouTubeChannelErrorEvent>('youtube-channel-error', (event) => {
-    showToast(`YouTube 頻道錯誤 (${event.payload.channel_id}): ${event.payload.error}`);
+    showToast(t('scheduled.toast.youtubeError', { channelId: event.payload.channel_id, error: event.payload.error }));
     // Update preset list since it may have been disabled.
     loadPresets().then(() => {
       if (containerEl) renderPage(containerEl);
@@ -285,7 +284,7 @@ async function setupPubSubListeners() {
 
   // Scheduled download event listeners
   const schedTriggeredUn = await listen<ScheduledDownloadTriggeredEvent>('scheduled-download-triggered', (event) => {
-    showToast(`排程下載已觸發：${event.payload.channel_name} (${event.payload.platform})`);
+    showToast(t('scheduled.toast.triggered', { channelName: event.payload.channel_name, platform: event.payload.platform }));
   });
 
   const schedQueueUpdateUn = await listen<ScheduledDownloadQueueUpdateEvent>('scheduled-download-queue-update', (event) => {
@@ -297,18 +296,18 @@ async function setupPubSubListeners() {
     const sizeMb = event.payload.file_size
       ? (event.payload.file_size / (1024 * 1024)).toFixed(1)
       : '?';
-    showToast(`排程下載完成：${event.payload.channel_name}（${sizeMb} MB）`);
+    showToast(t('scheduled.toast.completed', { channelName: event.payload.channel_name, sizeMb }));
     refreshQueueUI();
   });
 
   const schedFailedUn = await listen<ScheduledDownloadFailedEvent>('scheduled-download-failed', (event) => {
-    showToast(`排程下載失敗：${event.payload.channel_name} — ${event.payload.error}`);
+    showToast(t('scheduled.toast.failed', { channelName: event.payload.channel_name, error: event.payload.error }));
     refreshQueueUI();
   });
 
   const diskFullUn = await listen<DiskFullEvent>('scheduled-download-disk-full', (event) => {
     const freeMb = (event.payload.free_bytes / (1024 * 1024)).toFixed(0);
-    showToast(`磁碟空間不足 (剩餘 ${freeMb} MB)，已暫停排程下載：${event.payload.channel_name}`);
+    showToast(t('scheduled.toast.diskFull', { freeMb, channelName: event.payload.channel_name }));
   });
 
   const dlProgressUn = await listen<DownloadProgressEvent>('download-progress', (event) => {
@@ -369,19 +368,17 @@ function updateMonitorStatusUI() {
 function buildTwitchStatusLabel(): string {
   if (pubsubConnected) {
     const count = presets.filter(p => p.platform === 'twitch' && p.enabled).length;
-    return `Twitch: 已連線 (${count} 個頻道)`;
+    return t('scheduled.twitchStatus.connected', { count: String(count) });
   }
-  if (pubsubMessage) return `Twitch: ${pubsubMessage}`;
-  return 'Twitch: 已斷線';
+  return t('scheduled.twitchStatus.disconnected');
 }
 
 function buildYouTubeStatusLabel(): string {
   if (youtubePollingActive) {
     const count = youtubePollingChannelsCount || presets.filter(p => p.platform === 'youtube' && p.enabled).length;
-    return `YouTube: 輪詢中 (${count} 個頻道, 每 ${youtubePollingIntervalSecs} 秒)`;
+    return t('scheduled.youtubeStatus.polling', { count: String(count), interval: String(youtubePollingIntervalSecs) });
   }
-  if (youtubePollingMessage) return `YouTube: ${youtubePollingMessage}`;
-  return 'YouTube: 已停止';
+  return t('scheduled.youtubeStatus.stopped');
 }
 
 /** Refresh only the queue section without re-rendering the full page. */
@@ -408,7 +405,7 @@ function showToast(message: string) {
 function updatePresetLiveStatus(channelId: string, status: 'live' | 'offline') {
   const badge = document.querySelector(`[data-live-channel="${channelId}"]`);
   if (!badge) return;
-  badge.textContent = status === 'live' ? '直播中' : '離線';
+  badge.textContent = status === 'live' ? t('scheduled.preset.liveBadge') : t('scheduled.preset.offlineBadge');
   badge.className = status === 'live' ? 'live-badge live' : 'live-badge offline';
 }
 
@@ -424,13 +421,13 @@ function renderPage(container: HTMLElement) {
 
   const title = document.createElement('h1');
   title.className = 'page-title';
-  title.textContent = '排程下載';
+  title.textContent = t('scheduled.title');
   header.appendChild(title);
 
   const addBtn = document.createElement('button');
   addBtn.className = 'primary-button';
   addBtn.id = 'add-preset-btn';
-  addBtn.textContent = '新增預設';
+  addBtn.textContent = t('scheduled.addPreset');
   header.appendChild(addBtn);
 
   page.appendChild(header);
@@ -481,13 +478,13 @@ function createQueueSection(): HTMLElement {
 
   const heading = document.createElement('h2');
   heading.className = 'section-title';
-  heading.textContent = '下載佇列';
+  heading.textContent = t('scheduled.queue.title');
   section.appendChild(heading);
 
   if (scheduledQueue.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-message';
-    empty.textContent = '目前無排程下載任務。';
+    empty.textContent = t('scheduled.queue.empty');
     section.appendChild(empty);
     return section;
   }
@@ -502,7 +499,7 @@ function createQueueSection(): HTMLElement {
   if (running.length > 0) {
     const runningHeader = document.createElement('h3');
     runningHeader.className = 'queue-sub-title';
-    runningHeader.textContent = '下載中';
+    runningHeader.textContent = t('scheduled.queue.running');
     section.appendChild(runningHeader);
     running.forEach(task => {
       section.appendChild(createQueueTaskRow(task, 'running'));
@@ -513,7 +510,7 @@ function createQueueSection(): HTMLElement {
   if (queued.length > 0) {
     const queuedHeader = document.createElement('h3');
     queuedHeader.className = 'queue-sub-title';
-    queuedHeader.textContent = '等待中';
+    queuedHeader.textContent = t('scheduled.queue.queued');
     section.appendChild(queuedHeader);
     queued.forEach((task, index) => {
       section.appendChild(createQueueTaskRow(task, 'queued', index + 1));
@@ -524,7 +521,7 @@ function createQueueSection(): HTMLElement {
   if (completed.length > 0) {
     const completedHeader = document.createElement('h3');
     completedHeader.className = 'queue-sub-title';
-    completedHeader.textContent = '已完成';
+    completedHeader.textContent = t('scheduled.queue.completed');
     section.appendChild(completedHeader);
     completed.forEach(task => {
       section.appendChild(createQueueTaskRow(task, 'completed'));
@@ -535,7 +532,7 @@ function createQueueSection(): HTMLElement {
   if (failed.length > 0) {
     const failedHeader = document.createElement('h3');
     failedHeader.className = 'queue-sub-title';
-    failedHeader.textContent = '失敗 / 已取消';
+    failedHeader.textContent = t('scheduled.queue.failed');
     section.appendChild(failedHeader);
     failed.forEach(task => {
       section.appendChild(createQueueTaskRow(task, 'failed'));
@@ -591,29 +588,29 @@ function createQueueTaskRow(
     const stats = document.createElement('div');
     stats.className = 'queue-task-stats';
     if (progress?.is_recording) {
-      stats.textContent = `錄製中 ${progress.recorded_duration ?? '00:00:00'} | ${progress.bitrate ?? 'N/A'} | ${progress.speed}`;
+      stats.textContent = t('scheduled.task.recordingStats', { duration: progress.recorded_duration ?? '00:00:00', bitrate: progress.bitrate ?? 'N/A', speed: progress.speed });
     } else if (progress) {
       stats.textContent = `${progress.percentage.toFixed(1)}% | ${progress.speed} | ETA: ${progress.eta}`;
     } else {
-      stats.textContent = '錄製中...';
+      stats.textContent = t('scheduled.task.recordingWaiting');
     }
     statusArea.appendChild(stats);
 
   } else if (rowType === 'queued') {
     const pos = document.createElement('span');
     pos.className = 'queue-position';
-    pos.textContent = `佇列第 ${queuePosition} 位`;
+    pos.textContent = t('scheduled.queue.queuePosition', { position: String(queuePosition) });
     statusArea.appendChild(pos);
 
     const triggeredAt = document.createElement('span');
     triggeredAt.className = 'queue-task-time';
-    triggeredAt.textContent = `觸發於 ${formatTimestamp(task.triggered_at)}`;
+    triggeredAt.textContent = t('scheduled.queue.triggeredAt', { time: formatTimestamp(task.triggered_at) });
     statusArea.appendChild(triggeredAt);
 
   } else if (rowType === 'completed') {
     const completedAt = document.createElement('span');
     completedAt.className = 'queue-task-time';
-    completedAt.textContent = task.completed_at ? `完成於 ${formatTimestamp(task.completed_at)}` : '已完成';
+    completedAt.textContent = task.completed_at ? t('scheduled.queue.completedAt', { time: formatTimestamp(task.completed_at) }) : t('scheduled.queue.alreadyCompleted');
     statusArea.appendChild(completedAt);
 
     if (task.file_size) {
@@ -626,7 +623,7 @@ function createQueueTaskRow(
   } else if (rowType === 'failed') {
     const errorSpan = document.createElement('span');
     errorSpan.className = 'queue-task-error';
-    errorSpan.textContent = task.error_message ?? (task.status === 'cancelled' ? '已取消' : '失敗');
+    errorSpan.textContent = task.error_message ?? (task.status === 'cancelled' ? t('scheduled.queue.cancelled') : t('scheduled.queue.failed'));
     statusArea.appendChild(errorSpan);
   }
 
@@ -639,14 +636,14 @@ function createQueueTaskRow(
   if (rowType === 'running' || rowType === 'queued') {
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'action-btn delete-btn';
-    cancelBtn.textContent = '取消';
+    cancelBtn.textContent = t('scheduled.queue.cancelTask');
     cancelBtn.addEventListener('click', async () => {
       cancelBtn.disabled = true;
       try {
         await invoke('cancel_scheduled_download', { taskId: task.id });
-        showToast('已取消排程下載');
+        showToast(t('scheduled.toast.cancelled'));
       } catch (err) {
-        showToast(`取消失敗: ${err}`);
+        showToast(t('scheduled.error.cancelTaskFailed', { error: String(err) }));
         cancelBtn.disabled = false;
       }
     });
@@ -656,7 +653,7 @@ function createQueueTaskRow(
   if (rowType === 'completed' && task.file_path) {
     const openBtn = document.createElement('button');
     openBtn.className = 'action-btn edit-btn';
-    openBtn.textContent = '開啟檔案';
+    openBtn.textContent = t('scheduled.queue.openFile');
     openBtn.addEventListener('click', async () => {
       if (task.file_path) {
         try {
@@ -672,14 +669,14 @@ function createQueueTaskRow(
   if (rowType === 'failed') {
     const retryBtn = document.createElement('button');
     retryBtn.className = 'action-btn edit-btn';
-    retryBtn.textContent = '重試';
+    retryBtn.textContent = t('scheduled.queue.retry');
     retryBtn.addEventListener('click', async () => {
       retryBtn.disabled = true;
       try {
         await invoke('retry_scheduled_download', { taskId: task.id });
-        showToast('已重新加入佇列');
+        showToast(t('scheduled.toast.requeued'));
       } catch (err) {
-        showToast(`重試失敗: ${err}`);
+        showToast(t('scheduled.error.retryFailed', { error: String(err) }));
         retryBtn.disabled = false;
       }
     });
@@ -697,7 +694,7 @@ function createMonitorStatusSection(): HTMLElement {
 
   const heading = document.createElement('h2');
   heading.className = 'section-title';
-  heading.textContent = '監聽狀態';
+  heading.textContent = t('scheduled.monitoring.title');
   section.appendChild(heading);
 
   // ── Twitch status row ──
@@ -724,11 +721,11 @@ function createMonitorStatusSection(): HTMLElement {
   const startBtn = document.createElement('button');
   startBtn.className = 'primary-button';
   startBtn.id = 'twitch-pubsub-start-btn';
-  startBtn.textContent = '開始 Twitch 監聽';
+  startBtn.textContent = t('scheduled.monitoring.startTwitch');
   startBtn.disabled = pubsubConnected;
   startBtn.addEventListener('click', async () => {
     startBtn.disabled = true;
-    startBtn.textContent = '連線中…';
+    startBtn.textContent = t('scheduled.monitoring.connecting');
     try {
       await invoke('start_twitch_pubsub');
       pubsubConnected = true;
@@ -736,8 +733,8 @@ function createMonitorStatusSection(): HTMLElement {
       updateMonitorStatusUI();
     } catch (error) {
       startBtn.disabled = false;
-      startBtn.textContent = '開始 Twitch 監聽';
-      alert(`無法啟動 Twitch 監聽: ${error}`);
+      startBtn.textContent = t('scheduled.monitoring.startTwitch');
+      alert(t('scheduled.error.startTwitchFailed', { error: String(error) }));
     }
   });
   twitchBtnRow.appendChild(startBtn);
@@ -745,18 +742,18 @@ function createMonitorStatusSection(): HTMLElement {
   const stopBtn = document.createElement('button');
   stopBtn.className = 'secondary-button';
   stopBtn.id = 'twitch-pubsub-stop-btn';
-  stopBtn.textContent = '停止 Twitch 監聽';
+  stopBtn.textContent = t('scheduled.monitoring.stopTwitch');
   stopBtn.disabled = !pubsubConnected;
   stopBtn.addEventListener('click', async () => {
     stopBtn.disabled = true;
     try {
       await invoke('stop_twitch_pubsub');
       pubsubConnected = false;
-      pubsubMessage = '已停止監聽';
+      pubsubMessage = '';
       updateMonitorStatusUI();
     } catch (error) {
       stopBtn.disabled = false;
-      alert(`無法停止 Twitch 監聽: ${error}`);
+      alert(t('scheduled.error.stopTwitchFailed', { error: String(error) }));
     }
   });
   twitchBtnRow.appendChild(stopBtn);
@@ -787,20 +784,20 @@ function createMonitorStatusSection(): HTMLElement {
   const ytStartBtn = document.createElement('button');
   ytStartBtn.className = 'primary-button';
   ytStartBtn.id = 'youtube-polling-start-btn';
-  ytStartBtn.textContent = '開始 YouTube 輪詢';
+  ytStartBtn.textContent = t('scheduled.monitoring.startYoutube');
   ytStartBtn.disabled = youtubePollingActive;
   ytStartBtn.addEventListener('click', async () => {
     ytStartBtn.disabled = true;
-    ytStartBtn.textContent = '啟動中…';
+    ytStartBtn.textContent = t('scheduled.monitoring.starting');
     try {
       await invoke('start_youtube_polling');
       youtubePollingActive = true;
-      youtubePollingMessage = '輪詢中';
+      youtubePollingMessage = '';
       updateMonitorStatusUI();
     } catch (error) {
       ytStartBtn.disabled = false;
-      ytStartBtn.textContent = '開始 YouTube 輪詢';
-      alert(`無法啟動 YouTube 輪詢: ${error}`);
+      ytStartBtn.textContent = t('scheduled.monitoring.startYoutube');
+      alert(t('scheduled.error.startYoutubeFailed', { error: String(error) }));
     }
   });
   ytBtnRow.appendChild(ytStartBtn);
@@ -808,18 +805,18 @@ function createMonitorStatusSection(): HTMLElement {
   const ytStopBtn = document.createElement('button');
   ytStopBtn.className = 'secondary-button';
   ytStopBtn.id = 'youtube-polling-stop-btn';
-  ytStopBtn.textContent = '停止 YouTube 輪詢';
+  ytStopBtn.textContent = t('scheduled.monitoring.stopYoutube');
   ytStopBtn.disabled = !youtubePollingActive;
   ytStopBtn.addEventListener('click', async () => {
     ytStopBtn.disabled = true;
     try {
       await invoke('stop_youtube_polling');
       youtubePollingActive = false;
-      youtubePollingMessage = '已停止';
+      youtubePollingMessage = '';
       updateMonitorStatusUI();
     } catch (error) {
       ytStopBtn.disabled = false;
-      alert(`無法停止 YouTube 輪詢: ${error}`);
+      alert(t('scheduled.error.stopYoutubeFailed', { error: String(error) }));
     }
   });
   ytBtnRow.appendChild(ytStopBtn);
@@ -835,13 +832,13 @@ function createPresetListSection(): HTMLElement {
 
   const heading = document.createElement('h2');
   heading.className = 'section-title';
-  heading.textContent = '頻道預設';
+  heading.textContent = t('scheduled.preset.title');
   section.appendChild(heading);
 
   if (presets.length === 0) {
     const emptyMsg = document.createElement('p');
     emptyMsg.className = 'empty-message';
-    emptyMsg.textContent = '尚無預設。請按「新增預設」新增頻道。';
+    emptyMsg.textContent = t('scheduled.preset.empty');
     section.appendChild(emptyMsg);
     return section;
   }
@@ -852,7 +849,15 @@ function createPresetListSection(): HTMLElement {
   // Table header
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
-  const headers = ['頻道名稱', '平台', '狀態', '啟用', '上次觸發', '累計下載', '操作'];
+  const headers = [
+    t('scheduled.preset.headers.channelName'),
+    t('scheduled.preset.headers.platform'),
+    t('scheduled.preset.headers.status'),
+    t('scheduled.preset.headers.enabled'),
+    t('scheduled.preset.headers.lastTriggered'),
+    t('scheduled.preset.headers.totalDownloads'),
+    t('scheduled.preset.headers.actions'),
+  ];
   headers.forEach(text => {
     const th = document.createElement('th');
     th.textContent = text;
@@ -900,10 +905,10 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
     liveBadge.dataset.liveChannel = preset.channel_id;
     if (currentStatus === 'live') {
       liveBadge.className = 'live-badge live';
-      liveBadge.textContent = '直播中';
+      liveBadge.textContent = t('scheduled.preset.liveBadge');
     } else if (currentStatus === 'offline') {
       liveBadge.className = 'live-badge offline';
-      liveBadge.textContent = '離線';
+      liveBadge.textContent = t('scheduled.preset.offlineBadge');
     } else {
       liveBadge.className = 'live-badge unknown';
       liveBadge.textContent = '—';
@@ -923,7 +928,7 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
 
   const toggleLabel = document.createElement('span');
   toggleLabel.className = 'toggle-label';
-  toggleLabel.textContent = preset.enabled ? '開啟' : '關閉';
+  toggleLabel.textContent = preset.enabled ? t('common.status.on') : t('common.status.off');
   toggleBtn.appendChild(toggleLabel);
 
   enabledTd.appendChild(toggleBtn);
@@ -933,7 +938,7 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
   const lastTriggerTd = document.createElement('td');
   lastTriggerTd.textContent = preset.last_triggered_at
     ? formatTimestamp(preset.last_triggered_at)
-    : '從未';
+    : t('scheduled.preset.neverTriggered');
   tr.appendChild(lastTriggerTd);
 
   // Trigger count
@@ -950,7 +955,7 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
   if (bookmarkLinks.has(presetKey)) {
     const bookmarkBtn = document.createElement('button');
     bookmarkBtn.className = 'action-btn preset-bookmark-icon-btn';
-    bookmarkBtn.title = '跳轉至頻道書籤';
+    bookmarkBtn.title = t('scheduled.preset.bookmarkTitle');
     bookmarkBtn.textContent = '🔖';
     bookmarkBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -966,14 +971,14 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
   editBtn.className = 'action-btn edit-btn';
   editBtn.dataset.presetId = preset.id;
   editBtn.dataset.action = 'edit';
-  editBtn.textContent = '編輯';
+  editBtn.textContent = t('scheduled.preset.edit');
   actionsTd.appendChild(editBtn);
 
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'action-btn delete-btn';
   deleteBtn.dataset.presetId = preset.id;
   deleteBtn.dataset.action = 'delete';
-  deleteBtn.textContent = '刪除';
+  deleteBtn.textContent = t('scheduled.preset.delete');
   actionsTd.appendChild(deleteBtn);
 
   tr.appendChild(actionsTd);
@@ -990,7 +995,7 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
       preset.enabled = !preset.enabled;
       if (containerEl) renderPage(containerEl);
     } catch (error) {
-      alert(`切換狀態失敗: ${error}`);
+      alert(t('scheduled.error.toggleFailed', { error: String(error) }));
     }
   });
 
@@ -1006,13 +1011,13 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
     if (!id) return;
     const preset = presets.find(p => p.id === id);
     if (!preset) return;
-    if (confirm(`確定要刪除頻道「${preset.channel_name}」的預設嗎？`)) {
+    if (confirm(t('scheduled.error.deletePreset', { name: preset.channel_name }))) {
       try {
         await invoke('delete_scheduled_preset', { id });
         presets = presets.filter(p => p.id !== id);
         if (containerEl) renderPage(containerEl);
       } catch (error) {
-        alert(`刪除預設失敗: ${error}`);
+        alert(t('scheduled.error.deletePresetFailed', { error: String(error) }));
       }
     }
   });
@@ -1051,7 +1056,7 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
   modalHeader.className = 'modal-header';
 
   const modalTitle = document.createElement('h2');
-  modalTitle.textContent = existingPreset ? '編輯頻道預設' : '新增頻道預設';
+  modalTitle.textContent = existingPreset ? t('scheduled.modal.editTitle') : t('scheduled.modal.addTitle');
   modalHeader.appendChild(modalTitle);
 
   const closeBtn = document.createElement('button');
@@ -1072,7 +1077,7 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
 
   const urlLabel = document.createElement('label');
   urlLabel.className = 'form-label';
-  urlLabel.textContent = '頻道網址';
+  urlLabel.textContent = t('scheduled.modal.urlLabel');
   urlSection.appendChild(urlLabel);
 
   const urlRow = document.createElement('div');
@@ -1082,13 +1087,13 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
   urlInput.type = 'text';
   urlInput.className = 'form-input';
   urlInput.id = 'preset-url-input';
-  urlInput.placeholder = 'https://twitch.tv/channelname 或 https://youtube.com/@handle';
+  urlInput.placeholder = t('scheduled.modal.urlPlaceholder');
   urlRow.appendChild(urlInput);
 
   const resolveBtn = document.createElement('button');
   resolveBtn.className = 'secondary-button';
   resolveBtn.id = 'resolve-channel-btn';
-  resolveBtn.textContent = '解析';
+  resolveBtn.textContent = t('scheduled.modal.resolve');
   urlRow.appendChild(resolveBtn);
 
   urlSection.appendChild(urlRow);
@@ -1137,8 +1142,8 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
   modalBody.appendChild(platformInput);
 
   // Quality
-  const qualityGroup = createFormGroup('品質', createSelectElement('preset-quality', [
-    { value: 'best', label: '最佳' },
+  const qualityGroup = createFormGroup(t('scheduled.modal.quality'), createSelectElement('preset-quality', [
+    { value: 'best', label: t('scheduled.modal.qualityBest') },
     { value: '1080p', label: '1080p' },
     { value: '720p', label: '720p' },
     { value: '480p', label: '480p' },
@@ -1147,9 +1152,9 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
   modalBody.appendChild(qualityGroup);
 
   // Content type
-  const contentTypeGroup = createFormGroup('內容類型', createSelectElement('preset-content-type', [
-    { value: 'video+audio', label: '影片+音訊' },
-    { value: 'audio_only', label: '僅音訊' },
+  const contentTypeGroup = createFormGroup(t('scheduled.modal.contentType'), createSelectElement('preset-content-type', [
+    { value: 'video+audio', label: t('scheduled.modal.contentTypeVideoAudio') },
+    { value: 'audio_only', label: t('scheduled.modal.contentTypeAudioOnly') },
   ], existingPreset?.content_type || 'video+audio'));
   modalBody.appendChild(contentTypeGroup);
 
@@ -1159,7 +1164,7 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
 
   const outputDirLabel = document.createElement('label');
   outputDirLabel.className = 'form-label';
-  outputDirLabel.textContent = '輸出資料夾';
+  outputDirLabel.textContent = t('scheduled.modal.outputDir');
   outputDirSection.appendChild(outputDirLabel);
 
   const outputDirRow = document.createElement('div');
@@ -1176,7 +1181,7 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
   const folderPickerBtn = document.createElement('button');
   folderPickerBtn.className = 'secondary-button';
   folderPickerBtn.id = 'preset-folder-picker-btn';
-  folderPickerBtn.textContent = '選擇';
+  folderPickerBtn.textContent = t('scheduled.modal.folderSelect');
   outputDirRow.appendChild(folderPickerBtn);
 
   outputDirSection.appendChild(outputDirRow);
@@ -1190,13 +1195,13 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
   modalBody.appendChild(outputDirSection);
 
   // Filename template
-  const filenameGroup = createFormGroup('檔名模板',
+  const filenameGroup = createFormGroup(t('scheduled.modal.filenameTemplate'),
     createTextInput('preset-filename-template',
       existingPreset?.filename_template || DEFAULT_FILENAME_TEMPLATE));
   modalBody.appendChild(filenameGroup);
 
   // Container format
-  const containerGroup = createFormGroup('容器格式', createSelectElement('preset-container-format', [
+  const containerGroup = createFormGroup(t('scheduled.modal.container'), createSelectElement('preset-container-format', [
     { value: 'auto', label: 'Auto' },
     { value: 'mp4', label: 'MP4' },
     { value: 'mkv', label: 'MKV' },
@@ -1211,14 +1216,14 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
 
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'secondary-button';
-  cancelBtn.textContent = '取消';
+  cancelBtn.textContent = t('scheduled.modal.cancel');
   cancelBtn.addEventListener('click', closePresetModal);
   modalFooter.appendChild(cancelBtn);
 
   const saveBtn = document.createElement('button');
   saveBtn.className = 'primary-button';
   saveBtn.id = 'save-preset-btn';
-  saveBtn.textContent = '儲存';
+  saveBtn.textContent = t('scheduled.modal.save');
   modalFooter.appendChild(saveBtn);
 
   modal.appendChild(modalFooter);
@@ -1252,12 +1257,12 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
   resolveBtn.addEventListener('click', async () => {
     const urlVal = urlInput.value.trim();
     if (!urlVal) {
-      showError('url-error', '請輸入頻道網址');
+      showError('url-error', t('scheduled.error.enterUrl'));
       return;
     }
 
     resolveBtn.disabled = true;
-    resolveBtn.textContent = '解析中...';
+    resolveBtn.textContent = t('scheduled.modal.resolving');
     hideError('url-error');
 
     try {
@@ -1277,14 +1282,14 @@ function createPresetModal(existingPreset: DownloadPreset | null): HTMLElement {
 
     } catch (error) {
       const errorMsg = String(error);
-      showError('url-error', errorMsg.includes('無法辨識') ? '無法辨識此頻道' : `解析失敗: ${errorMsg}`);
+      showError('url-error', errorMsg.includes('無法辨識') ? t('scheduled.error.unrecognized') : t('scheduled.error.resolveFailed', { error: errorMsg }));
       channelInfoDiv.style.display = 'none';
       channelIdInput.value = '';
       channelNameInput.value = '';
       platformInput.value = '';
     } finally {
       resolveBtn.disabled = false;
-      resolveBtn.textContent = '解析';
+      resolveBtn.textContent = t('scheduled.modal.resolve');
     }
   });
 
@@ -1327,13 +1332,13 @@ async function handleSavePreset(existingPreset: DownloadPreset | null) {
 
   // Validate channel is resolved
   if (!channelIdInput.value) {
-    showError('url-error', '請先解析頻道網址');
+    showError('url-error', t('scheduled.error.resolveFirst'));
     return;
   }
 
   // Validate output dir
   if (!outputDirInput.value.trim()) {
-    showError('output-dir-error', '請選擇輸出資料夾');
+    showError('output-dir-error', t('scheduled.error.selectFolder'));
     return;
   }
 
@@ -1345,14 +1350,14 @@ async function handleSavePreset(existingPreset: DownloadPreset | null) {
     const duplicate = presets.find(p => p.channel_id === channelIdInput.value
       && p.platform === platformInput.value);
     if (duplicate) {
-      const overwrite = confirm('此頻道已有預設，是否覆蓋？');
+      const overwrite = confirm(t('scheduled.modal.overwriteConfirm'));
       if (!overwrite) return;
       // Remove old preset
       try {
         await invoke('delete_scheduled_preset', { id: duplicate.id });
         presets = presets.filter(p => p.id !== duplicate.id);
       } catch (error) {
-        alert(`無法覆蓋舊預設: ${error}`);
+        alert(t('scheduled.error.overwriteFailed', { error: String(error) }));
         return;
       }
     }
@@ -1390,9 +1395,9 @@ async function handleSavePreset(existingPreset: DownloadPreset | null) {
   } catch (error) {
     const errStr = String(error);
     if (errStr.includes('輸出資料夾無效')) {
-      showError('output-dir-error', '輸出資料夾無效');
+      showError('output-dir-error', t('scheduled.error.invalidOutputDir'));
     } else {
-      alert(`儲存預設失敗: ${error}`);
+      alert(t('scheduled.error.savePresetFailed', { error: String(error) }));
     }
   }
 }

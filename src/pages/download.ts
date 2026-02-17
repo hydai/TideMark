@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
+import { t } from '../i18n';
 
 interface VideoQuality {
   format_id: string;
@@ -71,7 +72,7 @@ interface NavigationData {
 export function renderDownloadPage(container: HTMLElement, navData?: NavigationData) {
   container.innerHTML = `
     <div class="page download-page">
-      <h1 class="page-title">下載</h1>
+      <h1 class="page-title">${t('download.title')}</h1>
 
       <div class="url-input-section">
         <div class="input-group">
@@ -79,9 +80,9 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
             type="text"
             id="url-input"
             class="url-input"
-            placeholder="貼上 YouTube 或 Twitch 連結..."
+            placeholder="${t('download.urlInput.placeholder')}"
           />
-          <button id="fetch-btn" class="primary-button">貼上並取得</button>
+          <button id="fetch-btn" class="primary-button">${t('download.urlInput.fetchButton')}</button>
         </div>
         <div id="error-message" class="error-message hidden"></div>
       </div>
@@ -90,7 +91,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
         <div class="video-info-card">
           <div class="video-thumbnail-container">
             <img id="video-thumbnail" class="video-thumbnail" alt="Video thumbnail" />
-            <div id="live-badge" class="live-badge hidden">直播中</div>
+            <div id="live-badge" class="live-badge hidden">${t('download.liveBadge')}</div>
           </div>
 
           <div class="video-details">
@@ -101,26 +102,26 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
         </div>
 
         <div class="download-config">
-          <h3 class="section-title">下載設定</h3>
+          <h3 class="section-title">${t('download.settings.title')}</h3>
 
           <div class="config-row">
-            <label class="config-label">影片品質</label>
+            <label class="config-label">${t('download.settings.quality')}</label>
             <select id="quality-select" class="config-select">
-              <option value="">載入中...</option>
+              <option value="">${t('download.settings.qualityLoading')}</option>
             </select>
           </div>
 
           <div class="config-row">
-            <label class="config-label">內容類型</label>
+            <label class="config-label">${t('download.settings.contentType')}</label>
             <select id="content-type-select" class="config-select">
-              <option value="video+audio">影片+音訊</option>
-              <option value="video_only">僅影片</option>
-              <option value="audio_only">僅音訊</option>
+              <option value="video+audio">${t('download.settings.contentTypeVideoAudio')}</option>
+              <option value="video_only">${t('download.settings.contentTypeVideoOnly')}</option>
+              <option value="audio_only">${t('download.settings.contentTypeAudioOnly')}</option>
             </select>
           </div>
 
           <div class="config-row" id="video-codec-row">
-            <label class="config-label">影片編解碼器</label>
+            <label class="config-label">${t('download.settings.videoCodec')}</label>
             <select id="video-codec-select" class="config-select">
               <option value="h264">H.264</option>
               <option value="vp9">VP9</option>
@@ -129,7 +130,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
           </div>
 
           <div class="config-row" id="audio-codec-row">
-            <label class="config-label">音訊編解碼器</label>
+            <label class="config-label">${t('download.settings.audioCodec')}</label>
             <select id="audio-codec-select" class="config-select">
               <option value="aac">AAC</option>
               <option value="mp3">MP3</option>
@@ -138,7 +139,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
           </div>
 
           <div class="config-row">
-            <label class="config-label">輸出檔名</label>
+            <label class="config-label">${t('download.settings.outputFilename')}</label>
             <input type="text" id="filename-input" class="config-input" value="{title}_{resolution}" />
             <div class="filename-help">
               可用變數: {type}, {id}, {title}, {channel}, {channel_name}, {date}, {resolution}, {duration}
@@ -146,44 +147,44 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
           </div>
 
           <div class="config-row">
-            <label class="config-label">輸出資料夾</label>
+            <label class="config-label">${t('download.settings.outputFolder')}</label>
             <div class="folder-picker">
               <input type="text" id="folder-input" class="config-input" value="~/Downloads" readonly />
-              <button id="folder-btn" class="secondary-button">選擇</button>
+              <button id="folder-btn" class="secondary-button">${t('download.actions.folderSelect')}</button>
             </div>
           </div>
 
           <div class="config-row">
-            <label class="config-label">輸出容器格式</label>
+            <label class="config-label">${t('download.settings.container')}</label>
             <select id="container-select" class="config-select">
-              <option value="auto">自動</option>
+              <option value="auto">${t('download.settings.containerAuto')}</option>
               <option value="mp4">MP4</option>
               <option value="mkv">MKV</option>
             </select>
           </div>
 
           <div class="config-row">
-            <label class="config-label">時間範圍（選填）</label>
+            <label class="config-label">${t('download.settings.timeRange')}</label>
             <div class="time-range-inputs">
-              <input type="text" id="start-time-input" class="time-input" placeholder="開始時間 (HH:MM:SS)" />
-              <span class="time-separator">至</span>
-              <input type="text" id="end-time-input" class="time-input" placeholder="結束時間 (HH:MM:SS)" />
+              <input type="text" id="start-time-input" class="time-input" placeholder="${t('download.settings.startTime')}" />
+              <span class="time-separator">${t('download.settings.timeSeparator')}</span>
+              <input type="text" id="end-time-input" class="time-input" placeholder="${t('download.settings.endTime')}" />
             </div>
             <div class="time-range-help">
-              支援格式: HH:MM:SS (例: 01:30:45)、MM:SS (例: 90:45)、純秒數 (例: 5445)
+              ${t('download.settings.timeRangeHelp')}
             </div>
             <div id="time-range-error" class="time-range-error hidden"></div>
           </div>
 
           <div class="config-row">
-            <button id="start-download-btn" class="primary-button large-button">開始下載</button>
-            <button id="record-stream-btn" class="primary-button large-button hidden" style="margin-left: 12px; background: #e91e63;">錄製直播</button>
+            <button id="start-download-btn" class="primary-button large-button">${t('download.actions.startDownload')}</button>
+            <button id="record-stream-btn" class="primary-button large-button hidden" style="margin-left: 12px; background: #e91e63;">${t('download.actions.recordStream')}</button>
           </div>
         </div>
       </div>
 
       <div id="downloads-section" class="downloads-section">
-        <h3 class="section-title">下載進度</h3>
+        <h3 class="section-title">${t('download.progress.title')}</h3>
         <div id="downloads-list" class="downloads-list"></div>
       </div>
     </div>
@@ -212,14 +213,14 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
   fetchBtn.addEventListener('click', async () => {
     const url = urlInput.value.trim();
     if (!url) {
-      showError('請輸入連結');
+      showError(t('download.error.enterUrl'));
       return;
     }
 
     hideError();
     hideVideoInfo();
     fetchBtn.disabled = true;
-    fetchBtn.textContent = '取得中...';
+    fetchBtn.textContent = t('download.urlInput.fetching');
 
     try {
       const videoInfo = await invoke<VideoInfo>('fetch_video_info', { url });
@@ -230,7 +231,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
       showError(String(error));
     } finally {
       fetchBtn.disabled = false;
-      fetchBtn.textContent = '貼上並取得';
+      fetchBtn.textContent = t('download.urlInput.fetchButton');
     }
   });
 
@@ -273,11 +274,11 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
     if (startTime || endTime) {
       // Validate time format
       if (startTime && !isValidTimeFormat(startTime)) {
-        showTimeRangeError('請輸入有效時間格式');
+        showTimeRangeError(t('download.error.invalidTime'));
         return;
       }
       if (endTime && !isValidTimeFormat(endTime)) {
-        showTimeRangeError('請輸入有效時間格式');
+        showTimeRangeError(t('download.error.invalidTime'));
         return;
       }
 
@@ -287,18 +288,18 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
         const endSeconds = parseTimeToSeconds(endTime);
 
         if (startSeconds >= endSeconds) {
-          showTimeRangeError('結束時間必須晚於開始時間');
+          showTimeRangeError(t('download.error.endBeforeStart'));
           return;
         }
 
         // Validate against video duration
         if (currentVideoInfo.duration) {
           if (startSeconds > currentVideoInfo.duration) {
-            showTimeRangeError('時間超出影片長度');
+            showTimeRangeError(t('download.error.timeExceedsDuration'));
             return;
           }
           if (endSeconds > currentVideoInfo.duration) {
-            showTimeRangeError('時間超出影片長度');
+            showTimeRangeError(t('download.error.timeExceedsDuration'));
             return;
           }
         }
@@ -429,9 +430,9 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
     if (info.duration && !info.is_live) {
       duration.textContent = formatDuration(info.duration);
     } else if (info.is_live) {
-      duration.textContent = '直播中';
+      duration.textContent = t('download.duration.live');
     } else {
-      duration.textContent = '時長未知';
+      duration.textContent = t('download.duration.unknown');
     }
 
     const liveBadge = container.querySelector('#live-badge') as HTMLElement;
@@ -439,7 +440,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
       liveBadge.classList.remove('hidden');
       // Show record button, hide/dim download button for live streams
       recordStreamBtn.classList.remove('hidden');
-      startDownloadBtn.textContent = '開始下載 (僅 VOD)';
+      startDownloadBtn.textContent = t('download.actions.startDownloadVodOnly');
       startDownloadBtn.disabled = true;
       // Hide time range inputs for live streams
       const timeRangeRow = container.querySelector('#start-time-input')?.closest('.config-row') as HTMLElement;
@@ -450,7 +451,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
       liveBadge.classList.add('hidden');
       // Show download button, hide record button for VODs
       recordStreamBtn.classList.add('hidden');
-      startDownloadBtn.textContent = '開始下載';
+      startDownloadBtn.textContent = t('download.actions.startDownload');
       startDownloadBtn.disabled = false;
       // Show time range inputs for VODs
       const timeRangeRow = container.querySelector('#start-time-input')?.closest('.config-row') as HTMLElement;
@@ -471,7 +472,7 @@ export function renderDownloadPage(container: HTMLElement, navData?: NavigationD
     if (qualities.length === 0) {
       const option = document.createElement('option');
       option.value = '';
-      option.textContent = '無可用畫質';
+      option.textContent = t('download.settings.noQuality');
       qualitySelect.appendChild(option);
       return;
     }
@@ -546,7 +547,7 @@ async function loadDownloadTasks(container: HTMLElement) {
 
 function renderDownloadTasks(container: HTMLElement) {
   if (downloadTasks.size === 0) {
-    container.innerHTML = '<p class="empty-message">目前沒有下載任務</p>';
+    container.innerHTML = `<p class="empty-message">${t('download.progress.empty')}</p>`;
     return;
   }
 
@@ -569,7 +570,7 @@ function createTaskCard(progress: DownloadProgress): HTMLElement {
     <div class="task-header">
       <h4 class="task-title">${progress.title}</h4>
       <span class="task-status">${getStatusText(progress.status)}</span>
-      ${isRecording ? '<span class="live-indicator">🔴 直播錄製</span>' : ''}
+      ${isRecording ? `<span class="live-indicator">${t('download.progress.liveRecording')}</span>` : ''}
     </div>
 
     <div class="task-progress">
@@ -580,20 +581,20 @@ function createTaskCard(progress: DownloadProgress): HTMLElement {
         <div class="progress-info">
           <span class="progress-percentage">${progress.percentage.toFixed(1)}%</span>
           <span class="progress-speed">${progress.speed}</span>
-          <span class="progress-eta">剩餘 ${progress.eta}</span>
+          <span class="progress-eta">${t('download.progress.eta', { eta: progress.eta })}</span>
         </div>
       ` : `
         <div class="recording-info">
           <div class="recording-stat">
-            <span class="stat-label">已錄製時長</span>
+            <span class="stat-label">${t('download.progress.recordedDuration')}</span>
             <span class="stat-value">${progress.recorded_duration || '00:00:00'}</span>
           </div>
           <div class="recording-stat">
-            <span class="stat-label">檔案大小</span>
+            <span class="stat-label">${t('download.progress.fileSize')}</span>
             <span class="stat-value">${formatBytes(progress.downloaded_bytes)}</span>
           </div>
           <div class="recording-stat">
-            <span class="stat-label">串流位元率</span>
+            <span class="stat-label">${t('download.progress.bitrate')}</span>
             <span class="stat-value">${progress.bitrate || 'N/A'}</span>
           </div>
         </div>
@@ -602,33 +603,33 @@ function createTaskCard(progress: DownloadProgress): HTMLElement {
 
     <div class="task-actions">
       ${progress.status === 'recording' ? `
-        <button class="action-btn stop-recording-btn" data-task-id="${progress.task_id}">停止錄製</button>
-        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">取消</button>
+        <button class="action-btn stop-recording-btn" data-task-id="${progress.task_id}">${t('download.progress.actions.stopRecording')}</button>
+        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">${t('download.progress.actions.cancel')}</button>
       ` : ''}
       ${progress.status === 'downloading' && !isRecording ? `
-        <button class="action-btn pause-btn" data-task-id="${progress.task_id}">暫停</button>
-        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">取消</button>
+        <button class="action-btn pause-btn" data-task-id="${progress.task_id}">${t('download.progress.actions.pause')}</button>
+        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">${t('download.progress.actions.cancel')}</button>
       ` : ''}
       ${progress.status === 'paused' ? `
-        <button class="action-btn resume-btn" data-task-id="${progress.task_id}">恢復</button>
-        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">取消</button>
+        <button class="action-btn resume-btn" data-task-id="${progress.task_id}">${t('download.progress.actions.resume')}</button>
+        <button class="action-btn cancel-btn" data-task-id="${progress.task_id}">${t('download.progress.actions.cancel')}</button>
       ` : ''}
       ${progress.status === 'processing' ? `
-        <p class="processing-text">正在後處理...</p>
+        <p class="processing-text">${t('download.progress.postProcessing')}</p>
       ` : ''}
       ${progress.status === 'completed' && progress.output_path ? `
-        <button class="action-btn open-btn" data-path="${progress.output_path}">開啟檔案</button>
-        <button class="action-btn folder-btn" data-path="${progress.output_path}">顯示資料夾</button>
-        <button class="action-btn transcribe-btn" data-path="${progress.output_path}">送往轉錄</button>
+        <button class="action-btn open-btn" data-path="${progress.output_path}">${t('download.progress.actions.openFile')}</button>
+        <button class="action-btn folder-btn" data-path="${progress.output_path}">${t('download.progress.actions.showFolder')}</button>
+        <button class="action-btn transcribe-btn" data-path="${progress.output_path}">${t('download.progress.actions.sendToTranscription')}</button>
       ` : ''}
       ${progress.status === 'failed' && progress.error_message ? `
         <p class="error-text">${progress.error_message}</p>
       ` : ''}
       ${progress.status === 'stream_interrupted' ? `
-        <p class="warning-text">串流中斷 - 已錄製內容保留</p>
+        <p class="warning-text">${t('download.progress.streamInterrupted')}</p>
         ${progress.output_path ? `
-          <button class="action-btn open-btn" data-path="${progress.output_path}">開啟檔案</button>
-          <button class="action-btn folder-btn" data-path="${progress.output_path}">顯示資料夾</button>
+          <button class="action-btn open-btn" data-path="${progress.output_path}">${t('download.progress.actions.openFile')}</button>
+          <button class="action-btn folder-btn" data-path="${progress.output_path}">${t('download.progress.actions.showFolder')}</button>
         ` : ''}
       ` : ''}
     </div>
@@ -726,15 +727,15 @@ function createTaskCard(progress: DownloadProgress): HTMLElement {
 
 function getStatusText(status: string): string {
   const statusMap: Record<string, string> = {
-    'queued': '排隊中',
-    'downloading': '下載中',
-    'recording': '錄製中',
-    'processing': '處理中',
-    'completed': '已完成',
-    'failed': '失敗',
-    'cancelled': '已取消',
-    'paused': '已暫停',
-    'stream_interrupted': '串流中斷',
+    'queued': t('download.status.queued'),
+    'downloading': t('download.status.downloading'),
+    'recording': t('download.status.recording'),
+    'processing': t('download.status.processing'),
+    'completed': t('download.status.completed'),
+    'failed': t('download.status.failed'),
+    'cancelled': t('download.status.cancelled'),
+    'paused': t('download.status.paused'),
+    'stream_interrupted': t('download.status.stream_interrupted'),
   };
   return statusMap[status] || status;
 }

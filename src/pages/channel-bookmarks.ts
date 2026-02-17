@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { ConfigManager } from '../config';
+import { t } from '../i18n';
 
 interface ChannelBookmark {
   id: string;
@@ -174,10 +175,10 @@ function formatRelativeTime(isoString: string): string {
   const diffHour = Math.floor(diffMin / 60);
   const diffDay = Math.floor(diffHour / 24);
 
-  if (diffDay >= 1) return `${diffDay} 天前`;
-  if (diffHour >= 1) return `${diffHour} 小時前`;
-  if (diffMin >= 1) return `${diffMin} 分鐘前`;
-  return '剛剛';
+  if (diffDay >= 1) return t('bookmarks.relativeTime.daysAgo', { days: String(diffDay) });
+  if (diffHour >= 1) return t('bookmarks.relativeTime.hoursAgo', { hours: String(diffHour) });
+  if (diffMin >= 1) return t('bookmarks.relativeTime.minutesAgo', { minutes: String(diffMin) });
+  return t('bookmarks.relativeTime.justNow');
 }
 
 /** Silently refresh stale metadata entries in background and update card UI. */
@@ -271,7 +272,7 @@ function updateCardMetadataUI(channelId: string, platform: string, meta: Channel
   const followerEl = card.querySelector<HTMLElement>('.bookmark-follower-count');
   if (followerEl) {
     if (meta.follower_count !== null && meta.follower_count !== undefined) {
-      const suffix = platform === 'youtube' ? '訂閱者' : '追蹤者';
+      const suffix = platform === 'youtube' ? t('bookmarks.card.subscribers') : t('bookmarks.card.followers');
       followerEl.textContent = `${formatFollowerCount(meta.follower_count)} ${suffix}`;
       followerEl.style.display = '';
     }
@@ -280,7 +281,7 @@ function updateCardMetadataUI(channelId: string, platform: string, meta: Channel
   // Update last stream time
   const lastStreamEl = card.querySelector<HTMLElement>('.bookmark-last-stream');
   if (lastStreamEl && meta.last_stream_at) {
-    lastStreamEl.textContent = `${formatRelativeTime(meta.last_stream_at)}直播`;
+    lastStreamEl.textContent = t('bookmarks.card.streamedAgo', { time: formatRelativeTime(meta.last_stream_at) });
     lastStreamEl.style.display = '';
   }
 }
@@ -342,7 +343,7 @@ function updateCardBadge(channel_id: string, platform: string, is_live: boolean)
       }
     } else {
       badge.className = 'bookmark-live-badge live';
-      badge.textContent = '直播中';
+      badge.textContent = t('bookmarks.card.liveBadge');
     }
   } else {
     if (!badge) {
@@ -364,7 +365,7 @@ function updateCardBadge(channel_id: string, platform: string, is_live: boolean)
 function createLiveBadge(isLive: boolean): HTMLElement {
   const badge = document.createElement('span');
   badge.className = `bookmark-live-badge ${isLive ? 'live' : 'offline'}`;
-  badge.textContent = isLive ? '直播中' : '';
+  badge.textContent = isLive ? t('bookmarks.card.liveBadge') : '';
   return badge;
 }
 
@@ -383,13 +384,13 @@ function renderPage(container: HTMLElement, scheduledEnabled: boolean) {
 
   const title = document.createElement('h1');
   title.className = 'page-title';
-  title.textContent = '頻道書籤';
+  title.textContent = t('bookmarks.title');
   header.appendChild(title);
 
   const addBtn = document.createElement('button');
   addBtn.className = 'primary-button';
   addBtn.id = 'add-bookmark-btn';
-  addBtn.textContent = '新增書籤';
+  addBtn.textContent = t('bookmarks.add');
   header.appendChild(addBtn);
 
   page.appendChild(header);
@@ -398,7 +399,7 @@ function renderPage(container: HTMLElement, scheduledEnabled: boolean) {
   if (!scheduledEnabled) {
     const banner = document.createElement('div');
     banner.className = 'bookmark-status-hint';
-    banner.textContent = '啟用排程下載以獲取即時直播狀態';
+    banner.textContent = t('bookmarks.scheduledBanner');
     page.appendChild(banner);
   }
 
@@ -442,18 +443,18 @@ function createAddForm(): HTMLElement {
   urlInput.type = 'text';
   urlInput.className = 'form-input';
   urlInput.id = 'bookmark-url-input';
-  urlInput.placeholder = 'https://twitch.tv/channelname 或 https://youtube.com/@handle';
+  urlInput.placeholder = t('bookmarks.urlInput.placeholder');
   urlRow.appendChild(urlInput);
 
   const resolveBtn = document.createElement('button');
   resolveBtn.className = 'secondary-button';
   resolveBtn.id = 'bookmark-resolve-btn';
-  resolveBtn.textContent = '解析';
+  resolveBtn.textContent = t('bookmarks.urlInput.resolve');
   urlRow.appendChild(resolveBtn);
 
   const cancelBtn = document.createElement('button');
   cancelBtn.className = 'secondary-button';
-  cancelBtn.textContent = '取消';
+  cancelBtn.textContent = t('bookmarks.modal.cancelButton');
   cancelBtn.addEventListener('click', () => {
     wrapper.style.display = 'none';
     clearAddForm();
@@ -496,7 +497,7 @@ function createAddForm(): HTMLElement {
   const saveBtn = document.createElement('button');
   saveBtn.className = 'primary-button';
   saveBtn.id = 'bookmark-save-btn';
-  saveBtn.textContent = '加入書籤';
+  saveBtn.textContent = t('bookmarks.modal.saveButton');
   saveBtn.style.display = 'none';
   inner.appendChild(saveBtn);
 
@@ -506,12 +507,12 @@ function createAddForm(): HTMLElement {
   resolveBtn.addEventListener('click', async () => {
     const url = urlInput.value.trim();
     if (!url) {
-      showFormError('bookmark-url-error', '請輸入頻道網址');
+      showFormError('bookmark-url-error', t('bookmarks.error.enterUrl'));
       return;
     }
 
     resolveBtn.disabled = true;
-    resolveBtn.textContent = '解析中...';
+    resolveBtn.textContent = t('bookmarks.urlInput.resolving');
     hideFormError('bookmark-url-error');
     channelInfoDiv.style.display = 'none';
     saveBtn.style.display = 'none';
@@ -545,14 +546,14 @@ function createAddForm(): HTMLElement {
 
     } catch (error) {
       const errStr = String(error);
-      const msg = errStr.includes('無法辨識') ? '無法辨識此頻道' : `解析失敗: ${errStr}`;
+      const msg = errStr.includes('無法辨識') ? t('bookmarks.error.unrecognized') : t('bookmarks.error.resolveFailed', { error: errStr });
       showFormError('bookmark-url-error', msg);
       channelIdInput.value = '';
       channelNameInput.value = '';
       platformInput.value = '';
     } finally {
       resolveBtn.disabled = false;
-      resolveBtn.textContent = '解析';
+      resolveBtn.textContent = t('bookmarks.urlInput.resolve');
     }
   });
 
@@ -568,7 +569,7 @@ function createAddForm(): HTMLElement {
     const platform = platformInput.value;
 
     if (!channelId || !channelName || !platform) {
-      showFormError('bookmark-url-error', '請先解析頻道網址');
+      showFormError('bookmark-url-error', t('bookmarks.error.resolveFirst'));
       return;
     }
 
@@ -605,9 +606,9 @@ function createAddForm(): HTMLElement {
     } catch (error) {
       const errStr = String(error);
       if (errStr.includes('已在書籤中')) {
-        showFormError('bookmark-url-error', '此頻道已在書籤中');
+        showFormError('bookmark-url-error', t('bookmarks.error.alreadyBookmarked'));
       } else {
-        showFormError('bookmark-url-error', `儲存失敗: ${errStr}`);
+        showFormError('bookmark-url-error', t('bookmarks.error.saveFailed', { error: errStr }));
       }
       saveBtn.disabled = false;
     }
@@ -642,7 +643,7 @@ function createBookmarkList(scheduledEnabled: boolean): HTMLElement {
   if (bookmarks.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-message';
-    empty.textContent = '尚未加入任何頻道書籤';
+    empty.textContent = t('bookmarks.empty');
     section.appendChild(empty);
     return section;
   }
@@ -676,7 +677,7 @@ function createBookmarkCard(
   // Drag handle
   const dragHandle = document.createElement('div');
   dragHandle.className = 'bookmark-drag-handle';
-  dragHandle.title = '拖曳以重新排序';
+  dragHandle.title = t('bookmarks.card.dragHandle');
   dragHandle.textContent = '⋮⋮';
   card.appendChild(dragHandle);
 
@@ -726,7 +727,7 @@ function createBookmarkCard(
     if (liveStatus === true) {
       const badge = document.createElement('span');
       badge.className = 'bookmark-live-badge live';
-      badge.textContent = '直播中';
+      badge.textContent = t('bookmarks.card.liveBadge');
       card.appendChild(badge);
     } else if (liveStatus === false) {
       const badge = document.createElement('span');
@@ -740,14 +741,14 @@ function createBookmarkCard(
   if (presetEnabled === true) {
     const presetBadge = document.createElement('span');
     presetBadge.className = 'bookmark-preset-badge enabled';
-    presetBadge.textContent = '📡 排程啟用中';
-    presetBadge.title = '此頻道已設定排程下載（啟用中）';
+    presetBadge.textContent = t('bookmarks.card.presetEnabled');
+    presetBadge.title = t('bookmarks.card.presetEnabledTitle');
     card.appendChild(presetBadge);
   } else if (presetEnabled === false) {
     const presetBadge = document.createElement('span');
     presetBadge.className = 'bookmark-preset-badge disabled';
-    presetBadge.textContent = '📡 排程已停用';
-    presetBadge.title = '此頻道已設定排程下載（已停用）';
+    presetBadge.textContent = t('bookmarks.card.presetDisabled');
+    presetBadge.title = t('bookmarks.card.presetDisabledTitle');
     card.appendChild(presetBadge);
   }
   // presetEnabled === undefined → no preset badge
@@ -773,7 +774,7 @@ function createBookmarkCard(
   const followerEl = document.createElement('span');
   followerEl.className = 'bookmark-follower-count';
   if (metadata?.follower_count !== null && metadata?.follower_count !== undefined) {
-    const suffix = bookmark.platform === 'youtube' ? '訂閱者' : '追蹤者';
+    const suffix = bookmark.platform === 'youtube' ? t('bookmarks.card.subscribers') : t('bookmarks.card.followers');
     followerEl.textContent = `${formatFollowerCount(metadata.follower_count)} ${suffix}`;
   } else {
     followerEl.style.display = 'none';
@@ -783,7 +784,7 @@ function createBookmarkCard(
   const lastStreamEl = document.createElement('span');
   lastStreamEl.className = 'bookmark-last-stream';
   if (metadata?.last_stream_at) {
-    lastStreamEl.textContent = `${formatRelativeTime(metadata.last_stream_at)}直播`;
+    lastStreamEl.textContent = t('bookmarks.card.streamedAgo', { time: formatRelativeTime(metadata.last_stream_at) });
   } else {
     lastStreamEl.style.display = 'none';
   }
@@ -799,7 +800,7 @@ function createBookmarkCard(
 
   const notesDisplay = document.createElement('span');
   notesDisplay.className = 'bookmark-notes-display';
-  notesDisplay.textContent = bookmark.notes || '（點擊新增備註）';
+  notesDisplay.textContent = bookmark.notes || t('bookmarks.card.notesEmpty');
   if (!bookmark.notes) notesDisplay.classList.add('placeholder');
   notesArea.appendChild(notesDisplay);
 
@@ -807,7 +808,7 @@ function createBookmarkCard(
   notesInput.type = 'text';
   notesInput.className = 'bookmark-notes-input form-input';
   notesInput.value = bookmark.notes;
-  notesInput.placeholder = '輸入備註...';
+  notesInput.placeholder = t('bookmarks.card.notesPlaceholder');
   notesInput.style.display = 'none';
   notesArea.appendChild(notesInput);
 
@@ -816,22 +817,22 @@ function createBookmarkCard(
   // Metadata refresh button
   const refreshBtn = document.createElement('button');
   refreshBtn.className = 'action-btn bookmark-refresh-btn';
-  refreshBtn.title = '重新整理頻道資訊';
+  refreshBtn.title = t('bookmarks.card.refresh');
   refreshBtn.textContent = '↺';
   card.appendChild(refreshBtn);
 
   // Delete button
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'action-btn delete-btn bookmark-delete-btn';
-  deleteBtn.textContent = '刪除';
-  deleteBtn.title = '刪除此書籤';
+  deleteBtn.textContent = t('bookmarks.card.delete');
+  deleteBtn.title = t('bookmarks.card.deleteTitle');
   card.appendChild(deleteBtn);
 
   // Expand/collapse button for video list
   const expandBtn = document.createElement('button');
   expandBtn.className = 'action-btn bookmark-expand-btn';
-  expandBtn.textContent = '展開';
-  expandBtn.title = '展開最新影片列表';
+  expandBtn.textContent = t('bookmarks.card.expand');
+  expandBtn.title = t('bookmarks.card.expandTitle');
   card.appendChild(expandBtn);
 
   // ── Quick action buttons row (F8.5) ──────────────────────────────────────────
@@ -841,29 +842,29 @@ function createBookmarkCard(
   // Action 1: Download latest VOD
   const downloadVodBtn = document.createElement('button');
   downloadVodBtn.className = 'action-btn bookmark-quick-btn';
-  downloadVodBtn.textContent = '下載最新 VOD';
-  downloadVodBtn.title = '取得此頻道最新 VOD 並前往下載';
+  downloadVodBtn.textContent = t('bookmarks.card.downloadVod');
+  downloadVodBtn.title = t('bookmarks.card.downloadVodTitle');
   quickActionsRow.appendChild(downloadVodBtn);
 
   // Action 2: Add scheduled preset
   const schedPresetBtn = document.createElement('button');
   schedPresetBtn.className = 'action-btn bookmark-quick-btn';
-  schedPresetBtn.textContent = '新增排程預設';
-  schedPresetBtn.title = '為此頻道新增排程下載預設';
+  schedPresetBtn.textContent = t('bookmarks.card.addScheduled');
+  schedPresetBtn.title = t('bookmarks.card.addScheduledTitle');
   quickActionsRow.appendChild(schedPresetBtn);
 
   // Action 3: Open channel page
   const openChannelBtn = document.createElement('button');
   openChannelBtn.className = 'action-btn bookmark-quick-btn';
-  openChannelBtn.textContent = '開啟頻道';
-  openChannelBtn.title = '在瀏覽器中開啟此頻道頁面';
+  openChannelBtn.textContent = t('bookmarks.card.openChannel');
+  openChannelBtn.title = t('bookmarks.card.openChannelTitle');
   quickActionsRow.appendChild(openChannelBtn);
 
   // Action 4: Copy channel URL
   const copyUrlBtn = document.createElement('button');
   copyUrlBtn.className = 'action-btn bookmark-quick-btn';
-  copyUrlBtn.textContent = '複製連結';
-  copyUrlBtn.title = '複製頻道 URL 到剪貼簿';
+  copyUrlBtn.textContent = t('bookmarks.card.copyUrl');
+  copyUrlBtn.title = t('bookmarks.card.copyUrlTitle');
   quickActionsRow.appendChild(copyUrlBtn);
 
   card.appendChild(quickActionsRow);
@@ -881,14 +882,14 @@ function createBookmarkCard(
     isExpanded = !isExpanded;
 
     if (!isExpanded) {
-      expandBtn.textContent = '展開';
-      expandBtn.title = '展開最新影片列表';
+      expandBtn.textContent = t('bookmarks.card.expand');
+      expandBtn.title = t('bookmarks.card.expandTitle');
       videoListEl.style.display = 'none';
       return;
     }
 
-    expandBtn.textContent = '收起';
-    expandBtn.title = '收起影片列表';
+    expandBtn.textContent = t('bookmarks.card.collapse');
+    expandBtn.title = t('bookmarks.card.collapseTitle');
     videoListEl.style.display = 'block';
 
     const cacheKey = `${bookmark.platform}:${bookmark.channel_id}`;
@@ -944,7 +945,7 @@ function createBookmarkCard(
   const saveNotes = async () => {
     const newNotes = notesInput.value.trim();
     notesInput.style.display = 'none';
-    notesDisplay.textContent = newNotes || '（點擊新增備註）';
+    notesDisplay.textContent = newNotes || t('bookmarks.card.notesEmpty');
     notesDisplay.classList.toggle('placeholder', !newNotes);
     notesDisplay.style.display = '';
 
@@ -971,7 +972,7 @@ function createBookmarkCard(
 
   // Delete button
   deleteBtn.addEventListener('click', async () => {
-    if (!confirm(`確定要刪除頻道「${bookmark.channel_name}」的書籤嗎？`)) return;
+    if (!confirm(t('bookmarks.confirm.deleteBookmark', { name: bookmark.channel_name }))) return;
     deleteBtn.disabled = true;
     try {
       await invoke('delete_channel_bookmark', { id: bookmark.id });
@@ -981,7 +982,7 @@ function createBookmarkCard(
         renderPage(containerEl, config.enable_scheduled_downloads);
       }
     } catch (error) {
-      alert(`刪除失敗: ${error}`);
+      alert(t('bookmarks.error.deleteFailed', { error: String(error) }));
       deleteBtn.disabled = false;
     }
   });
@@ -1060,7 +1061,7 @@ function createBookmarkCard(
   // Action 1: Download latest VOD
   downloadVodBtn.addEventListener('click', async () => {
     downloadVodBtn.disabled = true;
-    downloadVodBtn.textContent = '取得中…';
+    downloadVodBtn.textContent = t('bookmarks.card.downloadVodLoading');
     try {
       const videos = await invoke<ChannelVideo[]>('fetch_channel_videos', {
         channelId: bookmark.channel_id,
@@ -1068,7 +1069,7 @@ function createBookmarkCard(
         count: 1,
       });
       if (videos.length === 0) {
-        showToast('此頻道目前沒有可下載的 VOD');
+        showToast(t('bookmarks.error.noVod'));
         return;
       }
       const latestUrl = videos[0].url;
@@ -1077,10 +1078,10 @@ function createBookmarkCard(
         detail: { url: latestUrl },
       }));
     } catch (_err) {
-      showToast('取得最新 VOD 失敗，請稍後再試');
+      showToast(t('bookmarks.error.getVodFailed'));
     } finally {
       downloadVodBtn.disabled = false;
-      downloadVodBtn.textContent = '下載最新 VOD';
+      downloadVodBtn.textContent = t('bookmarks.card.downloadVod');
     }
   });
 
@@ -1090,7 +1091,7 @@ function createBookmarkCard(
     const key = `${bookmark.platform}:${bookmark.channel_id}`;
     if (presetLinks.has(key)) {
       // Preset exists — ask user if they want to navigate there
-      if (confirm('此頻道已有排程預設，是否前往查看？')) {
+      if (confirm(t('bookmarks.toast.hasPreset'))) {
         window.dispatchEvent(new CustomEvent('app:navigate-scheduled', {
           detail: null,
         }));
@@ -1122,9 +1123,9 @@ function createBookmarkCard(
     const url = getChannelUrl(bookmark.platform, bookmark.channel_id);
     try {
       await navigator.clipboard.writeText(url);
-      showToast('已複製');
+      showToast(t('bookmarks.toast.copied'));
     } catch (_err) {
-      showToast('複製失敗，請手動複製');
+      showToast(t('bookmarks.error.copyFailed'));
     }
   });
 
@@ -1177,7 +1178,7 @@ function renderVideoListLoading(container: HTMLElement) {
   container.textContent = '';
   const spinner = document.createElement('div');
   spinner.className = 'bookmark-video-loading';
-  spinner.textContent = '載入中…';
+  spinner.textContent = t('bookmarks.videos.loading');
   container.appendChild(spinner);
 }
 
@@ -1188,12 +1189,12 @@ function renderVideoListError(container: HTMLElement, onRetry: () => void) {
   errDiv.className = 'bookmark-video-error';
 
   const msg = document.createElement('span');
-  msg.textContent = '無法載入影片列表，請稍後重試';
+  msg.textContent = t('bookmarks.videos.loadError');
   errDiv.appendChild(msg);
 
   const retryBtn = document.createElement('button');
   retryBtn.className = 'secondary-button bookmark-video-retry-btn';
-  retryBtn.textContent = '重試';
+  retryBtn.textContent = t('bookmarks.videos.retry');
   retryBtn.addEventListener('click', onRetry);
   errDiv.appendChild(retryBtn);
 
@@ -1207,7 +1208,7 @@ function renderVideoList(container: HTMLElement, videos: ChannelVideo[]) {
   if (videos.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'bookmark-video-empty';
-    empty.textContent = '此頻道目前沒有公開影片';
+    empty.textContent = t('bookmarks.videos.empty');
     container.appendChild(empty);
     return;
   }
@@ -1308,22 +1309,22 @@ function formatRelativeDate(isoString: string): string {
   const diffMonth = Math.floor(diffDay / 30);
   const diffYear = Math.floor(diffDay / 365);
 
-  if (diffSec < 60) return '剛才';
-  if (diffMin < 60) return `${diffMin} 分鐘前`;
-  if (diffHr < 24) return `${diffHr} 小時前`;
-  if (diffDay < 7) return `${diffDay} 天前`;
-  if (diffWeek < 4) return `${diffWeek} 週前`;
-  if (diffMonth < 12) return `${diffMonth} 個月前`;
-  return `${diffYear} 年前`;
+  if (diffSec < 60) return t('bookmarks.relativeTime.justNow');
+  if (diffMin < 60) return t('bookmarks.relativeTime.minutesAgo', { minutes: String(diffMin) });
+  if (diffHr < 24) return t('bookmarks.relativeTime.hoursAgo', { hours: String(diffHr) });
+  if (diffDay < 7) return t('bookmarks.relativeTime.daysAgo', { days: String(diffDay) });
+  if (diffWeek < 4) return t('bookmarks.relativeTime.weeksAgo', { weeks: String(diffWeek) });
+  if (diffMonth < 12) return t('bookmarks.relativeTime.monthsAgo', { months: String(diffMonth) });
+  return t('bookmarks.relativeTime.yearsAgo', { years: String(diffYear) });
 }
 
 /** Format a view count as a compact string (e.g. "12.3K 次觀看"). */
 function formatVideoViewCount(count: number): string {
   if (count >= 1_000_000) {
-    return `${(count / 1_000_000).toFixed(1)}M 次觀看`;
+    return t('bookmarks.viewCount.millions', { count: (count / 1_000_000).toFixed(1) });
   }
   if (count >= 1_000) {
-    return `${(count / 1_000).toFixed(1)}K 次觀看`;
+    return t('bookmarks.viewCount.thousands', { count: (count / 1_000).toFixed(1) });
   }
-  return `${count} 次觀看`;
+  return t('bookmarks.viewCount.exact', { count: String(count) });
 }

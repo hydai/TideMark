@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { listen } from '@tauri-apps/api/event';
+import { t } from '../i18n';
 
 interface AsrModel {
   engine: string;
@@ -44,15 +45,15 @@ let currentEngine: string = 'whisper';
 export function renderSubtitlesPage(container: HTMLElement) {
   container.innerHTML = `
     <div class="page subtitles-page">
-      <h1 class="page-title">字幕</h1>
+      <h1 class="page-title">${t('subtitles.title')}</h1>
 
       <section class="file-input-section">
         <div id="file-dropzone" class="file-dropzone">
           <div class="dropzone-content">
             <span class="dropzone-icon">📁</span>
-            <p class="dropzone-text">拖放影音檔案至此</p>
-            <p class="dropzone-hint">或</p>
-            <button id="select-file-btn" class="primary-button">選擇檔案</button>
+            <p class="dropzone-text">${t('subtitles.fileInput.dropzoneText')}</p>
+            <p class="dropzone-hint">${t('subtitles.fileInput.dropzoneHint')}</p>
+            <button id="select-file-btn" class="primary-button">${t('subtitles.fileInput.selectFile')}</button>
           </div>
         </div>
 
@@ -63,17 +64,17 @@ export function renderSubtitlesPage(container: HTMLElement) {
               <h3 id="file-name" class="file-name"></h3>
               <p id="file-meta" class="file-meta"></p>
             </div>
-            <button id="clear-file-btn" class="icon-button" title="清除檔案">✕</button>
+            <button id="clear-file-btn" class="icon-button" title="${t('subtitles.fileInput.clearFile')}">✕</button>
           </div>
         </div>
       </section>
 
       <section class="asr-engine-section">
-        <h2 class="section-title">ASR 引擎</h2>
+        <h2 class="section-title">${t('subtitles.engine.title')}</h2>
 
         <div class="engine-tabs">
-          <button class="engine-tab active" data-category="local">本地引擎</button>
-          <button class="engine-tab" data-category="cloud">雲端引擎 (BYOK)</button>
+          <button class="engine-tab active" data-category="local">${t('subtitles.engine.localEngine')}</button>
+          <button class="engine-tab" data-category="cloud">${t('subtitles.engine.cloudEngine')}</button>
         </div>
 
         <div id="local-engines" class="engine-category active">
@@ -90,72 +91,72 @@ export function renderSubtitlesPage(container: HTMLElement) {
 
           <div id="whisper-config" class="engine-config">
             <div class="config-row">
-              <label class="config-label">語言</label>
+              <label class="config-label">${t('subtitles.config.language')}</label>
               <select id="whisper-language" class="config-select">
-                <option value="auto">自動偵測</option>
-                <option value="zh">中文</option>
-                <option value="en">英文</option>
-                <option value="ja">日文</option>
-                <option value="ko">韓文</option>
+                <option value="auto">${t('subtitles.config.languageAuto')}</option>
+                <option value="zh">${t('subtitles.config.languageZh')}</option>
+                <option value="en">${t('subtitles.config.languageEn')}</option>
+                <option value="ja">${t('subtitles.config.languageJa')}</option>
+                <option value="ko">${t('subtitles.config.languageKo')}</option>
               </select>
             </div>
 
             <div class="config-row">
-              <label class="config-label">模型大小</label>
+              <label class="config-label">${t('subtitles.config.modelSize')}</label>
               <select id="whisper-model" class="config-select">
-                <option value="tiny">Tiny (最快，精度低)</option>
-                <option value="base">Base</option>
-                <option value="small">Small</option>
-                <option value="medium">Medium (推薦)</option>
-                <option value="large">Large (最準，速度慢)</option>
+                <option value="tiny">${t('subtitles.config.modelTiny')}</option>
+                <option value="base">${t('subtitles.config.modelBase')}</option>
+                <option value="small">${t('subtitles.config.modelSmall')}</option>
+                <option value="medium">${t('subtitles.config.modelMedium')}</option>
+                <option value="large">${t('subtitles.config.modelLarge')}</option>
               </select>
             </div>
 
             <div class="config-row">
-              <label class="config-label">硬體模式</label>
+              <label class="config-label">${t('subtitles.config.hardwareMode')}</label>
               <select id="whisper-hardware" class="config-select">
-                <option value="auto">自動</option>
-                <option value="gpu">GPU</option>
-                <option value="cpu">CPU</option>
+                <option value="auto">${t('subtitles.config.hardwareAuto')}</option>
+                <option value="gpu">${t('subtitles.config.hardwareGpu')}</option>
+                <option value="cpu">${t('subtitles.config.hardwareCpu')}</option>
               </select>
             </div>
 
             <div class="config-row">
-              <label class="config-label">輸出格式</label>
+              <label class="config-label">${t('subtitles.config.outputFormat')}</label>
               <select id="whisper-output" class="config-select">
-                <option value="srt">SRT 字幕</option>
-                <option value="txt">純文字</option>
-                <option value="both">雙格式</option>
+                <option value="srt">${t('subtitles.config.outputSrt')}</option>
+                <option value="txt">${t('subtitles.config.outputTxt')}</option>
+                <option value="both">${t('subtitles.config.outputBoth')}</option>
               </select>
             </div>
 
             <div class="config-row">
               <label class="checkbox-label">
                 <input type="checkbox" id="whisper-vad" />
-                <span>啟用 VAD (語音活動偵測)</span>
+                <span>${t('subtitles.config.enableVad')}</span>
               </label>
             </div>
 
             <div class="config-row">
               <label class="checkbox-label">
                 <input type="checkbox" id="whisper-demucs" />
-                <span>啟用 Demucs (人聲分離)</span>
+                <span>${t('subtitles.config.enableDemucs')}</span>
               </label>
             </div>
           </div>
 
           <div id="qwen-config" class="engine-config hidden">
             <div class="config-row">
-              <label class="config-label">語言</label>
+              <label class="config-label">${t('subtitles.config.language')}</label>
               <select id="qwen-language" class="config-select">
-                <option value="auto">自動偵測</option>
-                <option value="zh">中文</option>
-                <option value="en">英文</option>
+                <option value="auto">${t('subtitles.config.languageAuto')}</option>
+                <option value="zh">${t('subtitles.config.languageZh')}</option>
+                <option value="en">${t('subtitles.config.languageEn')}</option>
               </select>
             </div>
 
             <div class="config-row">
-              <label class="config-label">模型</label>
+              <label class="config-label">${t('subtitles.config.modelQwen')}</label>
               <select id="qwen-model" class="config-select">
                 <option value="qwen3-asr-large">Qwen3-ASR-Large (推薦)</option>
                 <option value="qwen3-asr-base">Qwen3-ASR-Base</option>
@@ -163,35 +164,35 @@ export function renderSubtitlesPage(container: HTMLElement) {
             </div>
 
             <div class="config-row">
-              <label class="config-label">輸出格式</label>
+              <label class="config-label">${t('subtitles.config.outputFormat')}</label>
               <select id="qwen-output" class="config-select">
-                <option value="srt">SRT 字幕</option>
-                <option value="txt">純文字</option>
-                <option value="both">雙格式</option>
+                <option value="srt">${t('subtitles.config.outputSrt')}</option>
+                <option value="txt">${t('subtitles.config.outputTxt')}</option>
+                <option value="both">${t('subtitles.config.outputBoth')}</option>
               </select>
             </div>
 
             <div class="config-row">
               <label class="checkbox-label">
                 <input type="checkbox" id="qwen-punctuation" checked />
-                <span>啟用標點符號</span>
+                <span>${t('subtitles.config.enablePunctuation')}</span>
               </label>
             </div>
 
             <div class="config-row">
               <label class="checkbox-label">
                 <input type="checkbox" id="qwen-traditional" />
-                <span>繁體中文輸出</span>
+                <span>${t('subtitles.config.traditionalChinese')}</span>
               </label>
             </div>
 
             <div class="config-row">
-              <label class="config-label">最長秒數</label>
+              <label class="config-label">${t('subtitles.config.maxSeconds')}</label>
               <input type="number" id="qwen-max-seconds" class="config-input" value="30" min="1" max="60" />
             </div>
 
             <div class="config-row">
-              <label class="config-label">最長字數</label>
+              <label class="config-label">${t('subtitles.config.maxChars')}</label>
               <input type="number" id="qwen-max-chars" class="config-input" value="50" min="10" max="200" />
             </div>
           </div>
@@ -215,75 +216,75 @@ export function renderSubtitlesPage(container: HTMLElement) {
 
           <div id="cloud-config" class="engine-config">
             <div class="config-row">
-              <label class="config-label">語言</label>
+              <label class="config-label">${t('subtitles.config.language')}</label>
               <select id="cloud-language" class="config-select">
-                <option value="auto">自動偵測</option>
-                <option value="zh">中文</option>
-                <option value="en">英文</option>
-                <option value="ja">日文</option>
-                <option value="ko">韓文</option>
+                <option value="auto">${t('subtitles.config.languageAuto')}</option>
+                <option value="zh">${t('subtitles.config.languageZh')}</option>
+                <option value="en">${t('subtitles.config.languageEn')}</option>
+                <option value="ja">${t('subtitles.config.languageJa')}</option>
+                <option value="ko">${t('subtitles.config.languageKo')}</option>
               </select>
             </div>
 
             <div class="config-row">
-              <label class="config-label">輸出格式</label>
+              <label class="config-label">${t('subtitles.config.outputFormat')}</label>
               <select id="cloud-output" class="config-select">
-                <option value="srt">SRT 字幕</option>
-                <option value="txt">純文字</option>
-                <option value="both">雙格式</option>
+                <option value="srt">${t('subtitles.config.outputSrt')}</option>
+                <option value="txt">${t('subtitles.config.outputTxt')}</option>
+                <option value="both">${t('subtitles.config.outputBoth')}</option>
               </select>
             </div>
 
             <div class="config-row">
               <label class="checkbox-label">
                 <input type="checkbox" id="cloud-auto-segment" checked />
-                <span>自動分段 (大檔案)</span>
+                <span>${t('subtitles.config.autoSegment')}</span>
               </label>
             </div>
 
             <div id="cloud-api-warning" class="warning-message">
               <span>⚠️</span>
-              <span>請先在設定頁面中設定 API Key</span>
+              <span>${t('subtitles.config.apiKeyWarning')}</span>
             </div>
           </div>
         </div>
       </section>
 
       <section class="asr-environment-section">
-        <h2 class="section-title">環境狀態</h2>
+        <h2 class="section-title">${t('subtitles.environment.title')}</h2>
 
         <div class="environment-status">
           <div class="status-row">
-            <span class="status-label">Python 環境</span>
-            <span id="python-status" class="status-value">檢查中...</span>
+            <span class="status-label">${t('subtitles.environment.python')}</span>
+            <span id="python-status" class="status-value">${t('subtitles.environment.checking')}</span>
           </div>
 
           <div class="status-row">
-            <span class="status-label">GPU 可用性</span>
-            <span id="gpu-status" class="status-value">檢查中...</span>
+            <span class="status-label">${t('subtitles.environment.gpu')}</span>
+            <span id="gpu-status" class="status-value">${t('subtitles.environment.checking')}</span>
           </div>
 
           <div id="environment-actions" class="environment-actions hidden">
-            <button id="install-environment-btn" class="primary-button">安裝環境</button>
+            <button id="install-environment-btn" class="primary-button">${t('subtitles.environment.install')}</button>
             <div id="install-progress" class="install-progress hidden">
               <div class="progress-bar">
                 <div id="install-progress-fill" class="progress-fill"></div>
               </div>
-              <p id="install-status-text" class="progress-text">安裝中...</p>
+              <p id="install-status-text" class="progress-text">${t('subtitles.environment.installing')}</p>
             </div>
           </div>
         </div>
 
         <div class="models-section">
-          <h3 class="subsection-title">已安裝模型</h3>
+          <h3 class="subsection-title">${t('subtitles.environment.installedModels')}</h3>
           <div id="models-list" class="models-list">
-            <p class="placeholder">載入中...</p>
+            <p class="placeholder">${t('common.actions.loading')}</p>
           </div>
         </div>
       </section>
 
       <section id="transcription-progress-section" class="transcription-progress-section hidden">
-        <h2 class="section-title">轉錄進度</h2>
+        <h2 class="section-title">${t('subtitles.progress.title')}</h2>
         <div class="progress-container">
           <div class="progress-bar">
             <div id="transcription-progress-fill" class="progress-fill"></div>
@@ -292,27 +293,27 @@ export function renderSubtitlesPage(container: HTMLElement) {
             <span id="progress-percentage">0%</span>
             <span id="progress-time">0:00 / 0:00</span>
           </div>
-          <p id="transcription-status" class="transcription-status">準備中...</p>
+          <p id="transcription-status" class="transcription-status">${t('subtitles.progress.preparing')}</p>
         </div>
       </section>
 
       <section id="transcription-result-section" class="transcription-result-section hidden">
-        <h2 class="section-title">轉錄完成</h2>
+        <h2 class="section-title">${t('subtitles.result.title')}</h2>
         <div class="result-container">
           <p id="output-file-path" class="output-path"></p>
           <div class="result-actions">
-            <button id="open-output-file-btn" class="primary-button">開啟檔案</button>
-            <button id="show-in-folder-btn" class="secondary-button">在資料夾中顯示</button>
+            <button id="open-output-file-btn" class="primary-button">${t('subtitles.result.openFile')}</button>
+            <button id="show-in-folder-btn" class="secondary-button">${t('subtitles.result.showInFolder')}</button>
           </div>
         </div>
       </section>
 
       <div class="transcription-actions">
         <button id="start-transcription-btn" class="primary-button large-button" disabled>
-          開始轉錄
+          ${t('subtitles.actions.start')}
         </button>
         <button id="cancel-transcription-btn" class="secondary-button large-button hidden">
-          取消轉錄
+          ${t('subtitles.actions.cancel')}
         </button>
       </div>
     </div>
@@ -426,7 +427,7 @@ function attachSubtitlesEventListeners(container: HTMLElement) {
         await invoke('open_file', { path: outputPath });
       } catch (error) {
         console.error('Failed to open file:', error);
-        alert('無法開啟檔案');
+        alert(t('subtitles.error.cannotOpenFile'));
       }
     }
   });
@@ -439,7 +440,7 @@ function attachSubtitlesEventListeners(container: HTMLElement) {
         await invoke('show_in_folder', { path: outputPath });
       } catch (error) {
         console.error('Failed to show in folder:', error);
-        alert('無法開啟資料夾');
+        alert(t('subtitles.error.cannotOpenFolder'));
       }
     }
   });
@@ -474,7 +475,7 @@ async function handleFileSelection(path: string) {
     updateTranscriptionButton();
   } catch (error) {
     console.error('Error handling file selection:', error);
-    alert('無法讀取檔案資訊');
+    alert(t('subtitles.error.cannotReadFile'));
   }
 }
 
@@ -493,7 +494,7 @@ function updateFileDisplay() {
     fileName.textContent = selectedFile.name;
 
     const sizeText = formatFileSize(selectedFile.size);
-    const durationText = selectedFile.duration ? formatDuration(selectedFile.duration) : '未知';
+    const durationText = selectedFile.duration ? formatDuration(selectedFile.duration) : t('common.actions.unknown');
     fileMeta.textContent = `${sizeText} • ${durationText}`;
   } else {
     dropzone.classList.remove('hidden');
@@ -521,33 +522,37 @@ function updateEnvironmentDisplay() {
   if (!pythonStatus || !gpuStatus || !environmentActions || !modelsList) return;
 
   if (!asrEnvironmentStatus) {
-    pythonStatus.textContent = '檢查失敗';
+    pythonStatus.textContent = t('subtitles.environment.checkFailed');
     pythonStatus.className = 'status-value status-error';
-    gpuStatus.textContent = '未知';
+    gpuStatus.textContent = t('common.actions.unknown');
     gpuStatus.className = 'status-value';
     return;
   }
 
   if (asrEnvironmentStatus.python_installed) {
-    pythonStatus.textContent = `✓ 已安裝 (${asrEnvironmentStatus.python_version || 'Unknown'})`;
+    pythonStatus.textContent = t('subtitles.environment.pythonInstalled', { version: asrEnvironmentStatus.python_version || 'Unknown' });
     pythonStatus.className = 'status-value status-success';
     environmentActions.classList.add('hidden');
   } else {
-    pythonStatus.textContent = '✗ 未安裝';
+    pythonStatus.textContent = t('subtitles.environment.pythonNotInstalled');
     pythonStatus.className = 'status-value status-error';
     environmentActions.classList.remove('hidden');
   }
 
   if (asrEnvironmentStatus.gpu_available) {
-    gpuStatus.textContent = `✓ 可用 (${asrEnvironmentStatus.gpu_name || 'GPU'})`;
+    gpuStatus.textContent = t('subtitles.environment.gpuAvailable', { name: asrEnvironmentStatus.gpu_name || 'GPU' });
     gpuStatus.className = 'status-value status-success';
   } else {
-    gpuStatus.textContent = '✗ 不可用 (使用 CPU)';
+    gpuStatus.textContent = t('subtitles.environment.gpuNotAvailable');
     gpuStatus.className = 'status-value status-warning';
   }
 
   if (asrEnvironmentStatus.installed_models.length === 0) {
-    modelsList.innerHTML = '<p class="placeholder">無已安裝模型</p>';
+    modelsList.textContent = '';
+    const placeholder = document.createElement('p');
+    placeholder.className = 'placeholder';
+    placeholder.textContent = t('subtitles.environment.noModels');
+    modelsList.appendChild(placeholder);
   } else {
     modelsList.innerHTML = '';
     asrEnvironmentStatus.installed_models.forEach((model) => {
@@ -574,18 +579,18 @@ function updateEnvironmentDisplay() {
       if (model.installed) {
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'btn-secondary small-button';
-        deleteBtn.textContent = '刪除';
+        deleteBtn.textContent = t('subtitles.environment.deleteModel');
         deleteBtn.onclick = () => deleteModel(model.engine, model.model_id);
         modelActions.appendChild(deleteBtn);
       } else if (model.downloading) {
         const progressText = document.createElement('span');
         progressText.className = 'download-progress';
-        progressText.textContent = `下載中 ${model.download_progress}%`;
+        progressText.textContent = t('subtitles.environment.downloading', { progress: String(model.download_progress) });
         modelActions.appendChild(progressText);
       } else {
         const downloadBtn = document.createElement('button');
         downloadBtn.className = 'btn-primary small-button';
-        downloadBtn.textContent = '下載';
+        downloadBtn.textContent = t('subtitles.environment.downloadModel');
         downloadBtn.onclick = () => downloadModel(model.engine, model.model_id);
         modelActions.appendChild(downloadBtn);
       }
@@ -610,11 +615,11 @@ async function installAsrEnvironment() {
 
   try {
     await invoke('install_asr_environment');
-    alert('環境安裝成功！');
+    alert(t('subtitles.error.installSuccess'));
     await checkAsrEnvironment();
   } catch (error) {
     console.error('Failed to install ASR environment:', error);
-    alert(`環境安裝失敗：${error}`);
+    alert(t('subtitles.error.installFailed', { error: String(error) }));
   } finally {
     if (installProgress && installBtn) {
       installProgress.classList.add('hidden');
@@ -626,24 +631,24 @@ async function installAsrEnvironment() {
 async function downloadModel(engine: string, model: string) {
   try {
     await invoke('download_asr_model', { engine, model });
-    alert('模型下載已開始');
+    alert(t('subtitles.error.modelDownloadStarted'));
     await checkAsrEnvironment();
   } catch (error) {
     console.error('Failed to download model:', error);
-    alert(`模型下載失敗：${error}`);
+    alert(t('subtitles.error.modelDownloadFailed', { error: String(error) }));
   }
 }
 
 async function deleteModel(engine: string, model: string) {
-  if (!confirm('確定要刪除此模型嗎？')) return;
+  if (!confirm(t('subtitles.error.confirmDeleteModel'))) return;
 
   try {
     await invoke('delete_asr_model', { engine, model });
-    alert('模型已刪除');
+    alert(t('subtitles.error.modelDeleted'));
     await checkAsrEnvironment();
   } catch (error) {
     console.error('Failed to delete model:', error);
-    alert(`模型刪除失敗：${error}`);
+    alert(t('subtitles.error.modelDeleteFailed', { error: String(error) }));
   }
 }
 
@@ -685,7 +690,7 @@ async function checkCloudApiKey(provider: string) {
       iconSpan.textContent = '⚠️';
       // Create message text
       const messageSpan = document.createElement('span');
-      messageSpan.textContent = `請先在設定頁面中設定 ${providerName} API Key`;
+      messageSpan.textContent = t('subtitles.config.apiKeyWarningProvider', { provider: providerName });
       // Append to warning element
       warningEl.appendChild(iconSpan);
       warningEl.appendChild(messageSpan);
@@ -697,7 +702,7 @@ async function checkCloudApiKey(provider: string) {
 
 async function startTranscription() {
   if (!selectedFile) {
-    alert('請先選擇檔案');
+    alert(t('subtitles.error.noFileSelected'));
     return;
   }
 
@@ -712,7 +717,7 @@ async function startTranscription() {
     if (resultSection) resultSection.classList.add('hidden');
     if (startBtn) {
       startBtn.disabled = true;
-      startBtn.textContent = '轉錄中...';
+      startBtn.textContent = t('subtitles.actions.inProgress');
     }
     if (cancelBtn) cancelBtn.classList.remove('hidden');
 
@@ -772,7 +777,7 @@ function updateTranscriptionProgress(processed: number, total: number) {
   }
 
   if (status) {
-    status.textContent = '轉錄中...';
+    status.textContent = t('subtitles.progress.transcribing');
   }
 }
 
@@ -791,11 +796,11 @@ function updateCloudTranscriptionProgress(currentSegment: number, totalSegments:
   }
 
   if (progressTime) {
-    progressTime.textContent = `${currentSegment} / ${totalSegments} 段`;
+    progressTime.textContent = t('subtitles.progress.segments', { current: String(currentSegment), total: String(totalSegments) });
   }
 
   if (status) {
-    status.textContent = `上傳中 (${currentSegment}/${totalSegments})...`;
+    status.textContent = t('subtitles.progress.uploading', { current: String(currentSegment), total: String(totalSegments) });
   }
 }
 
@@ -814,20 +819,20 @@ function handleTranscriptionComplete(outputPath: string) {
   if (resultSection) resultSection.classList.remove('hidden');
   if (startBtn) {
     startBtn.disabled = false;
-    startBtn.textContent = '開始轉錄';
+    startBtn.textContent = t('subtitles.actions.start');
   }
   if (cancelBtn) cancelBtn.classList.add('hidden');
 
   // Update result display
   const outputFilePathEl = document.getElementById('output-file-path');
   if (outputFilePathEl) {
-    outputFilePathEl.textContent = `輸出檔案：${outputPath}`;
+    outputFilePathEl.textContent = t('subtitles.result.outputFile', { path: outputPath });
   }
 
   // Store output path for later actions
   (window as any).lastOutputPath = outputPath;
 
-  alert('轉錄完成！');
+  alert(t('subtitles.error.transcriptionComplete'));
 }
 
 function handleTranscriptionError(message: string) {
@@ -843,11 +848,11 @@ function handleTranscriptionError(message: string) {
   if (progressSection) progressSection.classList.add('hidden');
   if (startBtn) {
     startBtn.disabled = false;
-    startBtn.textContent = '開始轉錄';
+    startBtn.textContent = t('subtitles.actions.start');
   }
   if (cancelBtn) cancelBtn.classList.add('hidden');
 
-  alert(`轉錄失敗：${message}`);
+  alert(t('subtitles.error.transcriptionFailed', { error: message }));
 }
 
 function buildTranscriptionConfig(): TranscriptionConfig {

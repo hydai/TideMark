@@ -6588,39 +6588,6 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
     videos
 }
 
-/// Convert a Twitch duration string (e.g. "1h2m3s", "45m30s") to "H:MM:SS" format.
-fn parse_twitch_duration(s: &str) -> Option<String> {
-    if s.is_empty() {
-        return None;
-    }
-
-    let mut hours: u64 = 0;
-    let mut minutes: u64 = 0;
-    let mut seconds: u64 = 0;
-    let mut current = String::new();
-
-    for ch in s.chars() {
-        if ch.is_ascii_digit() {
-            current.push(ch);
-        } else {
-            let n: u64 = current.parse().unwrap_or(0);
-            current.clear();
-            match ch {
-                'h' => hours = n,
-                'm' => minutes = n,
-                's' => seconds = n,
-                _ => {}
-            }
-        }
-    }
-
-    if hours == 0 && minutes == 0 && seconds == 0 {
-        return None;
-    }
-
-    Some(format!("{}:{:02}:{:02}", hours, minutes, seconds))
-}
-
 /// Fetch the latest videos for a bookmarked channel.
 /// - YouTube: parses the public RSS feed
 /// - Twitch: queries the GQL API using the public client ID + stored OAuth token
@@ -6695,30 +6662,20 @@ async fn fetch_channel_videos(
 
             let client_id = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
-            // Use Twitch GQL to query the channel's recent VODs.
-            // The FilterableVideoTower query returns VideoEdge nodes with video metadata.
-            let gql_query = serde_json::json!([{
-                "operationName": "FilterableVideoTower_Videos",
-                "variables": {
-                    "limit": limit,
-                    "channelOwnerLogin": channel_id,
-                    "broadcastType": "ARCHIVE",
-                    "videoSort": "TIME"
-                },
-                "extensions": {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": "a937f1d22e269e39a03b509f65a7490f9fc247d7f83d6ac1421523e3b68042cb"
-                    }
-                }
-            }]);
+            // Use Twitch GQL to query the channel's recent VODs via inline query.
+            // This is more robust than persisted queries which can expire.
+            let gql_body = format!(
+                r#"[{{"query":"query {{ user(login:\"{login}\") {{ videos(first:{first},type:ARCHIVE,sort:TIME) {{ edges {{ node {{ id title publishedAt lengthSeconds viewCount previewThumbnailURL(width:120,height:68) }} }} }} }} }}","variables":{{}}}}]"#,
+                login = channel_id.replace('"', ""),
+                first = limit
+            );
 
             let client = reqwest::Client::new();
             let mut req = client
                 .post("https://gql.twitch.tv/gql")
                 .header("Client-Id", client_id)
                 .header("Content-Type", "application/json")
-                .json(&gql_query);
+                .body(gql_body);
 
             if let Some(ref token) = auth_config.twitch_token {
                 if !token.is_empty() {

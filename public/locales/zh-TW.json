@@ -690,6 +690,40 @@
   },
   "errors": {
     "languageLoadFailed": "語言檔載入失敗，已切換回繁體中文",
-    "languageLoadFailedTitle": "語言載入失敗"
+    "languageLoadFailedTitle": "語言載入失敗",
+    "download": {
+      "cannotStartYtdlp": "無法啟動 yt-dlp: {detail}",
+      "cannotReadOutput": "無法讀取 yt-dlp 輸出",
+      "failed": "下載失敗",
+      "processError": "程序錯誤: {detail}",
+      "recordingFailed": "錄製失敗",
+      "streamInterrupted": "串流中斷"
+    }
+  },
+  "backend": {
+    "pubsub": {
+      "connecting": "Twitch 連線中斷，重試中… ({backoff}s)",
+      "connected": "連線中 ({count} 個頻道)",
+      "stopped": "已停止監聽"
+    },
+    "youtube": {
+      "polling": "輪詢中",
+      "noChannels": "無啟用頻道",
+      "stopped": "已停止"
+    },
+    "notification": {
+      "pubsubDisconnectedTitle": "連線中斷",
+      "pubsubDisconnectedBody": "Twitch 監聽連線中斷，重試中…",
+      "youtubeDisruptedTitle": "連線中斷",
+      "youtubeDisruptedBody": "YouTube 輪詢連線中斷",
+      "diskFullTitle": "磁碟空間不足",
+      "diskFullBody": "磁碟空間不足，已暫停所有排程下載",
+      "liveDetectedTitle": "直播偵測",
+      "liveDetectedBody": "{channel} 正在直播，已啟動自動下載",
+      "completeTitle": "排程下載完成",
+      "completeBody": "{channel} 的直播錄製已完成（{size}）",
+      "failedTitle": "排程下載失敗",
+      "failedBody": "{channel} 的下載失敗：{error}"
+    }
   }
 }

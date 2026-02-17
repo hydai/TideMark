@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import { t } from '../i18n';
+import { t, resolveLocalizedMessage, type LocalizedMessage } from '../i18n';
 
 interface DownloadPreset {
   id: string;
@@ -53,12 +53,12 @@ interface YouTubeStreamEvent {
 
 interface PubSubStatusEvent {
   connected: boolean;
-  message: string;
+  message: string | LocalizedMessage;
 }
 
 interface YouTubePollingStatusEvent {
   active: boolean;
-  message: string;
+  message: string | LocalizedMessage;
   channels_count: number;
 }
 
@@ -103,7 +103,7 @@ interface ScheduledDownloadCompleteEvent {
 interface ScheduledDownloadFailedEvent {
   task_id: string;
   channel_name: string;
-  error: string;
+  error: string | LocalizedMessage;
 }
 
 interface DownloadProgressEvent {
@@ -146,10 +146,10 @@ let isNewPreset = false;
 
 // PubSub state tracked on the frontend
 let pubsubConnected = false;
-let pubsubMessage = '';
+let pubsubMessage: string | LocalizedMessage = '';
 // YouTube polling state
 let youtubePollingActive = false;
-let youtubePollingMessage = '';
+let youtubePollingMessage: string | LocalizedMessage = '';
 let youtubePollingChannelsCount = 0;
 let youtubePollingIntervalSecs = 90;
 // channel_id -> 'live' | 'offline'
@@ -301,7 +301,8 @@ async function setupPubSubListeners() {
   });
 
   const schedFailedUn = await listen<ScheduledDownloadFailedEvent>('scheduled-download-failed', (event) => {
-    showToast(t('scheduled.toast.failed', { channelName: event.payload.channel_name, error: event.payload.error }));
+    const errMsg = resolveLocalizedMessage(event.payload.error);
+    showToast(t('scheduled.toast.failed', { channelName: event.payload.channel_name, error: errMsg }));
     refreshQueueUI();
   });
 

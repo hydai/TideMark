@@ -207,6 +207,57 @@ export function t(key: string, params?: Record<string, string | number>): string
   return interpolate(resolved, params);
 }
 
+// ── Backend LocalizedMessage resolver ────────────────────────────────────────
+
+/**
+ * A structured message object emitted by the Rust backend (F9.5).
+ *
+ * The backend emits `{ "key": "errors.download.failed", "params": { ... } }`
+ * instead of raw Chinese strings so the frontend can resolve them via the
+ * active locale.
+ */
+export interface LocalizedMessage {
+  key: string;
+  params?: Record<string, string | number>;
+}
+
+/**
+ * Resolve a value that may be either a plain string or a `LocalizedMessage`
+ * object received from the Rust backend.
+ *
+ * - If `msg` is a `LocalizedMessage` (has a `key` field), resolve it via
+ *   `t(key, params)`.  If the key is missing in the locale (E9.5a) the raw
+ *   key string is returned and a warning is logged.  If a required
+ *   interpolation variable is absent (E9.5b) the placeholder is kept as-is.
+ * - If `msg` is a plain string (backward-compatibility path), return it
+ *   unchanged.
+ */
+export function resolveLocalizedMessage(msg: string | LocalizedMessage | null | undefined): string {
+  if (msg === null || msg === undefined) {
+    return '';
+  }
+  if (typeof msg === 'object' && 'key' in msg) {
+    return t(msg.key, msg.params);
+  }
+  if (typeof msg === 'string') {
+    // Try to parse as a JSON LocalizedMessage (used when backend stores
+    // the message as a JSON string inside a string field, e.g. error_message).
+    if (msg.startsWith('{') && msg.includes('"key"')) {
+      try {
+        const parsed = JSON.parse(msg) as LocalizedMessage;
+        if (parsed && typeof parsed.key === 'string') {
+          return t(parsed.key, parsed.params);
+        }
+      } catch {
+        // Not valid JSON — fall through to plain string return
+      }
+    }
+    // Plain string — backward-compatible pass-through
+    return msg;
+  }
+  return String(msg);
+}
+
 // ── Toast notification for language load failure ──────────────────────────────
 
 function showFallbackToast(): void {

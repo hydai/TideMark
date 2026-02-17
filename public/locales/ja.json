@@ -691,6 +691,40 @@
   },
   "errors": {
     "languageLoadFailed": "言語ファイルの読み込みに失敗しました。繁体字中国語に切り替えます",
-    "languageLoadFailedTitle": "言語読み込みエラー"
+    "languageLoadFailedTitle": "言語読み込みエラー",
+    "download": {
+      "cannotStartYtdlp": "yt-dlpを起動できませんでした: {detail}",
+      "cannotReadOutput": "yt-dlpの出力を読み取れませんでした",
+      "failed": "ダウンロード失敗",
+      "processError": "プロセスエラー: {detail}",
+      "recordingFailed": "録画失敗",
+      "streamInterrupted": "ストリームが中断されました"
+    }
+  },
+  "backend": {
+    "pubsub": {
+      "connecting": "Twitch接続が切断されました。再接続中… ({backoff}秒)",
+      "connected": "接続中 ({count} チャンネル)",
+      "stopped": "監視停止"
+    },
+    "youtube": {
+      "polling": "ポーリング中",
+      "noChannels": "有効なチャンネルなし",
+      "stopped": "停止"
+    },
+    "notification": {
+      "pubsubDisconnectedTitle": "接続切断",
+      "pubsubDisconnectedBody": "Twitch監視の接続が切断されました。再接続中…",
+      "youtubeDisruptedTitle": "接続切断",
+      "youtubeDisruptedBody": "YouTubeポーリングの接続が中断されました",
+      "diskFullTitle": "ディスク容量不足",
+      "diskFullBody": "ディスク容量が不足しています。全ての予約ダウンロードを一時停止しました",
+      "liveDetectedTitle": "配信検出",
+      "liveDetectedBody": "{channel}が配信中です。自動ダウンロードを開始しました",
+      "completeTitle": "予約ダウンロード完了",
+      "completeBody": "{channel}の録画が完了しました（{size}）",
+      "failedTitle": "予約ダウンロード失敗",
+      "failedBody": "{channel}のダウンロードに失敗しました: {error}"
+    }
   }
 }

@@ -151,7 +151,10 @@ async fn run_pubsub_connection(
                     "twitch-pubsub-status",
                     serde_json::json!({
                         "connected": false,
-                        "message": format!("Twitch 連線中斷，重試中… ({}s)", backoff_secs),
+                        "message": {
+                            "key": "backend.pubsub.connecting",
+                            "params": { "backoff": backoff_secs }
+                        },
                     }),
                 );
                 {
@@ -165,8 +168,11 @@ async fn run_pubsub_connection(
                     tokio::spawn(async move {
                         send_scheduled_notification(
                             &app_n,
+                            "backend.notification.pubsubDisconnectedTitle",
                             "連線中斷",
+                            "backend.notification.pubsubDisconnectedBody",
                             "Twitch 監聽連線中斷，重試中…",
+                            None,
                             "warning",
                         ).await;
                     });
@@ -190,7 +196,10 @@ async fn run_pubsub_connection(
                     "twitch-pubsub-status",
                     serde_json::json!({
                         "connected": true,
-                        "message": format!("連線中 ({} 個頻道)", topics.len()),
+                        "message": {
+                            "key": "backend.pubsub.connected",
+                            "params": { "count": topics.len() }
+                        },
                     }),
                 );
                 {
@@ -288,7 +297,10 @@ async fn run_pubsub_connection(
                         "twitch-pubsub-status",
                         serde_json::json!({
                             "connected": false,
-                            "message": format!("Twitch 連線中斷，重試中… ({}s)", backoff_secs),
+                            "message": {
+                                "key": "backend.pubsub.connecting",
+                                "params": { "backoff": backoff_secs }
+                            },
                         }),
                     );
                     // Send disconnect notification only on first disconnect of this outage.
@@ -298,8 +310,11 @@ async fn run_pubsub_connection(
                         tokio::spawn(async move {
                             send_scheduled_notification(
                                 &app_n,
+                                "backend.notification.pubsubDisconnectedTitle",
                                 "連線中斷",
+                                "backend.notification.pubsubDisconnectedBody",
                                 "Twitch 監聽連線中斷，重試中…",
+                                None,
                                 "warning",
                             ).await;
                         });
@@ -328,7 +343,7 @@ async fn run_pubsub_connection(
         "twitch-pubsub-status",
         serde_json::json!({
             "connected": false,
-            "message": "已停止監聽",
+            "message": { "key": "backend.pubsub.stopped" },
         }),
     );
     log::info!("[PubSub] Connection task ended");
@@ -738,7 +753,7 @@ async fn run_youtube_polling(
         "youtube-polling-status",
         serde_json::json!({
             "active": true,
-            "message": "輪詢中",
+            "message": { "key": "backend.youtube.polling" },
             "channels_count": presets.len(),
         }),
     );
@@ -794,7 +809,7 @@ async fn run_youtube_polling(
                 "youtube-polling-status",
                 serde_json::json!({
                     "active": true,
-                    "message": "無啟用頻道",
+                    "message": { "key": "backend.youtube.noChannels" },
                     "channels_count": 0u32,
                 }),
             );
@@ -1000,8 +1015,11 @@ async fn run_youtube_polling(
                 tokio::spawn(async move {
                     send_scheduled_notification(
                         &app_n,
+                        "backend.notification.youtubeDisruptedTitle",
                         "連線中斷",
+                        "backend.notification.youtubeDisruptedBody",
                         "YouTube 輪詢連線中斷",
+                        None,
                         "warning",
                     ).await;
                 });
@@ -1049,7 +1067,7 @@ async fn run_youtube_polling(
         "youtube-polling-status",
         serde_json::json!({
             "active": false,
-            "message": "已停止",
+            "message": { "key": "backend.youtube.stopped" },
             "channels_count": 0u32,
         }),
     );
@@ -1269,8 +1287,20 @@ const MIN_FREE_BYTES: u64 = 500 * 1024 * 1024;
 /// - "both"  → both OS and in-app toast
 /// - "none"  → no notifications
 ///
+/// `title_key` / `body_key`: i18n key strings (e.g. "backend.notification.liveDetectedTitle").
+/// `title_os` / `body_os`: plain-text fallback used for the OS-level notification.
+/// `title_params` / `body_params`: optional JSON params object for interpolation.
 /// `level`: "info" | "warning" | "critical"
-async fn send_scheduled_notification(app: &AppHandle, title: &str, body: &str, level: &str) {
+#[allow(clippy::too_many_arguments)]
+async fn send_scheduled_notification(
+    app: &AppHandle,
+    title_key: &str,
+    title_os: &str,
+    body_key: &str,
+    body_os: &str,
+    body_params: Option<serde_json::Value>,
+    level: &str,
+) {
     let mode = match load_config(app.clone()) {
         Ok(cfg) => cfg.scheduled_download_notification,
         Err(_) => "both".to_string(),
@@ -1280,26 +1310,32 @@ async fn send_scheduled_notification(app: &AppHandle, title: &str, body: &str, l
         return;
     }
 
-    // Send OS notification
+    // Send OS notification (uses plain-text strings — no i18n at OS level)
     if mode == "os" || mode == "both" {
         use tauri_plugin_notification::NotificationExt;
         app.notification()
             .builder()
-            .title(title)
-            .body(body)
+            .title(title_os)
+            .body(body_os)
             .show()
             .unwrap_or_else(|e| {
                 log::warn!("[Notification] OS notification failed: {}", e);
             });
     }
 
-    // Send in-app toast event
+    // Send in-app toast event with LocalizedMessage objects (F9.5)
     if mode == "toast" || mode == "both" {
+        let title_msg = serde_json::json!({ "key": title_key });
+        let body_msg = if let Some(params) = body_params {
+            serde_json::json!({ "key": body_key, "params": params })
+        } else {
+            serde_json::json!({ "key": body_key })
+        };
         let _ = app.emit(
             "scheduled-notification-toast",
             serde_json::json!({
-                "title": title,
-                "body": body,
+                "title": title_msg,
+                "body": body_msg,
                 "level": level,
             }),
         );
@@ -1413,8 +1449,11 @@ async fn trigger_scheduled_download(
                 tokio::spawn(async move {
                     send_scheduled_notification(
                         &app_n,
+                        "backend.notification.diskFullTitle",
                         "磁碟空間不足",
+                        "backend.notification.diskFullBody",
                         "磁碟空間不足，已暫停所有排程下載",
+                        None,
                         "critical",
                     ).await;
                 });
@@ -1477,8 +1516,11 @@ async fn trigger_scheduled_download(
         tokio::spawn(async move {
             send_scheduled_notification(
                 &app_n,
+                "backend.notification.liveDetectedTitle",
                 "直播偵測",
+                "backend.notification.liveDetectedBody",
                 &format!("{} 正在直播，已啟動自動下載", ch_name_n),
+                Some(serde_json::json!({ "channel": ch_name_n })),
                 "info",
             ).await;
         });
@@ -1765,18 +1807,28 @@ async fn start_scheduled_task(
                     .unwrap_or_else(|| "?".to_string());
                 send_scheduled_notification(
                     &app2,
+                    "backend.notification.completeTitle",
                     "排程下載完成",
+                    "backend.notification.completeBody",
                     &format!("{} 的直播錄製已完成（{}）", channel_name2, size_str),
+                    Some(serde_json::json!({ "channel": channel_name2, "size": size_str })),
                     "info",
                 ).await;
             } else {
-                let err_msg = error.unwrap_or_else(|| "錄製失敗".to_string());
+                let err_msg = error.unwrap_or_else(|| "errors.download.recordingFailed".to_string());
+                // Wrap the error in a LocalizedMessage if it looks like a known i18n key,
+                // otherwise pass it as a plain string for backward compatibility.
+                let err_localized = if err_msg.contains('.') && !err_msg.contains(' ') {
+                    serde_json::json!({ "key": err_msg })
+                } else {
+                    serde_json::json!(err_msg)
+                };
                 let _ = app2.emit(
                     "scheduled-download-failed",
                     serde_json::json!({
                         "task_id": sched_task_id,
                         "channel_name": channel_name2,
-                        "error": err_msg.clone(),
+                        "error": err_localized,
                     }),
                 );
                 // Notify user: download failed.
@@ -1784,8 +1836,11 @@ async fn start_scheduled_task(
                 let err_summary: String = err_msg.chars().take(60).collect();
                 send_scheduled_notification(
                     &app2,
+                    "backend.notification.failedTitle",
                     "排程下載失敗",
+                    "backend.notification.failedBody",
                     &format!("{} 的下載失敗：{}", channel_name2, err_summary),
+                    Some(serde_json::json!({ "channel": channel_name2, "error": err_summary })),
                     "warning",
                 ).await;
             }
@@ -1813,20 +1868,29 @@ async fn mark_scheduled_task_failed(app: &AppHandle, task_id: &str, error: &str)
         }
         ch
     };
+    // Wrap error in LocalizedMessage if it looks like a known i18n key.
+    let err_localized = if error.contains('.') && !error.contains(' ') {
+        serde_json::json!({ "key": error })
+    } else {
+        serde_json::json!(error)
+    };
     let _ = app.emit(
         "scheduled-download-failed",
         serde_json::json!({
             "task_id": task_id,
             "channel_name": channel_name,
-            "error": error,
+            "error": err_localized,
         }),
     );
     // Notify user: task failed.
     let err_summary: String = error.chars().take(60).collect();
     send_scheduled_notification(
         app,
+        "backend.notification.failedTitle",
         "排程下載失敗",
+        "backend.notification.failedBody",
         &format!("{} 的下載失敗：{}", channel_name, err_summary),
+        Some(serde_json::json!({ "channel": channel_name, "error": err_summary })),
         "warning",
     ).await;
     emit_queue_update(app).await;
@@ -3030,7 +3094,8 @@ async fn execute_download(app: AppHandle, tasks: DownloadTasks, task_id: String)
     {
         Ok(child) => child,
         Err(e) => {
-            update_download_error(&app, &tasks, &task_id, &format!("無法啟動 yt-dlp: {}", e)).await;
+            let msg = format!("{{\"key\":\"errors.download.cannotStartYtdlp\",\"params\":{{\"detail\":{}}}}}", serde_json::json!(e.to_string()));
+            update_download_error(&app, &tasks, &task_id, &msg).await;
             return;
         }
     };
@@ -3039,7 +3104,7 @@ async fn execute_download(app: AppHandle, tasks: DownloadTasks, task_id: String)
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
-            update_download_error(&app, &tasks, &task_id, "無法讀取 yt-dlp 輸出").await;
+            update_download_error(&app, &tasks, &task_id, "{\"key\":\"errors.download.cannotReadOutput\"}").await;
             return;
         }
     };
@@ -3102,11 +3167,12 @@ async fn execute_download(app: AppHandle, tasks: DownloadTasks, task_id: String)
                     // Save to history
                     save_download_history(&app, &config, &output_path_str, "completed", None).await;
                 } else {
-                    update_download_error(&app, &tasks, &task_id, "下載失敗").await;
+                    update_download_error(&app, &tasks, &task_id, "{\"key\":\"errors.download.failed\"}").await;
                 }
             }
             Err(e) => {
-                update_download_error(&app, &tasks, &task_id, &format!("程序錯誤: {}", e)).await;
+                let msg = format!("{{\"key\":\"errors.download.processError\",\"params\":{{\"detail\":{}}}}}", serde_json::json!(e.to_string()));
+                update_download_error(&app, &tasks, &task_id, &msg).await;
             }
         }
     }
@@ -3167,7 +3233,8 @@ async fn execute_recording(app: AppHandle, tasks: DownloadTasks, task_id: String
     {
         Ok(child) => child,
         Err(e) => {
-            update_download_error(&app, &tasks, &task_id, &format!("無法啟動 yt-dlp: {}", e)).await;
+            let msg = format!("{{\"key\":\"errors.download.cannotStartYtdlp\",\"params\":{{\"detail\":{}}}}}", serde_json::json!(e.to_string()));
+            update_download_error(&app, &tasks, &task_id, &msg).await;
             return;
         }
     };
@@ -3176,7 +3243,7 @@ async fn execute_recording(app: AppHandle, tasks: DownloadTasks, task_id: String
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {
-            update_download_error(&app, &tasks, &task_id, "無法讀取 yt-dlp 輸出").await;
+            update_download_error(&app, &tasks, &task_id, "{\"key\":\"errors.download.cannotReadOutput\"}").await;
             return;
         }
     };
@@ -3290,19 +3357,20 @@ async fn execute_recording(app: AppHandle, tasks: DownloadTasks, task_id: String
                                 task.progress.status = "stream_interrupted".to_string();
                                 task.progress.output_path = Some(output_path_str.clone());
                                 task.progress.is_recording = Some(false);
-                                task.progress.error_message = Some("串流中斷".to_string());
+                                task.progress.error_message = Some("{\"key\":\"errors.download.streamInterrupted\"}".to_string());
                                 app.emit("download-progress", &task.progress).ok();
                             }
                         }
 
-                        save_download_history(&app, &config, &output_path_str, "stream_interrupted", Some("串流中斷")).await;
+                        save_download_history(&app, &config, &output_path_str, "stream_interrupted", Some("errors.download.streamInterrupted")).await;
                     } else {
-                        update_download_error(&app, &tasks, &task_id, "錄製失敗").await;
+                        update_download_error(&app, &tasks, &task_id, "{\"key\":\"errors.download.recordingFailed\"}").await;
                     }
                 }
             }
             Err(e) => {
-                update_download_error(&app, &tasks, &task_id, &format!("程序錯誤: {}", e)).await;
+                let msg = format!("{{\"key\":\"errors.download.processError\",\"params\":{{\"detail\":{}}}}}", serde_json::json!(e.to_string()));
+                update_download_error(&app, &tasks, &task_id, &msg).await;
             }
         }
     }

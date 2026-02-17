@@ -8,7 +8,7 @@ import { renderRecordsPage } from './pages/records';
 import { renderScheduledDownloadsPage } from './pages/scheduled-downloads';
 import { renderChannelBookmarksPage } from './pages/channel-bookmarks';
 import { listen } from '@tauri-apps/api/event';
-import { t } from './i18n';
+import { t, resolveLocalizedMessage, type LocalizedMessage } from './i18n';
 
 type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings' | 'scheduled-downloads' | 'channel-bookmarks';
 
@@ -112,8 +112,8 @@ export function refreshAppNav() {
 // ── Global toast notification system ─────────────────────────────────────────
 
 interface ScheduledToastPayload {
-  title: string;
-  body: string;
+  title: string | LocalizedMessage;
+  body: string | LocalizedMessage;
   level: 'info' | 'warning' | 'critical';
 }
 
@@ -136,12 +136,12 @@ function showGlobalToast(payload: ScheduledToastPayload) {
 
   const titleEl = document.createElement('div');
   titleEl.className = 'global-toast-title';
-  titleEl.textContent = payload.title;
+  titleEl.textContent = resolveLocalizedMessage(payload.title);
   el.appendChild(titleEl);
 
   const bodyEl = document.createElement('div');
   bodyEl.className = 'global-toast-body';
-  bodyEl.textContent = payload.body;
+  bodyEl.textContent = resolveLocalizedMessage(payload.body);
   el.appendChild(bodyEl);
 
   // Auto-dismiss: info=3s, warning=5s, critical stays until dismissed

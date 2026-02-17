@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
-import { t } from '../i18n';
+import { t, resolveLocalizedMessage, type LocalizedMessage } from '../i18n';
 
 interface VideoQuality {
   format_id: string;
@@ -52,7 +52,7 @@ interface DownloadProgress {
   downloaded_bytes: number;
   total_bytes: number;
   output_path: string | null;
-  error_message: string | null;
+  error_message: string | LocalizedMessage | null;
   // Live recording specific fields
   is_recording?: boolean;
   recorded_duration?: string;
@@ -623,7 +623,7 @@ function createTaskCard(progress: DownloadProgress): HTMLElement {
         <button class="action-btn transcribe-btn" data-path="${progress.output_path}">${t('download.progress.actions.sendToTranscription')}</button>
       ` : ''}
       ${progress.status === 'failed' && progress.error_message ? `
-        <p class="error-text">${progress.error_message}</p>
+        <p class="error-text">${resolveLocalizedMessage(progress.error_message)}</p>
       ` : ''}
       ${progress.status === 'stream_interrupted' ? `
         <p class="warning-text">${t('download.progress.streamInterrupted')}</p>

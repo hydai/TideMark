@@ -691,6 +691,40 @@
   },
   "errors": {
     "languageLoadFailed": "Failed to load language file, falling back to Traditional Chinese",
-    "languageLoadFailedTitle": "Language Load Failed"
+    "languageLoadFailedTitle": "Language Load Failed",
+    "download": {
+      "cannotStartYtdlp": "Failed to start yt-dlp: {detail}",
+      "cannotReadOutput": "Failed to read yt-dlp output",
+      "failed": "Download failed",
+      "processError": "Process error: {detail}",
+      "recordingFailed": "Recording failed",
+      "streamInterrupted": "Stream interrupted"
+    }
+  },
+  "backend": {
+    "pubsub": {
+      "connecting": "Twitch connection lost, retrying… ({backoff}s)",
+      "connected": "Connected ({count} channels)",
+      "stopped": "Monitoring stopped"
+    },
+    "youtube": {
+      "polling": "Polling",
+      "noChannels": "No enabled channels",
+      "stopped": "Stopped"
+    },
+    "notification": {
+      "pubsubDisconnectedTitle": "Connection Lost",
+      "pubsubDisconnectedBody": "Twitch monitoring connection lost, retrying…",
+      "youtubeDisruptedTitle": "Connection Lost",
+      "youtubeDisruptedBody": "YouTube polling connection disrupted",
+      "diskFullTitle": "Disk Space Low",
+      "diskFullBody": "Disk space insufficient, all scheduled downloads paused",
+      "liveDetectedTitle": "Stream Detected",
+      "liveDetectedBody": "{channel} is live, auto-download started",
+      "completeTitle": "Scheduled Download Complete",
+      "completeBody": "{channel} recording complete ({size})",
+      "failedTitle": "Scheduled Download Failed",
+      "failedBody": "{channel} download failed: {error}"
+    }
   }
 }

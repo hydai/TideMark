@@ -8,6 +8,7 @@
 | 0.4 | 2026-02-17 | 新增 Module 9: 多語系介面（P2.5 升級為正式規格）；Module 10: 檔名範本編輯器（P2.6 升級為正式規格） |
 | 0.5 | 2026-02-17 | 品質修正：完善 Interface 7 直連規格；釐清 F7.6 佇列搶佔行為；定義 F9.5 後端 i18n 訊息合約 |
 | 0.6 | 2026-02-17 | 品質修正：清理 Phase 2 殘留標記；新增 Pattern 8 設定檔版本遷移；釐清 topic 預設值與 i18n 關係；補充 records.db schema 說明；Cloud Sync 輪詢頻率說明 |
+| 0.7 | 2026-02-18 | 品質修正：固定輪詢間隔、補充 records.db metadata schema、JWT 刷新機制、離線同步批次策略、歷史上限、yt-dlp is_live 錯誤場景、直連緩衝上限、Toast 時間一致性、衝突通知、Extension i18n errors 命名空間 |
 
 ---
 
@@ -242,7 +243,7 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 
 1. 透過 Google OAuth 取得身份，向 Cloudflare Workers API 驗證並取得 JWT token
 2. 登入後，每次 Record/Folder 變更自動上傳至 Cloud Sync
-3. 定期輪詢（每 3-5 秒）Cloud Sync API，拉取來自其他裝置或 Desktop 的變更
+3. 定期輪詢（每 5 秒；使用者在 Records 頁面前景活躍時縮短為 3 秒）Cloud Sync API，拉取來自其他裝置或 Desktop 的變更
 4. 使用 `updatedAt` 時間戳做增量同步，僅拉取上次同步後的變更
 
 **錯誤情境**：
@@ -252,6 +253,7 @@ Tidemark 是一款統一的串流內容擷取工具，讓使用者在瀏覽器�
 | E1.6a | 登入失敗 | 顯示「登入失敗，請稍後重試」 |
 | E1.6b | 同步衝突 | Last-write-wins，以 `updatedAt` 較新者為準 |
 | E1.6c | 網路中斷 | 暫停同步，恢復後自動重試 |
+| E1.6d | 同步拉取的變更覆寫了本地未推送的修改 | 顯示「{欄位名} 已被其他裝置更新」Info Toast，本地資料更新為雲端版本 |
 
 ---
 
@@ -526,7 +528,16 @@ Tidemark 的轉錄功能支援兩種模式：**本地 ASR**（在使用者電腦
 1. 透過 Google OAuth 進行登入，向 Cloudflare Workers API 驗證並取得 JWT token
 2. 同步雲端的 Record 與 Folder 至本地顯示
 3. 本地修改即時上傳
-4. 定期輪詢（每 3-5 秒）Cloud Sync API，拉取來自 Extension 的新增/修改
+4. 定期輪詢（每 5 秒；使用者在 Records 頁面前景活躍時縮短為 3 秒）Cloud Sync API，拉取來自 Extension 的新增/修改
+
+**錯誤情境**：
+
+| 代碼 | 條件 | 系統回應 |
+|------|------|----------|
+| E4.3a | 登入失敗 | 顯示「登入失敗，請稍後重試」 |
+| E4.3b | 同步衝突 | Last-write-wins，以 `updatedAt` 較新者為準 |
+| E4.3c | 網路中斷 | 暫停同步，恢復後自動重試 |
+| E4.3d | 同步拉取的變更覆寫了本地未推送的修改 | 顯示「{欄位名} 已被其他裝置更新」Info Toast，本地資料更新為雲端版本 |
 
 ---
 
@@ -568,7 +579,7 @@ Tidemark 的轉錄功能支援兩種模式：**本地 ASR**（在使用者電腦
 | completedAt | string \| null | 下載完成時間 |
 | errorMessage | string \| null | 失敗時的錯誤訊息 |
 
-**儲存位置**：本地 JSON 檔案，不同步至雲端
+**儲存位置**：本地 JSON 檔案，不同步至雲端。本地歷史記錄無數量上限。使用者可透過「清空全部紀錄」手動清理。若 JSON 檔案超過 10 MB，Settings 頁面顯示「歷史記錄檔案較大，建議清理舊紀錄」提示。
 
 **錯誤情境**：
 
@@ -770,6 +781,7 @@ Tidemark 的排程下載功能讓使用者為特定頻道預設下載參數，�
 | E7.3b | YouTube rate limit | 自動將輪詢間隔增加至 2 倍，5 分鐘後恢復原間隔 |
 | E7.3c | 頻道 ID 無效 | 停用該預設，通知使用者「頻道不存在」 |
 | E7.3d | yt-dlp 確認逾時 | 跳過本次檢查，下次輪詢重試 |
+| E7.3e | yt-dlp 回傳的 JSON 缺少 `is_live` 欄位 | 視為非直播狀態，跳過本次檢查，記錄警告 log |
 
 ##### F7.4 自動下載觸發
 
@@ -1078,7 +1090,7 @@ Tidemark 的頻道書籤功能讓使用者收藏常看的 Twitch/YouTube 頻道�
 1. 書籤的核心資料（id, channelId, channelName, platform, notes, sortOrder）透過 Cloud Sync 在 Extension 與 Desktop 間同步
 2. 同步策略與 Record/Folder 一致：
    - 寫入：每次本地變更後立即 push 至 Cloud Sync
-   - 讀取：定期輪詢（每 3-5 秒）拉取增量變更（`updatedAt` 追蹤）
+   - 讀取：定期輪詢（每 5 秒；前景活躍時 3 秒）拉取增量變更（`updatedAt` 追蹤）
    - 衝突解決：Last-write-wins，以 `updatedAt` 較新者為準
    - 刪除：軟刪除（`deleted=1`），不硬刪除
 3. **不同步的資料**：頻道元資料（F8.3）、影片列表（F8.4）、直播狀態（F8.2）均為裝置本地資料
@@ -1092,6 +1104,7 @@ Tidemark 的頻道書籤功能讓使用者收藏常看的 Twitch/YouTube 頻道�
 |------|------|----------|
 | E8.6a | 同步衝突 | Last-write-wins，以 `updatedAt` 較新者為準（同 Record/Folder） |
 | E8.6b | Cloud Sync 不可用 | 降級為純本地模式，恢復後自動同步 |
+| E8.6c | 同步拉取的變更覆寫了本地未推送的修改 | 顯示「{欄位名} 已被其他裝置更新」Info Toast，本地資料更新為雲端版本 |
 
 ##### F8.7 排程下載整合（Scheduled Downloads Integration）
 
@@ -1251,6 +1264,7 @@ Tidemark 的多語系介面功能讓使用者在繁體中文、英文、日文�
 | `common` | 共用字串（與 Desktop 共用相同鍵值） |
 | `extension` | Extension 專屬 UI（popup、content script overlay） |
 | `records` | Record 管理（與 Desktop 共用部分鍵值） |
+| `errors` | Extension 錯誤訊息（E1.1a–E1.6d） |
 
 **錯誤情境**：
 
@@ -1515,7 +1529,7 @@ Tidemark 使用自己的 `{variable}` 語法，與 yt-dlp 的 `%(variable)s` 語
 
 - 通訊協定：HTTPS REST API（Cloudflare Workers）
 - 認證方式：Google OAuth → Workers 驗證 → JWT token
-- 同步策略：客戶端每 3-5 秒輪詢 `GET /sync?since={lastUpdatedAt}`，取得增量變更。此為單一客戶端的輪詢間隔；同一使用者若同時開啟多個 Extension 分頁，各分頁獨立輪詢。Cloud Sync Workers 端不額外限制同一使用者的請求頻率（Cloudflare Workers 的全域速率限制已足夠）
+- 同步策略：客戶端每 5 秒輪詢 `GET /sync?since={lastUpdatedAt}`，取得增量變更（使用者在 Records 頁面前景活躍時縮短為 3 秒）。此為單一客戶端的輪詢間隔；同一使用者若同時開啟多個 Extension 分頁，各分頁獨立輪詢。Cloud Sync Workers 端不額外限制同一使用者的請求頻率（Cloudflare Workers 的全域速率限制已足夠）
 - 寫入：每次本地變更後立即 `POST /records`、`POST /folders` 或 `POST /channel-bookmarks`
 - 衝突解決：Last-write-wins，以 `updatedAt` 較新者為準
 - 資料範圍：Records、Folders、Channel Bookmarks
@@ -1579,7 +1593,7 @@ Tidemark 使用自己的 `{variable}` 語法，與 yt-dlp 的 `%(variable)s` 語
 | 代碼 | 條件 | 系統回應 |
 |------|------|----------|
 | E-I7a | Port 21483 被其他程式佔用 | Desktop 啟動時顯示「本地直連 port 被佔用」Toast，本地直連功能停用，其他功能不受影響 |
-| E-I7b | Extension 探測到 Desktop 但推送失敗 | Extension 將變更暫存於本地，下次探測成功時補推 |
+| E-I7b | Extension 探測到 Desktop 但推送失敗 | Extension 將變更暫存於本地（上限 100 筆），下次探測成功時依序補推。暫存超過 100 筆時，最舊的變更被丟棄，並在 Extension console 記錄警告 |
 
 #### Interface 8: Desktop ↔ Twitch PubSub WebSocket
 
@@ -1708,6 +1722,8 @@ CREATE UNIQUE INDEX idx_channel_bookmarks_user_channel ON channel_bookmarks(user
 | 檔名範本展開失敗 | 使用回退檔名 `untitled_{datetime}`。路徑過長時自動截斷，檔名衝突時加上序號 |
 | 本地直連 port 衝突 | Desktop 停用本地直連功能，其他功能不受影響。Extension 自動切回 Cloud Sync |
 | 後端 i18n 鍵值缺失 | 前端顯示原始鍵值，記錄警告 log，不影響功能運作 |
+| 同步衝突覆寫 | Info Toast 通知使用者「{欄位名} 已被其他裝置更新」，以雲端版本為準 |
+| 歷史記錄檔案過大 | Settings 頁面提示使用者清理（JSON 檔案超過 10 MB 時觸發） |
 
 ---
 
@@ -1777,6 +1793,7 @@ yt-dlp / FFmpeg / ASR (Sidecar or Cloud API)
 - Cloudflare D1 為 Record/Folder/Channel Bookmark 的 source of truth
 - Extension 與 Desktop 各自維護本地快取
 - 離線優先：Extension 與 Desktop 均可在離線狀態下運作，回到線上後自動同步
+- 離線同步批次策略：離線期間累積的變更在恢復連線後依序批次推送（每批最多 50 筆），不設離線時長上限。若單次推送失敗，以指數退避重試（1s → 2s → 4s → … → 60s）。批次推送期間新增的本地變更排入下一批次
 - 下載歷史、設定、頻道元資料、影片快取：僅存在 Desktop 本地，不同步
 - 頻道書籤同步資料流（透過 Cloud Sync）：
 
@@ -1787,7 +1804,7 @@ Extension (Chrome Storage)           Desktop (JSON)
        | (core data only)                  | (core data + local metadata)
        v                                   v
 Cloud Sync (Cloudflare D1: channel_bookmarks table)
-       ↕ polling every 3-5s
+       ↕ polling every 5s (3s when foreground-active)
        同步欄位：id, channelId, channelName, platform, notes, sortOrder
        不同步：avatarUrl, followerCount, lastStreamAt, video cache
 ```
@@ -1816,14 +1833,14 @@ YouTube RSS (HTTP polling)  ──is_live───>       (Desktop)
 | 等級 | 名稱 | 行為 | 範例 |
 |------|------|------|------|
 | Critical | 致命錯誤 | 阻斷操作，顯示模態對話框，記錄 log | Sidecar 缺失、資料庫損毀 |
-| Warning | 警告 | 顯示可消除的 toast/banner，操作可繼續 | 網路中斷、Token 即將過期 |
-| Info | 資訊 | 顯示短暫提示（1.5 秒自動消失） | 「已複製」、「已儲存」、「已同步」 |
+| Warning | 警告 | 顯示可消除的 toast/banner（5 秒自動消失，可手動關閉），操作可繼續 | 網路中斷、Token 即將過期 |
+| Info | 資訊 | 顯示短暫提示（2 秒自動消失） | 「已複製」、「已儲存」、「已同步」 |
 
 #### Pattern 3: 認證
 
 | 服務 | 認證方式 | 儲存位置 | 更新策略 |
 |------|----------|----------|----------|
-| Cloud Sync | Google OAuth → Workers → JWT | Extension: Chrome Identity API; Desktop: OS keychain | 自動 refresh |
+| Cloud Sync | Google OAuth → Workers → JWT | Extension: Chrome Identity API; Desktop: OS keychain | JWT 有效期 7 天。客戶端在收到 401 回應時自動觸發 re-auth（重新執行 Google OAuth 流程）。JWT 到期前 24 小時內，客戶端在下次同步時主動 re-auth 以避免中斷 |
 | Twitch API | OAuth Token（手動輸入） | Desktop 設定檔（加密） | 使用者手動更新 |
 | YouTube 私人內容 | cookies.txt | Desktop 本地檔案 | 使用者手動匯入 |
 | Cloud ASR (BYOK) | API Key（手動輸入） | Desktop: OS keychain（加密） | 使用者手動更新 |
@@ -1934,7 +1951,17 @@ Desktop 的本地 JSON 檔案（`config.json`、`scheduled_presets.json`、`chan
 
 - 應用程式設定檔：`{appDataDir}/tidemark/config.json`
 - 下載歷史：`{appDataDir}/tidemark/history.json`
-- Records 本地快取：`{appDataDir}/tidemark/records.db`（SQLite，schema 鏡像 Cloud Sync D1 的 `records` 與 `folders` 表結構，但不含 `user_id` 欄位，並額外加入 `config_version` 元資料表）
+- Records 本地快取：`{appDataDir}/tidemark/records.db`（SQLite，schema 鏡像 Cloud Sync D1 的 `records` 與 `folders` 表結構，但不含 `user_id` 欄位，並額外加入 `_meta` 元資料表）
+
+**`_meta` 表 DDL**：
+
+```sql
+CREATE TABLE _meta (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
+-- 初始值：INSERT INTO _meta (key, value) VALUES ('config_version', '1');
+```
 - 下載輸出：預設 `[{type}] [{channel_name}] [{date}] {title}`（詳見 Module 10 F10.5 全域預設範本；副檔名由 yt-dlp 自動決定）
 - 字幕輸出：與輸入檔案同名，副檔名為 `.srt` 或 `.txt`
 - 排程下載預設：`{appDataDir}/tidemark/scheduled_presets.json`
@@ -1945,7 +1972,7 @@ Desktop 的本地 JSON 檔案（`config.json`、`scheduled_presets.json`、`chan
 
 - Tab Navigation：Desktop 主介面使用側邊 Tab 導航（Download、History、Subtitles、Records、Channel Bookmarks、Scheduled Downloads、Settings）。Scheduled Downloads 頁面僅在 F6.8「啟用排程下載」開啟時顯示；Channel Bookmarks 頁面僅在 F6.9「啟用頻道書籤」開啟時顯示
 - Card Pattern：下載任務以卡片呈現，含進度條、操作按鈕、展開/收起詳情
-- Toast Notifications：短暫操作回饋（右下角，1.5~3 秒自動消失）
+- Toast Notifications：短暫操作回饋（右下角，依等級：Info 2 秒 / Warning 5 秒可手動關閉 / Critical 不自動消失需手動關閉）
 - Modal Dialogs：破壞性操作（刪除、清空）需要確認對話框
 - Theme System：支援深色/淺色/跟隨系統，使用 CSS 變數實作
 - Keyboard Shortcuts：Desktop 不定義全域快捷鍵。各頁面的表單中 Enter 鍵觸發主要動作（如 F1.1 記錄時間、F7.1 新增預設）、Escape 鍵取消編輯模式。完整快捷鍵對照表留待實作階段依 UI 實際佈局制定

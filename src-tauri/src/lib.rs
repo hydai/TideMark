@@ -2857,18 +2857,14 @@ fn run_app_config_migration_on_value(
     }
 
     // v1 → v2: add language field (Module 9)
-    if file_version < 2 {
-        if !obj.contains_key("language") {
-            obj.insert("language".to_string(), serde_json::json!("zh-TW"));
-        }
+    if file_version < 2 && !obj.contains_key("language") {
+        obj.insert("language".to_string(), serde_json::json!("zh-TW"));
     }
 
     // v2 → v3: add default_filename_template (Module 10)
-    if file_version < 3 {
-        if !obj.contains_key("default_filename_template") {
-            obj.insert("default_filename_template".to_string(),
-                serde_json::json!("[{type}] [{channel_name}] [{date}] {title}"));
-        }
+    if file_version < 3 && !obj.contains_key("default_filename_template") {
+        obj.insert("default_filename_template".to_string(),
+            serde_json::json!("[{type}] [{channel_name}] [{date}] {title}"));
     }
 
     // v3 → v4: add local direct connection settings (Interface 7)

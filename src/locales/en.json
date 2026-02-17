@@ -1,0 +1,51 @@
+{
+  "common": {
+    "actions": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "delete": "Delete",
+      "edit": "Edit",
+      "add": "Add",
+      "close": "Close",
+      "browse": "Browse...",
+      "choose": "Choose",
+      "open": "Open",
+      "copy": "Copy",
+      "retry": "Retry",
+      "stop": "Stop",
+      "start": "Start",
+      "loading": "Loading...",
+      "unknown": "Unknown"
+    },
+    "status": {
+      "on": "On",
+      "off": "Off",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "verified": "✓ Verified",
+      "unverified": "Not set",
+      "validating": "Validating...",
+      "error": "Error"
+    },
+    "confirm": {
+      "deleteRecord": "Delete this record? (Files will not be deleted)",
+      "clearAllHistory": "Clear all download history? (Files will not be deleted)"
+    }
+  },
+  "app": {
+    "tabs": {
+      "download": "Download",
+      "history": "History",
+      "subtitles": "Subtitles",
+      "records": "Records",
+      "scheduled": "Scheduled",
+      "bookmarks": "Bookmarks",
+      "settings": "Settings"
+    }
+  },
+  "errors": {
+    "languageLoadFailed": "Failed to load language file, falling back to Traditional Chinese",
+    "languageLoadFailedTitle": "Language Load Failed"
+  }
+}

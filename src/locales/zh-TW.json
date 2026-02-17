@@ -1,0 +1,695 @@
+{
+  "common": {
+    "actions": {
+      "save": "儲存",
+      "cancel": "取消",
+      "confirm": "確認",
+      "delete": "刪除",
+      "edit": "編輯",
+      "add": "新增",
+      "close": "關閉",
+      "browse": "瀏覽...",
+      "choose": "選擇",
+      "open": "開啟",
+      "copy": "複製",
+      "retry": "重試",
+      "stop": "停止",
+      "start": "開始",
+      "loading": "載入中...",
+      "unknown": "未知"
+    },
+    "status": {
+      "on": "開啟",
+      "off": "關閉",
+      "enabled": "啟用",
+      "disabled": "停用",
+      "verified": "✓ 已驗證",
+      "unverified": "未設定",
+      "validating": "驗證中...",
+      "error": "錯誤"
+    },
+    "confirm": {
+      "deleteRecord": "確定要刪除此記錄嗎？（不會刪除實際檔案）",
+      "clearAllHistory": "確定要清空全部歷程記錄嗎？（不會刪除實際檔案）"
+    }
+  },
+  "app": {
+    "tabs": {
+      "download": "下載",
+      "history": "歷程",
+      "subtitles": "字幕",
+      "records": "記錄",
+      "scheduled": "排程下載",
+      "bookmarks": "頻道書籤",
+      "settings": "設定"
+    }
+  },
+  "download": {
+    "title": "下載",
+    "urlInput": {
+      "placeholder": "貼上 YouTube 或 Twitch 連結...",
+      "fetchButton": "貼上並取得",
+      "fetching": "取得中..."
+    },
+    "liveBadge": "直播中",
+    "settings": {
+      "title": "下載設定",
+      "quality": "影片品質",
+      "qualityLoading": "載入中...",
+      "contentType": "內容類型",
+      "contentTypeVideoAudio": "影片+音訊",
+      "contentTypeVideoOnly": "僅影片",
+      "contentTypeAudioOnly": "僅音訊",
+      "videoCodec": "影片編解碼器",
+      "audioCodec": "音訊編解碼器",
+      "outputFilename": "輸出檔名",
+      "outputFolder": "輸出資料夾",
+      "container": "輸出容器格式",
+      "containerAuto": "自動",
+      "timeRange": "時間範圍（選填）",
+      "startTime": "開始時間 (HH:MM:SS)",
+      "endTime": "結束時間 (HH:MM:SS)",
+      "timeRangeHelp": "支援格式: HH:MM:SS (例: 01:30:45)、MM:SS (例: 90:45)、純秒數 (例: 5445)",
+      "timeSeparator": "至",
+      "noQuality": "無可用畫質"
+    },
+    "actions": {
+      "startDownload": "開始下載",
+      "startDownloadVodOnly": "開始下載 (僅 VOD)",
+      "recordStream": "錄製直播",
+      "folderSelect": "選擇"
+    },
+    "progress": {
+      "title": "下載進度",
+      "empty": "目前沒有下載任務",
+      "eta": "剩餘 {eta}",
+      "recordedDuration": "已錄製時長",
+      "fileSize": "檔案大小",
+      "bitrate": "串流位元率",
+      "liveRecording": "🔴 直播錄製",
+      "postProcessing": "正在後處理...",
+      "streamInterrupted": "串流中斷 - 已錄製內容保留",
+      "actions": {
+        "pause": "暫停",
+        "resume": "恢復",
+        "cancel": "取消",
+        "stopRecording": "停止錄製",
+        "openFile": "開啟檔案",
+        "showFolder": "顯示資料夾",
+        "sendToTranscription": "送往轉錄"
+      }
+    },
+    "status": {
+      "queued": "排隊中",
+      "downloading": "下載中",
+      "recording": "錄製中",
+      "processing": "處理中",
+      "completed": "已完成",
+      "failed": "失敗",
+      "cancelled": "已取消",
+      "paused": "已暫停",
+      "stream_interrupted": "串流中斷"
+    },
+    "duration": {
+      "live": "直播中",
+      "unknown": "時長未知"
+    },
+    "error": {
+      "enterUrl": "請輸入連結",
+      "invalidTime": "請輸入有效時間格式",
+      "endBeforeStart": "結束時間必須晚於開始時間",
+      "timeExceedsDuration": "時間超出影片長度"
+    }
+  },
+  "history": {
+    "title": "歷程",
+    "search": {
+      "placeholder": "搜尋標題或頻道..."
+    },
+    "filter": {
+      "allStatus": "全部狀態",
+      "completed": "已完成",
+      "failed": "失敗",
+      "cancelled": "已取消"
+    },
+    "sort": {
+      "byDate": "依日期排序",
+      "byTitle": "依標題排序",
+      "byChannel": "依頻道排序"
+    },
+    "actions": {
+      "clearAll": "清空全部",
+      "openFile": "開啟檔案",
+      "showInFolder": "在資料夾中顯示",
+      "deleteRecord": "刪除記錄"
+    },
+    "metadata": {
+      "downloadDate": "下載日期:",
+      "fileSize": "檔案大小:",
+      "resolution": "解析度:",
+      "filePath": "檔案路徑:"
+    },
+    "status": {
+      "completed": "已完成",
+      "failed": "失敗",
+      "cancelled": "已取消",
+      "streamInterrupted": "串流中斷"
+    },
+    "empty": "無下載歷程",
+    "loading": "載入中...",
+    "error": {
+      "loadFailed": "載入歷程失敗",
+      "openFileFailed": "開啟檔案失敗",
+      "showFolderFailed": "開啟資料夾失敗",
+      "deleteEntryFailed": "刪除記錄失敗",
+      "clearAllFailed": "清空歷程失敗",
+      "fileNotFound": "檔案不存在",
+      "errorMessage": "錯誤訊息:"
+    }
+  },
+  "subtitles": {
+    "title": "字幕",
+    "fileInput": {
+      "dropzoneText": "拖放影音檔案至此",
+      "dropzoneHint": "或",
+      "selectFile": "選擇檔案",
+      "clearFile": "清除檔案"
+    },
+    "engine": {
+      "title": "ASR 引擎",
+      "localEngine": "本地引擎",
+      "cloudEngine": "雲端引擎 (BYOK)"
+    },
+    "config": {
+      "language": "語言",
+      "languageAuto": "自動偵測",
+      "languageZh": "中文",
+      "languageEn": "英文",
+      "languageJa": "日文",
+      "languageKo": "韓文",
+      "modelSize": "模型大小",
+      "modelTiny": "Tiny (最快，精度低)",
+      "modelBase": "Base",
+      "modelSmall": "Small",
+      "modelMedium": "Medium (推薦)",
+      "modelLarge": "Large (最準，速度慢)",
+      "hardwareMode": "硬體模式",
+      "hardwareAuto": "自動",
+      "hardwareGpu": "GPU",
+      "hardwareCpu": "CPU",
+      "outputFormat": "輸出格式",
+      "outputSrt": "SRT 字幕",
+      "outputTxt": "純文字",
+      "outputBoth": "雙格式",
+      "enableVad": "啟用 VAD (語音活動偵測)",
+      "enableDemucs": "啟用 Demucs (人聲分離)",
+      "enablePunctuation": "啟用標點符號",
+      "traditionalChinese": "繁體中文輸出",
+      "maxSeconds": "最長秒數",
+      "maxChars": "最長字數",
+      "modelQwen": "模型",
+      "autoSegment": "自動分段 (大檔案)",
+      "apiKeyWarning": "請先在設定頁面中設定 API Key",
+      "apiKeyWarningProvider": "請先在設定頁面中設定 {provider} API Key"
+    },
+    "environment": {
+      "title": "環境狀態",
+      "python": "Python 環境",
+      "gpu": "GPU 可用性",
+      "install": "安裝環境",
+      "installing": "安裝中...",
+      "installedModels": "已安裝模型",
+      "noModels": "無已安裝模型",
+      "checkFailed": "檢查失敗",
+      "checking": "檢查中...",
+      "pythonInstalled": "✓ 已安裝 ({version})",
+      "pythonNotInstalled": "✗ 未安裝",
+      "gpuAvailable": "✓ 可用 ({name})",
+      "gpuNotAvailable": "✗ 不可用 (使用 CPU)",
+      "downloadModel": "下載",
+      "deleteModel": "刪除",
+      "downloading": "下載中 {progress}%"
+    },
+    "progress": {
+      "title": "轉錄進度",
+      "preparing": "準備中...",
+      "transcribing": "轉錄中...",
+      "uploading": "上傳中 ({current}/{total})...",
+      "segments": "{current} / {total} 段"
+    },
+    "result": {
+      "title": "轉錄完成",
+      "outputFile": "輸出檔案：{path}",
+      "openFile": "開啟檔案",
+      "showInFolder": "在資料夾中顯示"
+    },
+    "actions": {
+      "start": "開始轉錄",
+      "cancel": "取消轉錄",
+      "inProgress": "轉錄中..."
+    },
+    "error": {
+      "noFileSelected": "請先選擇檔案",
+      "cannotReadFile": "無法讀取檔案資訊",
+      "cannotOpenFile": "無法開啟檔案",
+      "cannotOpenFolder": "無法開啟資料夾",
+      "installFailed": "環境安裝失敗：{error}",
+      "installSuccess": "環境安裝成功！",
+      "modelDownloadStarted": "模型下載已開始",
+      "modelDownloadFailed": "模型下載失敗：{error}",
+      "modelDeleted": "模型已刪除",
+      "modelDeleteFailed": "模型刪除失敗：{error}",
+      "confirmDeleteModel": "確定要刪除此模型嗎？",
+      "transcriptionFailed": "轉錄失敗：{error}",
+      "transcriptionComplete": "轉錄完成！"
+    }
+  },
+  "records": {
+    "sidebar": {
+      "folders": "資料夾",
+      "allRecords": "所有記錄",
+      "uncategorized": "未分類",
+      "newFolder": "新增資料夾",
+      "folderNamePlaceholder": "新資料夾名稱"
+    },
+    "search": {
+      "placeholder": "搜尋標題、主題或頻道..."
+    },
+    "empty": "沒有記錄",
+    "sync": {
+      "localMode": "本機模式 (未同步)",
+      "loginWithGoogle": "Login with Google",
+      "logout": "登出",
+      "status": {
+        "synced": "已同步",
+        "syncing": "同步中...",
+        "error": "同步錯誤",
+        "offline": "離線"
+      }
+    },
+    "actions": {
+      "download": "下載片段",
+      "openVod": "前往 VOD",
+      "deleteRecord": "刪除記錄",
+      "deleteFolder": "刪除資料夾"
+    },
+    "currentFolder": {
+      "allRecords": "所有記錄",
+      "uncategorized": "未分類",
+      "default": "記錄"
+    },
+    "error": {
+      "loadFailed": "載入記錄失敗: {error}",
+      "createFolderFailed": "建立資料夾失敗: {error}",
+      "renameFolderFailed": "重新命名資料夾失敗: {error}",
+      "deleteFolderFailed": "刪除資料夾失敗: {error}",
+      "reorderFolderFailed": "重新排序資料夾失敗: {error}",
+      "updateRecordFailed": "更新記錄失敗: {error}",
+      "deleteRecordFailed": "刪除記錄失敗: {error}",
+      "cannotParseUrl": "無法解析此記錄的連結",
+      "cannotPrepareDownload": "無法準備下載: {error}"
+    },
+    "confirm": {
+      "deleteFolder": "確定要刪除資料夾「{name}」嗎？其中的記錄將移至「未分類」。",
+      "deleteRecord": "確定要刪除記錄「{title}」嗎？",
+      "logout": "確定要登出嗎？本機資料將保留，但不會再同步至雲端。"
+    }
+  },
+  "bookmarks": {
+    "title": "頻道書籤",
+    "add": "新增書籤",
+    "empty": "尚未加入任何頻道書籤",
+    "scheduledBanner": "啟用排程下載以獲取即時直播狀態",
+    "urlInput": {
+      "placeholder": "https://twitch.tv/channelname 或 https://youtube.com/@handle",
+      "resolve": "解析",
+      "resolving": "解析中..."
+    },
+    "modal": {
+      "saveButton": "加入書籤",
+      "cancelButton": "取消"
+    },
+    "card": {
+      "liveBadge": "直播中",
+      "presetEnabled": "📡 排程啟用中",
+      "presetEnabledTitle": "此頻道已設定排程下載（啟用中）",
+      "presetDisabled": "📡 排程已停用",
+      "presetDisabledTitle": "此頻道已設定排程下載（已停用）",
+      "notesPlaceholder": "輸入備註...",
+      "notesEmpty": "（點擊新增備註）",
+      "subscribers": "訂閱者",
+      "followers": "追蹤者",
+      "streamedAgo": "{time}直播",
+      "refresh": "重新整理頻道資訊",
+      "delete": "刪除",
+      "deleteTitle": "刪除此書籤",
+      "expand": "展開",
+      "expandTitle": "展開最新影片列表",
+      "collapse": "收起",
+      "collapseTitle": "收起影片列表",
+      "downloadVod": "下載最新 VOD",
+      "downloadVodTitle": "取得此頻道最新 VOD 並前往下載",
+      "downloadVodLoading": "取得中…",
+      "addScheduled": "新增排程預設",
+      "addScheduledTitle": "為此頻道新增排程下載預設",
+      "openChannel": "開啟頻道",
+      "openChannelTitle": "在瀏覽器中開啟此頻道頁面",
+      "copyUrl": "複製連結",
+      "copyUrlTitle": "複製頻道 URL 到剪貼簿",
+      "dragHandle": "拖曳以重新排序"
+    },
+    "videos": {
+      "loading": "載入中…",
+      "loadError": "無法載入影片列表，請稍後重試",
+      "retry": "重試",
+      "empty": "此頻道目前沒有公開影片"
+    },
+    "relativeTime": {
+      "justNow": "剛剛",
+      "minutesAgo": "{minutes} 分鐘前",
+      "hoursAgo": "{hours} 小時前",
+      "daysAgo": "{days} 天前",
+      "weeksAgo": "{weeks} 週前",
+      "monthsAgo": "{months} 個月前",
+      "yearsAgo": "{years} 年前"
+    },
+    "viewCount": {
+      "millions": "{count}M 次觀看",
+      "thousands": "{count}K 次觀看",
+      "exact": "{count} 次觀看"
+    },
+    "error": {
+      "resolveFailed": "解析失敗: {error}",
+      "unrecognized": "無法辨識此頻道",
+      "enterUrl": "請輸入頻道網址",
+      "resolveFirst": "請先解析頻道網址",
+      "alreadyBookmarked": "此頻道已在書籤中",
+      "saveFailed": "儲存失敗: {error}",
+      "deleteFailed": "刪除失敗: {error}",
+      "noVod": "此頻道目前沒有可下載的 VOD",
+      "getVodFailed": "取得最新 VOD 失敗，請稍後再試",
+      "copyFailed": "複製失敗，請手動複製"
+    },
+    "toast": {
+      "copied": "已複製",
+      "hasPreset": "此頻道已有排程預設，是否前往查看？"
+    },
+    "confirm": {
+      "deleteBookmark": "確定要刪除頻道「{name}」的書籤嗎？"
+    }
+  },
+  "scheduled": {
+    "title": "排程下載",
+    "addPreset": "新增預設",
+    "queue": {
+      "title": "下載佇列",
+      "empty": "目前無排程下載任務。",
+      "running": "下載中",
+      "queued": "等待中",
+      "completed": "已完成",
+      "failed": "失敗 / 已取消",
+      "cancelTask": "取消",
+      "openFile": "開啟檔案",
+      "retry": "重試",
+      "queuePosition": "佇列第 {position} 位",
+      "triggeredAt": "觸發於 {time}",
+      "completedAt": "完成於 {time}",
+      "alreadyCompleted": "已完成",
+      "cancelled": "已取消"
+    },
+    "monitoring": {
+      "title": "監聽狀態",
+      "startTwitch": "開始 Twitch 監聽",
+      "stopTwitch": "停止 Twitch 監聽",
+      "connecting": "連線中…",
+      "stopped": "已停止監聽",
+      "startYoutube": "開始 YouTube 輪詢",
+      "stopYoutube": "停止 YouTube 輪詢",
+      "starting": "啟動中…",
+      "pollingActive": "輪詢中",
+      "pollingStopped": "已停止"
+    },
+    "twitchStatus": {
+      "connected": "Twitch: 已連線 ({count} 個頻道)",
+      "disconnected": "Twitch: 已斷線"
+    },
+    "youtubeStatus": {
+      "polling": "YouTube: 輪詢中 ({count} 個頻道, 每 {interval} 秒)",
+      "stopped": "YouTube: 已停止"
+    },
+    "preset": {
+      "title": "頻道預設",
+      "empty": "尚無預設。請按「新增預設」新增頻道。",
+      "headers": {
+        "channelName": "頻道名稱",
+        "platform": "平台",
+        "status": "狀態",
+        "enabled": "啟用",
+        "lastTriggered": "上次觸發",
+        "totalDownloads": "累計下載",
+        "actions": "操作"
+      },
+      "liveBadge": "直播中",
+      "offlineBadge": "離線",
+      "neverTriggered": "從未",
+      "bookmarkTitle": "跳轉至頻道書籤",
+      "edit": "編輯",
+      "delete": "刪除"
+    },
+    "modal": {
+      "addTitle": "新增頻道預設",
+      "editTitle": "編輯頻道預設",
+      "urlLabel": "頻道網址",
+      "urlPlaceholder": "https://twitch.tv/channelname 或 https://youtube.com/@handle",
+      "resolve": "解析",
+      "resolving": "解析中...",
+      "quality": "品質",
+      "qualityBest": "最佳",
+      "contentType": "內容類型",
+      "contentTypeVideoAudio": "影片+音訊",
+      "contentTypeAudioOnly": "僅音訊",
+      "outputDir": "輸出資料夾",
+      "folderSelect": "選擇",
+      "filenameTemplate": "檔名模板",
+      "container": "容器格式",
+      "cancel": "取消",
+      "save": "儲存",
+      "overwriteConfirm": "此頻道已有預設，是否覆蓋？"
+    },
+    "task": {
+      "recordingStats": "錄製中 {duration} | {bitrate} | {speed}",
+      "recordingWaiting": "錄製中..."
+    },
+    "error": {
+      "toggleFailed": "切換狀態失敗: {error}",
+      "deletePreset": "確定要刪除頻道「{name}」的預設嗎？",
+      "deletePresetFailed": "刪除預設失敗: {error}",
+      "overwriteFailed": "無法覆蓋舊預設: {error}",
+      "savePresetFailed": "儲存預設失敗: {error}",
+      "invalidOutputDir": "輸出資料夾無效",
+      "enterUrl": "請輸入頻道網址",
+      "resolveFirst": "請先解析頻道網址",
+      "selectFolder": "請選擇輸出資料夾",
+      "resolveFailed": "解析失敗: {error}",
+      "unrecognized": "無法辨識此頻道",
+      "startTwitchFailed": "無法啟動 Twitch 監聽: {error}",
+      "stopTwitchFailed": "無法停止 Twitch 監聽: {error}",
+      "startYoutubeFailed": "無法啟動 YouTube 輪詢: {error}",
+      "stopYoutubeFailed": "無法停止 YouTube 輪詢: {error}",
+      "cancelTaskFailed": "取消失敗: {error}",
+      "retryFailed": "重試失敗: {error}"
+    },
+    "toast": {
+      "cancelled": "已取消排程下載",
+      "requeued": "已重新加入佇列",
+      "triggered": "排程下載已觸發：{channelName} ({platform})",
+      "completed": "排程下載完成：{channelName}（{sizeMb} MB）",
+      "failed": "排程下載失敗：{channelName} — {error}",
+      "diskFull": "磁碟空間不足 (剩餘 {freeMb} MB)，已暫停排程下載：{channelName}",
+      "youtubeError": "YouTube 頻道錯誤 ({channelId}): {error}"
+    }
+  },
+  "settings": {
+    "title": "設定",
+    "general": {
+      "title": "一般設定",
+      "downloadFolder": "預設下載資料夾",
+      "downloadFolderDesc": "下載檔案的預設輸出路徑",
+      "subtitleFolder": "預設字幕輸出資料夾",
+      "subtitleFolderDesc": "轉錄字幕的預設輸出路徑",
+      "launchOnStartup": "開機自啟動",
+      "launchOnStartupDesc": "系統啟動時自動執行",
+      "desktopNotifications": "桌面通知",
+      "desktopNotificationsDesc": "下載/轉錄完成時發送系統通知",
+      "language": "語言",
+      "languageDesc": "介面語言",
+      "timezone": "時區",
+      "timezoneDesc": "顯示時間的時區"
+    },
+    "download": {
+      "title": "下載設定",
+      "enableTranscoder": "啟用轉碼器",
+      "enableTranscoderDesc": "下載後是否進行轉碼",
+      "videoQuality": "預設影片品質",
+      "videoQualityDesc": "預設選擇的畫質",
+      "outputContainer": "輸出容器",
+      "outputContainerDesc": "預設輸出格式",
+      "maxConcurrent": "最大同時下載數量",
+      "maxConcurrentDesc": "並行下載任務數",
+      "autoRetry": "自動重試",
+      "autoRetryDesc": "下載失敗時是否自動重試",
+      "maxRetryCount": "最大重試次數",
+      "maxRetryCountDesc": "自動重試次數上限",
+      "speedLimit": "下載速度限制 (MB/s)",
+      "speedLimitDesc": "0 = 不限",
+      "showCodecOptions": "顯示編解碼器選項",
+      "showCodecOptionsDesc": "下載頁面是否顯示進階編解碼器欄位"
+    },
+    "appearance": {
+      "title": "外觀設定",
+      "theme": "主題",
+      "themeDark": "深色",
+      "themeLight": "淺色",
+      "themeSystem": "跟隨系統",
+      "animation": "動畫效果",
+      "animationDesc": "開啟/關閉 UI 動畫",
+      "compact": "緊湊模式",
+      "compactDesc": "減少 UI 間距"
+    },
+    "records": {
+      "title": "Records 設定",
+      "showAllRecords": "顯示「所有紀錄」Folder",
+      "showAllRecordsDesc": "是否顯示合併所有 Folder 的虛擬 Folder",
+      "showUncategorized": "顯示「未分類」Folder",
+      "showUncategorizedDesc": "是否顯示未分類 Folder",
+      "clipBeforeOffset": "下載片段前偏移秒數",
+      "clipBeforeOffsetDesc": "Record → Download 時，開始時間往前偏移",
+      "clipAfterOffset": "下載片段後偏移秒數",
+      "clipAfterOffsetDesc": "Record → Download 時，結束時間往後偏移"
+    },
+    "asr": {
+      "title": "ASR API Keys (BYOK)",
+      "description": "用於雲端 ASR 轉錄服務。API Key 將安全儲存於本機。",
+      "placeholder": "請輸入 API Key",
+      "show": "顯示",
+      "hide": "隱藏",
+      "test": "測試連線",
+      "save": "儲存",
+      "remove": "移除",
+      "testing": "測試中...",
+      "enterApiKey": "請輸入 API Key",
+      "saved": "✓ 已儲存",
+      "set": "✓ 已設定",
+      "notSet": "未設定",
+      "removed": "已移除",
+      "saveFailed": "儲存失敗",
+      "removeFailed": "移除失敗",
+      "loadFailed": "載入失敗",
+      "testFailed": "測試失敗，請稍後重試",
+      "confirmRemove": "確定要移除 {provider} API Key 嗎？",
+      "groqDescription": "Groq Whisper API (極快速度)"
+    },
+    "scheduled": {
+      "title": "排程下載設定",
+      "enable": "啟用排程下載",
+      "enableDesc": "啟用後側邊欄將顯示「排程下載」頁籤",
+      "closeBehavior": "關閉行為",
+      "closeBehaviorDesc": "關閉視窗時的行為",
+      "closeBehaviorMinimize": "最小化至系統列",
+      "closeBehaviorQuit": "完全關閉",
+      "pollingInterval": "YouTube 輪詢間隔 (秒)",
+      "pollingIntervalDesc": "定期檢查頻道是否開播的間隔，範圍 30–300 秒",
+      "triggerCooldown": "觸發冷卻期 (秒)",
+      "triggerCooldownDesc": "同一頻道觸發下載後的冷卻等待時間",
+      "notification": "排程下載通知",
+      "notificationDesc": "排程下載開始時的通知方式",
+      "notificationOs": "OS 通知",
+      "notificationToast": "應用程式內 Toast",
+      "notificationBoth": "兩者",
+      "notificationNone": "關閉",
+      "notificationPermissionDenied": "系統通知權限已被拒絕。請在系統設定中允許 Tidemark 發送通知，否則僅 Toast 通知有效。",
+      "autoTranscribe": "排程下載自動轉錄",
+      "autoTranscribeDesc": "排程下載完成後自動執行字幕轉錄",
+      "autoStart": "開機自動啟動監聽",
+      "autoStartDesc": "應用程式啟動時自動開始監聽排程"
+    },
+    "channelBookmarks": {
+      "title": "頻道書籤設定",
+      "enable": "啟用頻道書籤",
+      "enableDesc": "啟用後側邊欄將顯示「頻道書籤」頁籤",
+      "metadataRefresh": "元資料自動刷新間隔（小時）",
+      "metadataRefreshDesc": "自動刷新頻道元資料的間隔，範圍 1–168 小時",
+      "videoCache": "影片快取數量",
+      "videoCacheDesc": "每個頻道快取的最新影片數量，範圍 1–20"
+    },
+    "gpu": {
+      "title": "GPU 加速設定",
+      "hardwareEncoding": "下載硬體編碼",
+      "hardwareEncodingDesc": "啟用 GPU 硬體編碼加速下載",
+      "encoder": "硬體編碼器",
+      "encoderDesc": "選擇硬體編碼器（自動偵測或手動選擇）",
+      "encoderAuto": "自動",
+      "frontendAcceleration": "前端渲染加速",
+      "frontendAccelerationDesc": "Tauri WebView 硬體加速（變更後需重啟）",
+      "restartConfirm": "前端渲染加速設定變更後需要重啟應用程式才能生效。是否現在重啟？",
+      "restartManual": "請手動重啟應用程式以套用變更。"
+    },
+    "auth": {
+      "title": "平台認證",
+      "twitchTitle": "Twitch OAuth Token",
+      "twitchDesc": "用於下載訂閱者限定內容。取得方式：登入 Twitch 後，開啟瀏覽器開發者工具，在 Network 分頁中尋找請求標頭中的 Authorization token。",
+      "twitchPlaceholder": "請輸入 Twitch OAuth Token",
+      "twitchValidate": "驗證",
+      "twitchValidated": "✓ 已驗證",
+      "twitchNotSet": "未設定",
+      "twitchValidating": "驗證中...",
+      "twitchEnterToken": "請輸入 Token",
+      "twitchInvalid": "Token 無效，請重新取得",
+      "twitchValidationFailed": "驗證失敗，請稍後重試",
+      "youtubeTitle": "YouTube Cookies",
+      "youtubeDesc": "用於下載會員專屬或私人影片。請使用瀏覽器擴充套件匯出 cookies.txt（Netscape 格式）。",
+      "youtubePlaceholder": "尚未匯入 cookies.txt",
+      "youtubeImport": "匯入 cookies.txt",
+      "youtubeImported": "✓ 已匯入",
+      "youtubeNotImported": "未匯入",
+      "youtubeValidating": "驗證中...",
+      "youtubeInvalidFormat": "Cookies 檔案格式不正確，請使用 Netscape 格式",
+      "youtubeImportFailed": "匯入失敗，請稍後重試",
+      "clearAll": "清除所有認證資訊",
+      "clearConfirm": "確定要清除所有認證資訊嗎？",
+      "clearFailed": "清除失敗"
+    },
+    "about": {
+      "title": "關於 Tidemark",
+      "version": "版本資訊",
+      "versionLoading": "載入中...",
+      "versionText": "版本：{version}",
+      "versionUnknown": "版本：未知",
+      "checkUpdate": "檢查更新",
+      "checkingUpdate": "檢查中...",
+      "updateAvailable": "有新版本可用：{version}",
+      "upToDate": "✓ 目前已是最新版本",
+      "updateCheckFailed": "檢查更新失敗",
+      "goToDownload": "是否前往下載頁面？",
+      "toolVersions": "核心工具版本",
+      "toolVersionsLoading": "載入中...",
+      "toolVersionsError": "無法取得工具版本資訊",
+      "ytdlpNotInstalled": "yt-dlp: 未安裝",
+      "ffmpegNotInstalled": "FFmpeg: 未安裝",
+      "license": "開源授權",
+      "licenseDesc": "Tidemark 是開源軟體，遵循 MIT License。",
+      "viewLicense": "查看授權資訊",
+      "licenseOpenFailed": "無法開啟授權資訊頁面"
+    }
+  },
+  "tray": {
+    "show": "顯示 Tidemark",
+    "hide": "隱藏 Tidemark",
+    "monitoring": "監聽排程中...",
+    "quit": "退出"
+  },
+  "errors": {
+    "languageLoadFailed": "語言檔載入失敗，已切換回繁體中文",
+    "languageLoadFailedTitle": "語言載入失敗"
+  }
+}

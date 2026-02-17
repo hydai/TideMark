@@ -8,6 +8,7 @@ import { renderRecordsPage } from './pages/records';
 import { renderScheduledDownloadsPage } from './pages/scheduled-downloads';
 import { renderChannelBookmarksPage } from './pages/channel-bookmarks';
 import { listen } from '@tauri-apps/api/event';
+import { t } from './i18n';
 
 type TabId = 'download' | 'history' | 'subtitles' | 'records' | 'settings' | 'scheduled-downloads' | 'channel-bookmarks';
 
@@ -43,13 +44,13 @@ export function renderApp() {
   tabNav.className = 'tab-nav';
 
   const tabs: { id: TabId; icon: string; label: string; conditional?: boolean }[] = [
-    { id: 'download', icon: '📥', label: '下載' },
-    { id: 'history', icon: '📜', label: '歷程' },
-    { id: 'subtitles', icon: '💬', label: '字幕' },
-    { id: 'records', icon: '🔖', label: '記錄' },
-    { id: 'scheduled-downloads', icon: '🗓️', label: '排程下載', conditional: true },
-    { id: 'channel-bookmarks', icon: '🔔', label: '頻道書籤', conditional: true },
-    { id: 'settings', icon: '⚙️', label: '設定' },
+    { id: 'download', icon: '📥', label: t('app.tabs.download') },
+    { id: 'history', icon: '📜', label: t('app.tabs.history') },
+    { id: 'subtitles', icon: '💬', label: t('app.tabs.subtitles') },
+    { id: 'records', icon: '🔖', label: t('app.tabs.records') },
+    { id: 'scheduled-downloads', icon: '🗓️', label: t('app.tabs.scheduled'), conditional: true },
+    { id: 'channel-bookmarks', icon: '🔔', label: t('app.tabs.bookmarks'), conditional: true },
+    { id: 'settings', icon: '⚙️', label: t('app.tabs.settings') },
   ];
 
   tabs.forEach(tab => {
@@ -251,6 +252,14 @@ function switchTab(tabId: TabId) {
 export function navigateToDownload(data: any) {
   navigationData = data;
   switchTab('download');
+}
+
+/**
+ * Called by main.ts as the i18n re-render callback.
+ * Re-renders the entire app (nav + current page) to reflect the new language.
+ */
+export function setCurrentRerenderCallback() {
+  renderApp();
 }
 
 // Download page is now in pages/download.ts

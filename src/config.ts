@@ -55,7 +55,7 @@ const defaultConfig: AppConfig = {
   default_subtitle_folder: '~/Tidemark/Downloads',
   launch_on_startup: false,
   desktop_notifications: true,
-  language: '繁體中文',
+  language: 'zh-TW',
   timezone: 'System',
   enable_transcoder: false,
   default_video_quality: 'Highest',

@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { ConfigManager, AppConfig } from '../config';
+import { setLanguage } from '../i18n';
 
 interface AuthConfig {
   twitch_token: string | null;
@@ -144,13 +145,17 @@ function createGeneralSection(): HTMLElement {
   );
   section.appendChild(notificationsGroup);
 
-  // Language
-  const languageGroup = createDropdownGroup(
+  // Language — use locale codes as values, display names as labels
+  const languageGroup = createDropdownGroupWithValues(
     'language',
     '語言',
     '介面語言',
-    currentConfig?.language || '繁體中文',
-    ['繁體中文', 'English', '日本語']
+    currentConfig?.language || 'zh-TW',
+    [
+      { value: 'zh-TW', label: '繁體中文' },
+      { value: 'en', label: 'English' },
+      { value: 'ja', label: '日本語' },
+    ]
   );
   section.appendChild(languageGroup);
 
@@ -1140,8 +1145,15 @@ function attachGeneralEventListeners(container: HTMLElement) {
   // Desktop notifications
   attachToggleListener(container, 'desktop-notifications', 'desktop_notifications');
 
-  // Language
-  attachDropdownListener(container, 'language', 'language');
+  // Language — call setLanguage() which triggers page re-render (F9.3)
+  const languageSelect = container.querySelector('#language') as HTMLSelectElement;
+  languageSelect?.addEventListener('change', async () => {
+    const locale = languageSelect.value;
+    await ConfigManager.update({ language: locale });
+    await setLanguage(locale);
+    // setLanguage calls the rerenderCallback registered in main.ts,
+    // which re-renders the entire app including the settings page.
+  });
 
   // Timezone
   attachDropdownListener(container, 'timezone', 'timezone');

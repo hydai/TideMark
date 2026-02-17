@@ -11,10 +11,456 @@ use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton, MouseButtonState}
 use regex::Regex;
 use chrono::Utc;
 use uuid::Uuid;
+use tokio::sync::watch;
+use futures_util::{SinkExt, StreamExt};
 
 // Global state for force quit and monitoring pause
 static FORCE_QUIT: AtomicBool = AtomicBool::new(false);
 static MONITORING_PAUSED: AtomicBool = AtomicBool::new(false);
+
+// ── Twitch PubSub global state ──────────────────────────────────────────────
+
+/// State shared between PubSub tasks and Tauri commands.
+struct TwitchPubSubState {
+    /// Sender half of a watch channel; send `true` to stop the connection tasks.
+    shutdown_tx: Option<watch::Sender<bool>>,
+    /// Channel IDs currently subscribed.
+    subscribed_channels: Vec<String>,
+    /// Whether at least one connection task is considered "connected".
+    connected: bool,
+}
+
+impl TwitchPubSubState {
+    fn new() -> Self {
+        Self {
+            shutdown_tx: None,
+            subscribed_channels: Vec::new(),
+            connected: false,
+        }
+    }
+}
+
+// We keep this behind a tokio Mutex so async tasks can `.await` the lock.
+static PUBSUB_STATE: std::sync::OnceLock<tokio::sync::Mutex<TwitchPubSubState>> =
+    std::sync::OnceLock::new();
+
+fn pubsub_state() -> &'static tokio::sync::Mutex<TwitchPubSubState> {
+    PUBSUB_STATE.get_or_init(|| tokio::sync::Mutex::new(TwitchPubSubState::new()))
+}
+
+// ── Twitch PubSub message structures ────────────────────────────────────────
+
+/// Sent to Twitch to subscribe to topics.
+#[derive(Serialize)]
+struct PubSubListen {
+    #[serde(rename = "type")]
+    msg_type: String,
+    data: PubSubListenData,
+}
+
+#[derive(Serialize)]
+struct PubSubListenData {
+    topics: Vec<String>,
+}
+
+/// Periodic keep-alive sent to Twitch.
+#[derive(Serialize)]
+struct PubSubPing {
+    #[serde(rename = "type")]
+    msg_type: String,
+}
+
+/// Top-level message received from Twitch PubSub.
+#[derive(Deserialize)]
+struct PubSubIncoming {
+    #[serde(rename = "type")]
+    msg_type: String,
+    data: Option<PubSubIncomingData>,
+}
+
+#[derive(Deserialize)]
+struct PubSubIncomingData {
+    topic: Option<String>,
+    message: Option<String>,
+}
+
+/// Inner JSON inside PubSubIncomingData.message for video-playback-by-id.
+#[derive(Deserialize)]
+struct PlaybackMessage {
+    #[serde(rename = "type")]
+    msg_type: String,
+}
+
+// ── PubSub connection worker ─────────────────────────────────────────────────
+
+/// Maximum topics Twitch allows per single WebSocket connection.
+const PUBSUB_MAX_TOPICS: usize = 50;
+
+/// Run one PubSub connection covering `topics` until shutdown is signalled.
+/// On disconnect, it backs off exponentially up to 120 s and retries.
+async fn run_pubsub_connection(
+    app: AppHandle,
+    topics: Vec<String>,
+    channel_map: HashMap<String, String>, // channel_id -> channel_name
+    mut shutdown_rx: watch::Receiver<bool>,
+) {
+    use tokio_tungstenite::connect_async;
+    use tokio_tungstenite::tungstenite::Message;
+
+    let url = "wss://pubsub-edge.twitch.tv";
+    let mut backoff_secs: u64 = 1;
+
+    loop {
+        // Check for shutdown before each connection attempt.
+        if *shutdown_rx.borrow() {
+            break;
+        }
+
+        log::info!("[PubSub] Connecting to {}", url);
+
+        let ws_result = connect_async(url).await;
+        match ws_result {
+            Err(e) => {
+                log::warn!("[PubSub] Connection failed: {}. Retrying in {}s", e, backoff_secs);
+                let _ = app.emit(
+                    "twitch-pubsub-status",
+                    serde_json::json!({
+                        "connected": false,
+                        "message": format!("Twitch 連線中斷，重試中… ({}s)", backoff_secs),
+                    }),
+                );
+                {
+                    let mut st = pubsub_state().lock().await;
+                    st.connected = false;
+                }
+                let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs));
+                tokio::pin!(sleep);
+                tokio::select! {
+                    _ = &mut sleep => {}
+                    _ = shutdown_rx.changed() => {
+                        if *shutdown_rx.borrow() { break; }
+                    }
+                }
+                backoff_secs = (backoff_secs * 2).min(120);
+                continue;
+            }
+            Ok((ws_stream, _)) => {
+                backoff_secs = 1; // reset on successful connect
+                log::info!("[PubSub] Connected");
+
+                let _ = app.emit(
+                    "twitch-pubsub-status",
+                    serde_json::json!({
+                        "connected": true,
+                        "message": format!("連線中 ({} 個頻道)", topics.len()),
+                    }),
+                );
+                {
+                    let mut st = pubsub_state().lock().await;
+                    st.connected = true;
+                }
+
+                let (mut writer, mut reader) = ws_stream.split();
+
+                // Subscribe to all topics in this connection batch.
+                let listen_msg = PubSubListen {
+                    msg_type: "LISTEN".to_string(),
+                    data: PubSubListenData { topics: topics.clone() },
+                };
+                if let Ok(json) = serde_json::to_string(&listen_msg) {
+                    let _ = writer.send(Message::Text(json.into())).await;
+                }
+
+                // Ping every 4 minutes (240 s).
+                let mut ping_interval =
+                    tokio::time::interval(tokio::time::Duration::from_secs(240));
+                ping_interval.tick().await; // consume the immediate first tick
+
+                // `need_reconnect` starts as false; any disconnect path sets it
+                // to true before breaking.  Using an explicit variable avoids
+                // the "value assigned … never read" warning that would occur if
+                // we called `break` from inside `tokio::select!` directly.
+                let need_reconnect: bool = 'session: {
+                    loop {
+                        if *shutdown_rx.borrow() {
+                            let _ = writer.close().await;
+                            return; // clean exit
+                        }
+
+                        tokio::select! {
+                            _ = ping_interval.tick() => {
+                                let ping = PubSubPing { msg_type: "PING".to_string() };
+                                if let Ok(json) = serde_json::to_string(&ping) {
+                                    if writer.send(Message::Text(json.into())).await.is_err() {
+                                        log::warn!("[PubSub] Failed to send PING; reconnecting");
+                                        break 'session true;
+                                    }
+                                }
+                            }
+
+                            msg = reader.next() => {
+                                match msg {
+                                    None => {
+                                        log::warn!("[PubSub] Stream closed; reconnecting");
+                                        break 'session true;
+                                    }
+                                    Some(Err(e)) => {
+                                        log::warn!("[PubSub] Read error: {}; reconnecting", e);
+                                        break 'session true;
+                                    }
+                                    Some(Ok(Message::Text(txt))) => {
+                                        handle_pubsub_message(
+                                            &app,
+                                            &txt,
+                                            &channel_map,
+                                        );
+                                    }
+                                    Some(Ok(Message::Ping(data))) => {
+                                        let _ = writer.send(Message::Pong(data)).await;
+                                    }
+                                    Some(Ok(Message::Close(_))) => {
+                                        log::info!("[PubSub] Server sent Close; reconnecting");
+                                        break 'session true;
+                                    }
+                                    _ => {}
+                                }
+                            }
+
+                            _ = shutdown_rx.changed() => {
+                                if *shutdown_rx.borrow() {
+                                    let _ = writer.close().await;
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                };
+
+                if need_reconnect {
+                    {
+                        let mut st = pubsub_state().lock().await;
+                        st.connected = false;
+                    }
+                    let _ = app.emit(
+                        "twitch-pubsub-status",
+                        serde_json::json!({
+                            "connected": false,
+                            "message": format!("Twitch 連線中斷，重試中… ({}s)", backoff_secs),
+                        }),
+                    );
+                    let sleep =
+                        tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs));
+                    tokio::pin!(sleep);
+                    tokio::select! {
+                        _ = &mut sleep => {}
+                        _ = shutdown_rx.changed() => {
+                            if *shutdown_rx.borrow() { break; }
+                        }
+                    }
+                    backoff_secs = (backoff_secs * 2).min(120);
+                }
+            }
+        }
+    }
+
+    // Mark disconnected on clean stop.
+    {
+        let mut st = pubsub_state().lock().await;
+        st.connected = false;
+    }
+    let _ = app.emit(
+        "twitch-pubsub-status",
+        serde_json::json!({
+            "connected": false,
+            "message": "已停止監聽",
+        }),
+    );
+    log::info!("[PubSub] Connection task ended");
+}
+
+/// Parse a single text message from Twitch PubSub and emit Tauri events.
+fn handle_pubsub_message(
+    app: &AppHandle,
+    text: &str,
+    channel_map: &HashMap<String, String>,
+) {
+    let msg: PubSubIncoming = match serde_json::from_str(text) {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!("[PubSub] Failed to parse message: {} | raw: {}", e, text);
+            return;
+        }
+    };
+
+    match msg.msg_type.as_str() {
+        "PONG" => {
+            log::debug!("[PubSub] PONG received");
+        }
+        "RECONNECT" => {
+            log::info!("[PubSub] Server requested reconnect");
+        }
+        "RESPONSE" => {
+            // RESPONSE to our LISTEN; error field would appear here on failure.
+            log::debug!("[PubSub] LISTEN response: {}", text);
+        }
+        "MESSAGE" => {
+            if let Some(data) = msg.data {
+                let topic = data.topic.unwrap_or_default();
+                let inner_json = data.message.unwrap_or_default();
+
+                // Extract channel_id from "video-playback-by-id.<id>"
+                let channel_id = topic
+                    .strip_prefix("video-playback-by-id.")
+                    .unwrap_or("")
+                    .to_string();
+
+                let channel_name = channel_map
+                    .get(&channel_id)
+                    .cloned()
+                    .unwrap_or_else(|| channel_id.clone());
+
+                let playback: PlaybackMessage = match serde_json::from_str(&inner_json) {
+                    Ok(p) => p,
+                    Err(_) => return,
+                };
+
+                let paused = MONITORING_PAUSED.load(Ordering::SeqCst);
+                let now = Utc::now().to_rfc3339();
+
+                match playback.msg_type.as_str() {
+                    "stream-up" => {
+                        log::info!(
+                            "[PubSub] stream-up for channel {} ({})",
+                            channel_name,
+                            channel_id
+                        );
+                        let _ = app.emit(
+                            "twitch-stream-up",
+                            serde_json::json!({
+                                "channel_id": channel_id,
+                                "channel_name": channel_name,
+                                "timestamp": now,
+                                "paused": paused,
+                            }),
+                        );
+                    }
+                    "stream-down" => {
+                        log::info!(
+                            "[PubSub] stream-down for channel {} ({})",
+                            channel_name,
+                            channel_id
+                        );
+                        let _ = app.emit(
+                            "twitch-stream-down",
+                            serde_json::json!({
+                                "channel_id": channel_id,
+                                "channel_name": channel_name,
+                                "timestamp": now,
+                            }),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+// ── Tauri commands for PubSub ────────────────────────────────────────────────
+
+#[tauri::command]
+async fn start_twitch_pubsub(app: AppHandle) -> Result<(), String> {
+    // Load presets and collect enabled Twitch channels.
+    let presets = get_scheduled_presets(app.clone())?;
+    let twitch_presets: Vec<&DownloadPreset> = presets
+        .iter()
+        .filter(|p| p.platform == "twitch" && p.enabled)
+        .collect();
+
+    if twitch_presets.is_empty() {
+        return Err("沒有已啟用的 Twitch 頻道預設".to_string());
+    }
+
+    // Build channel_id list and channel_map.
+    let channel_ids: Vec<String> = twitch_presets
+        .iter()
+        .map(|p| p.channel_id.clone())
+        .collect();
+    let channel_map: HashMap<String, String> = twitch_presets
+        .iter()
+        .map(|p| (p.channel_id.clone(), p.channel_name.clone()))
+        .collect();
+
+    // Stop any existing connection first.
+    stop_twitch_pubsub_inner().await;
+
+    // Create shutdown channel.
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    {
+        let mut st = pubsub_state().lock().await;
+        st.shutdown_tx = Some(shutdown_tx);
+        st.subscribed_channels = channel_ids.clone();
+        st.connected = false;
+    }
+
+    // Build topic batches of up to PUBSUB_MAX_TOPICS each.
+    let topics: Vec<String> = channel_ids
+        .iter()
+        .map(|id| format!("video-playback-by-id.{}", id))
+        .collect();
+
+    for chunk in topics.chunks(PUBSUB_MAX_TOPICS) {
+        let app_clone = app.clone();
+        let chunk_topics = chunk.to_vec();
+        let cm_clone = channel_map.clone();
+        let rx_clone = shutdown_rx.clone();
+
+        tokio::spawn(async move {
+            run_pubsub_connection(app_clone, chunk_topics, cm_clone, rx_clone).await;
+        });
+    }
+
+    log::info!(
+        "[PubSub] Started monitoring {} Twitch channels",
+        channel_ids.len()
+    );
+
+    Ok(())
+}
+
+/// Internal helper: send shutdown signal to any running PubSub tasks.
+async fn stop_twitch_pubsub_inner() {
+    let mut st = pubsub_state().lock().await;
+    if let Some(tx) = st.shutdown_tx.take() {
+        let _ = tx.send(true);
+    }
+    st.connected = false;
+    st.subscribed_channels.clear();
+}
+
+#[tauri::command]
+async fn stop_twitch_pubsub() -> Result<(), String> {
+    stop_twitch_pubsub_inner().await;
+    log::info!("[PubSub] Stopped");
+    Ok(())
+}
+
+#[derive(Serialize)]
+struct PubSubStatus {
+    connected: bool,
+    subscribed_channels: Vec<String>,
+}
+
+#[tauri::command]
+async fn get_twitch_pubsub_status() -> Result<PubSubStatus, String> {
+    let st = pubsub_state().lock().await;
+    Ok(PubSubStatus {
+        connected: st.connected,
+        subscribed_channels: st.subscribed_channels.clone(),
+    })
+}
 
 // Download configuration structures
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -4108,6 +4554,17 @@ pub fn run() {
                 });
             }
 
+            // Auto-start Twitch PubSub monitoring if configured and presets exist.
+            {
+                let auto_app = app.handle().clone();
+                tokio::spawn(async move {
+                    let config = load_config(auto_app.clone()).unwrap_or_default();
+                    if config.auto_start_monitoring {
+                        let _ = start_twitch_pubsub(auto_app).await;
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -4175,7 +4632,10 @@ pub fn run() {
             check_has_enabled_presets,
             force_quit,
             get_monitoring_paused,
-            set_monitoring_paused
+            set_monitoring_paused,
+            start_twitch_pubsub,
+            stop_twitch_pubsub,
+            get_twitch_pubsub_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

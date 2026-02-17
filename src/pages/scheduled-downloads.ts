@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open } from '@tauri-apps/plugin-dialog';
 
 interface DownloadPreset {
@@ -23,6 +24,23 @@ interface ChannelInfo {
   platform: string;
 }
 
+interface PubSubStatus {
+  connected: boolean;
+  subscribed_channels: string[];
+}
+
+interface TwitchStreamEvent {
+  channel_id: string;
+  channel_name: string;
+  timestamp: string;
+  paused?: boolean;
+}
+
+interface PubSubStatusEvent {
+  connected: boolean;
+  message: string;
+}
+
 const DEFAULT_FILENAME_TEMPLATE = '[{type}] [{channel_name}] [{date}] {title}';
 
 let presets: DownloadPreset[] = [];
@@ -31,10 +49,38 @@ let containerEl: HTMLElement | null = null;
 let editingPresetId: string | null = null;
 let isNewPreset = false;
 
+// PubSub state tracked on the frontend
+let pubsubConnected = false;
+let pubsubMessage = '';
+// channel_id -> 'live' | 'offline'
+const liveStatusMap: Map<string, 'live' | 'offline'> = new Map();
+
+// Tauri event unlisten functions — cleaned up when page is unmounted
+const _unlisteners: UnlistenFn[] = [];
+
 export async function renderScheduledDownloadsPage(container: HTMLElement) {
   containerEl = container;
+
+  // Clean up any previously registered listeners to avoid duplicates.
+  for (const unlisten of _unlisteners.splice(0)) {
+    unlisten();
+  }
+
   await loadPresets();
+
+  // Load current PubSub status from backend.
+  try {
+    const status = await invoke<PubSubStatus>('get_twitch_pubsub_status');
+    pubsubConnected = status.connected;
+    pubsubMessage = status.connected
+      ? `已連線 (${status.subscribed_channels.length} 個頻道)`
+      : '';
+  } catch {
+    pubsubConnected = false;
+  }
+
   renderPage(container);
+  await setupPubSubListeners();
 }
 
 async function loadPresets() {
@@ -44,6 +90,62 @@ async function loadPresets() {
     console.error('Failed to load presets:', error);
     presets = [];
   }
+}
+
+async function setupPubSubListeners() {
+  const statusUn = await listen<PubSubStatusEvent>('twitch-pubsub-status', (event) => {
+    pubsubConnected = event.payload.connected;
+    pubsubMessage = event.payload.message;
+    updateMonitorStatusUI();
+  });
+
+  const streamUpUn = await listen<TwitchStreamEvent>('twitch-stream-up', (event) => {
+    liveStatusMap.set(event.payload.channel_id, 'live');
+    updatePresetLiveStatus(event.payload.channel_id, 'live');
+  });
+
+  const streamDownUn = await listen<TwitchStreamEvent>('twitch-stream-down', (event) => {
+    liveStatusMap.set(event.payload.channel_id, 'offline');
+    updatePresetLiveStatus(event.payload.channel_id, 'offline');
+  });
+
+  _unlisteners.push(statusUn, streamUpUn, streamDownUn);
+}
+
+/** Update only the monitor status bar without re-rendering the full page. */
+function updateMonitorStatusUI() {
+  const statusText = document.getElementById('twitch-pubsub-status-text');
+  const statusDot = document.getElementById('twitch-pubsub-status-dot');
+  const startBtn = document.getElementById('twitch-pubsub-start-btn') as HTMLButtonElement | null;
+  const stopBtn = document.getElementById('twitch-pubsub-stop-btn') as HTMLButtonElement | null;
+
+  if (statusText) {
+    statusText.textContent = buildStatusLabel();
+  }
+  if (statusDot) {
+    statusDot.className = pubsubConnected
+      ? 'status-dot connected'
+      : 'status-dot disconnected';
+  }
+  if (startBtn) startBtn.disabled = pubsubConnected;
+  if (stopBtn) stopBtn.disabled = !pubsubConnected;
+}
+
+function buildStatusLabel(): string {
+  if (pubsubConnected) {
+    const count = presets.filter(p => p.platform === 'twitch' && p.enabled).length;
+    return `Twitch: 已連線 (${count} 個頻道)`;
+  }
+  if (pubsubMessage) return `Twitch: ${pubsubMessage}`;
+  return 'Twitch: 已斷線';
+}
+
+/** Update only the live-status badge in the preset table row. */
+function updatePresetLiveStatus(channelId: string, status: 'live' | 'offline') {
+  const badge = document.querySelector(`[data-live-channel="${channelId}"]`);
+  if (!badge) return;
+  badge.textContent = status === 'live' ? '直播中' : '離線';
+  badge.className = status === 'live' ? 'live-badge live' : 'live-badge offline';
 }
 
 function renderPage(container: HTMLElement) {
@@ -73,8 +175,8 @@ function renderPage(container: HTMLElement) {
   const presetListSection = createPresetListSection();
   page.appendChild(presetListSection);
 
-  // Placeholder areas for future features (SCHED-004-007)
-  const monitorSection = createPlaceholderSection('監聽狀態', 'monitor-status-area');
+  // Monitor status area (Twitch PubSub)
+  const monitorSection = createMonitorStatusSection();
   page.appendChild(monitorSection);
 
   const queueSection = createPlaceholderSection('下載佇列', 'download-queue-area');
@@ -108,6 +210,84 @@ function createPlaceholderSection(titleText: string, id: string): HTMLElement {
   return section;
 }
 
+function createMonitorStatusSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'sched-section monitor-status-section';
+  section.id = 'monitor-status-area';
+
+  const heading = document.createElement('h2');
+  heading.className = 'section-title';
+  heading.textContent = '監聽狀態';
+  section.appendChild(heading);
+
+  // Status row
+  const statusRow = document.createElement('div');
+  statusRow.className = 'monitor-status-row';
+
+  // Status indicator dot
+  const dot = document.createElement('span');
+  dot.id = 'twitch-pubsub-status-dot';
+  dot.className = pubsubConnected ? 'status-dot connected' : 'status-dot disconnected';
+  statusRow.appendChild(dot);
+
+  // Status text
+  const statusText = document.createElement('span');
+  statusText.id = 'twitch-pubsub-status-text';
+  statusText.className = 'monitor-status-text';
+  statusText.textContent = buildStatusLabel();
+  statusRow.appendChild(statusText);
+
+  section.appendChild(statusRow);
+
+  // Button row
+  const btnRow = document.createElement('div');
+  btnRow.className = 'monitor-btn-row';
+
+  const startBtn = document.createElement('button');
+  startBtn.className = 'primary-button';
+  startBtn.id = 'twitch-pubsub-start-btn';
+  startBtn.textContent = '開始監聽';
+  startBtn.disabled = pubsubConnected;
+  startBtn.addEventListener('click', async () => {
+    startBtn.disabled = true;
+    startBtn.textContent = '連線中…';
+    try {
+      await invoke('start_twitch_pubsub');
+      pubsubConnected = true;
+      pubsubMessage = '';
+      updateMonitorStatusUI();
+    } catch (error) {
+      startBtn.disabled = false;
+      startBtn.textContent = '開始監聽';
+      alert(`無法啟動監聽: ${error}`);
+    }
+  });
+  btnRow.appendChild(startBtn);
+
+  const stopBtn = document.createElement('button');
+  stopBtn.className = 'secondary-button';
+  stopBtn.id = 'twitch-pubsub-stop-btn';
+  stopBtn.textContent = '停止監聽';
+  stopBtn.disabled = !pubsubConnected;
+  stopBtn.addEventListener('click', async () => {
+    stopBtn.disabled = true;
+    try {
+      await invoke('stop_twitch_pubsub');
+      pubsubConnected = false;
+      pubsubMessage = '已停止監聽';
+      updateMonitorStatusUI();
+    } catch (error) {
+      stopBtn.disabled = false;
+      alert(`無法停止監聽: ${error}`);
+    }
+  });
+  btnRow.appendChild(stopBtn);
+
+  section.appendChild(btnRow);
+
+  return section;
+}
+
 function createPresetListSection(): HTMLElement {
   const section = document.createElement('section');
   section.className = 'sched-section preset-list-section';
@@ -131,7 +311,7 @@ function createPresetListSection(): HTMLElement {
   // Table header
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
-  const headers = ['頻道名稱', '平台', '啟用', '上次觸發', '累計下載', '操作'];
+  const headers = ['頻道名稱', '平台', '狀態', '啟用', '上次觸發', '累計下載', '操作'];
   headers.forEach(text => {
     const th = document.createElement('th');
     th.textContent = text;
@@ -170,6 +350,28 @@ function createPresetRow(preset: DownloadPreset): HTMLElement {
   platformBadge.textContent = preset.platform === 'youtube' ? 'YT' : 'TW';
   platformTd.appendChild(platformBadge);
   tr.appendChild(platformTd);
+
+  // Live status (Twitch only, shown for all but meaningful only for Twitch)
+  const liveTd = document.createElement('td');
+  if (preset.platform === 'twitch' && preset.enabled) {
+    const currentStatus = liveStatusMap.get(preset.channel_id);
+    const liveBadge = document.createElement('span');
+    liveBadge.dataset.liveChannel = preset.channel_id;
+    if (currentStatus === 'live') {
+      liveBadge.className = 'live-badge live';
+      liveBadge.textContent = '直播中';
+    } else if (currentStatus === 'offline') {
+      liveBadge.className = 'live-badge offline';
+      liveBadge.textContent = '離線';
+    } else {
+      liveBadge.className = 'live-badge unknown';
+      liveBadge.textContent = '—';
+    }
+    liveTd.appendChild(liveBadge);
+  } else {
+    liveTd.textContent = '—';
+  }
+  tr.appendChild(liveTd);
 
   // Enabled toggle
   const enabledTd = document.createElement('td');

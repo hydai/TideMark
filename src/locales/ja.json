@@ -637,6 +637,19 @@
       "videoCache": "動画キャッシュ数",
       "videoCacheDesc": "チャンネルごとにキャッシュする最新動画の数、1〜20"
     },
+    "localDirect": {
+      "title": "ローカル直接接続",
+      "enable": "ローカル直接接続を有効化",
+      "enableDesc": "ブラウザ拡張機能からデスクトップアプリにクラウド同期なしで直接データを送信できるようにする",
+      "extensionId": "拡張機能 ID",
+      "extensionIdDesc": "Chrome 拡張機能の ID（CORS セキュリティ検証用）",
+      "extensionIdPlaceholder": "拡張機能 ID を入力",
+      "status": "サーバーステータス",
+      "statusActive": "実行中（ポート {port}）",
+      "statusInactive": "停止中",
+      "startServer": "サーバーを起動",
+      "stopServer": "サーバーを停止"
+    },
     "gpu": {
       "title": "GPU アクセラレーション",
       "hardwareEncoding": "ダウンロードハードウェアエンコーディング",
@@ -742,6 +755,9 @@
     },
     "template": {
       "unknown_variable": "認識できない変数: {{{variable}}}"
+    },
+    "local_direct": {
+      "port_bind_failed": "ポート {port} のバインドに失敗しました: {error}"
     },
     "file": {
       "open_failed": "ファイルを開けませんでした: {error}",

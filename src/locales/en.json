@@ -637,6 +637,19 @@
       "videoCache": "Video Cache Count",
       "videoCacheDesc": "Number of latest videos cached per channel, range 1\u201320"
     },
+    "localDirect": {
+      "title": "Local Direct Connection",
+      "enable": "Enable Local Direct Connection",
+      "enableDesc": "Allow the browser extension to push data directly to the desktop app without cloud sync",
+      "extensionId": "Extension ID",
+      "extensionIdDesc": "Chrome Extension ID (used for CORS security validation)",
+      "extensionIdPlaceholder": "Enter Extension ID",
+      "status": "Server Status",
+      "statusActive": "Running (port {port})",
+      "statusInactive": "Stopped",
+      "startServer": "Start Server",
+      "stopServer": "Stop Server"
+    },
     "gpu": {
       "title": "GPU Acceleration",
       "hardwareEncoding": "Download Hardware Encoding",
@@ -742,6 +755,9 @@
     },
     "template": {
       "unknown_variable": "Unrecognized variable: {{{variable}}}"
+    },
+    "local_direct": {
+      "port_bind_failed": "Failed to bind port {port}: {error}"
     },
     "file": {
       "open_failed": "Failed to open file: {error}",

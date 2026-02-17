@@ -637,6 +637,19 @@
       "videoCache": "影片快取數量",
       "videoCacheDesc": "每個頻道快取的最新影片數量，範圍 1–20"
     },
+    "localDirect": {
+      "title": "本機直連",
+      "enable": "啟用本機直連",
+      "enableDesc": "啟用後瀏覽器擴充套件可直接推送資料至桌面應用程式，無需經過雲端同步",
+      "extensionId": "擴充套件 ID",
+      "extensionIdDesc": "Chrome 擴充套件的 ID（用於 CORS 安全驗證）",
+      "extensionIdPlaceholder": "請輸入擴充套件 ID",
+      "status": "伺服器狀態",
+      "statusActive": "執行中（連接埠 {port}）",
+      "statusInactive": "已停止",
+      "startServer": "啟動伺服器",
+      "stopServer": "停止伺服器"
+    },
     "gpu": {
       "title": "GPU 加速設定",
       "hardwareEncoding": "下載硬體編碼",
@@ -742,6 +755,9 @@
     },
     "template": {
       "unknown_variable": "無法辨識的變數：{{{variable}}}"
+    },
+    "local_direct": {
+      "port_bind_failed": "無法綁定連接埠 {port}: {error}"
     },
     "file": {
       "open_failed": "無法開啟檔案: {error}",

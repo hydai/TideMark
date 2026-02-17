@@ -634,6 +634,191 @@ fn youtube_polling_state() -> &'static tokio::sync::Mutex<YouTubePollingState> {
         .get_or_init(|| tokio::sync::Mutex::new(YouTubePollingState::new()))
 }
 
+// ── Local Direct Connection HTTP server (Interface 7) ─────────────────────────
+
+/// Port used by the local direct connection HTTP server.
+const LOCAL_DIRECT_PORT: u16 = 21483;
+
+/// State for the local HTTP server, following the same pattern as TwitchPubSubState.
+struct LocalServerState {
+    active: bool,
+    shutdown_tx: Option<tokio::sync::watch::Sender<bool>>,
+}
+
+impl LocalServerState {
+    fn new() -> Self {
+        Self {
+            active: false,
+            shutdown_tx: None,
+        }
+    }
+}
+
+static LOCAL_SERVER_STATE: std::sync::OnceLock<tokio::sync::Mutex<LocalServerState>> =
+    std::sync::OnceLock::new();
+
+fn local_server_state() -> &'static tokio::sync::Mutex<LocalServerState> {
+    LOCAL_SERVER_STATE
+        .get_or_init(|| tokio::sync::Mutex::new(LocalServerState::new()))
+}
+
+/// Shared state passed into axum route handlers.
+#[derive(Clone)]
+struct AxumAppState {
+    app_handle: AppHandle,
+}
+
+/// Build and run the axum HTTP server for local direct connection.
+async fn run_local_server(
+    app_handle: AppHandle,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) {
+    use axum::{Router, routing::{get, post}};
+    use tower_http::cors::{CorsLayer, AllowOrigin, AllowHeaders, AllowMethods};
+
+    // Read the extension ID from config for CORS
+    let config = load_config(app_handle.clone()).unwrap_or_default();
+    let extension_id = config.local_direct_extension_id.clone();
+
+    // Build CORS layer: only allow the configured chrome-extension origin
+    let cors = if extension_id.is_empty() {
+        // No extension ID configured — block all cross-origin requests
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::exact(
+                "chrome-extension://none".parse().unwrap(),
+            ))
+            .allow_methods(AllowMethods::any())
+            .allow_headers(AllowHeaders::any())
+    } else {
+        let origin = format!("chrome-extension://{}", extension_id);
+        CorsLayer::new()
+            .allow_origin(AllowOrigin::exact(origin.parse().unwrap()))
+            .allow_methods(AllowMethods::any())
+            .allow_headers(AllowHeaders::any())
+    };
+
+    let state = AxumAppState {
+        app_handle: app_handle.clone(),
+    };
+
+    let router = Router::new()
+        .route("/ping", get(local_server_ping))
+        .route("/records", post(local_server_upsert_record))
+        .route("/folders", post(local_server_upsert_folder))
+        .route("/channel-bookmarks", post(local_server_upsert_bookmark))
+        .layer(cors)
+        .with_state(state);
+
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], LOCAL_DIRECT_PORT));
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            log::error!("[local-server] Failed to bind port {}: {}", LOCAL_DIRECT_PORT, e);
+            let _ = app_handle.emit("local-server-error", serde_json::json!({
+                "key": "errors.local_direct.port_bind_failed",
+                "params": { "port": LOCAL_DIRECT_PORT, "error": e.to_string() }
+            }));
+            // Mark as not active
+            let mut state = local_server_state().lock().await;
+            state.active = false;
+            state.shutdown_tx = None;
+            return;
+        }
+    };
+
+    log::info!("[local-server] Listening on {}", addr);
+
+    axum::serve(listener, router)
+        .with_graceful_shutdown(async move {
+            // Wait until shutdown signal
+            while !*shutdown_rx.borrow() {
+                if shutdown_rx.changed().await.is_err() {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|e| {
+            log::error!("[local-server] Server error: {}", e);
+        });
+
+    log::info!("[local-server] Shut down");
+    let mut state = local_server_state().lock().await;
+    state.active = false;
+    state.shutdown_tx = None;
+}
+
+/// GET /ping — returns app identity and version.
+async fn local_server_ping(
+    axum::extract::State(state): axum::extract::State<AxumAppState>,
+) -> axum::Json<serde_json::Value> {
+    let version = state
+        .app_handle
+        .config()
+        .version
+        .clone()
+        .unwrap_or_else(|| "unknown".to_string());
+    axum::Json(serde_json::json!({
+        "app": "tidemark",
+        "version": version,
+    }))
+}
+
+/// POST /records — upsert a record into local storage.
+async fn local_server_upsert_record(
+    axum::extract::State(state): axum::extract::State<AxumAppState>,
+    axum::Json(record): axum::Json<Record>,
+) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let mut data = get_local_records(state.app_handle.clone())
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    // Upsert: replace existing or push new
+    if let Some(pos) = data.records.iter().position(|r| r.id == record.id) {
+        data.records[pos] = record;
+    } else {
+        data.records.push(record);
+    }
+
+    save_local_records(state.app_handle, data)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    Ok(axum::Json(serde_json::json!({ "ok": true })))
+}
+
+/// POST /folders — upsert a folder into local storage.
+async fn local_server_upsert_folder(
+    axum::extract::State(state): axum::extract::State<AxumAppState>,
+    axum::Json(folder): axum::Json<Folder>,
+) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    let mut data = get_local_records(state.app_handle.clone())
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    // Upsert: replace existing or push new
+    if let Some(pos) = data.folders.iter().position(|f| f.id == folder.id) {
+        data.folders[pos] = folder;
+    } else {
+        let folder_id = folder.id.clone();
+        data.folders.push(folder);
+        data.folder_order.push(folder_id);
+    }
+
+    save_local_records(state.app_handle, data)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    Ok(axum::Json(serde_json::json!({ "ok": true })))
+}
+
+/// POST /channel-bookmarks — upsert a channel bookmark into local storage.
+async fn local_server_upsert_bookmark(
+    axum::extract::State(state): axum::extract::State<AxumAppState>,
+    axum::Json(bookmark): axum::Json<ChannelBookmark>,
+) -> Result<axum::Json<serde_json::Value>, (axum::http::StatusCode, String)> {
+    save_channel_bookmark(state.app_handle, bookmark)
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e))?;
+
+    Ok(axum::Json(serde_json::json!({ "ok": true })))
+}
+
 // ── YouTube RSS XML parsing ───────────────────────────────────────────────────
 
 /// Parse an Atom XML feed from YouTube and return the first `max_entries` video IDs.
@@ -1165,6 +1350,49 @@ async fn get_youtube_polling_status(app: AppHandle) -> Result<YouTubePollingStat
         active: st.active,
         polling_channels: st.polling_channels.clone(),
         interval_seconds: cfg.youtube_polling_interval,
+    })
+}
+
+// ── Local Direct Connection commands (Interface 7) ──────────────────────────
+
+#[tauri::command]
+async fn start_local_server(app: AppHandle) -> Result<(), String> {
+    let mut state = local_server_state().lock().await;
+    if state.active {
+        return Ok(()); // Already running
+    }
+
+    let (tx, rx) = tokio::sync::watch::channel(false);
+    state.active = true;
+    state.shutdown_tx = Some(tx);
+    drop(state); // Release lock before spawning
+
+    tokio::spawn(run_local_server(app, rx));
+    Ok(())
+}
+
+#[tauri::command]
+async fn stop_local_server() -> Result<(), String> {
+    let mut state = local_server_state().lock().await;
+    if let Some(tx) = state.shutdown_tx.take() {
+        let _ = tx.send(true);
+    }
+    state.active = false;
+    Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct LocalServerStatus {
+    active: bool,
+    port: u16,
+}
+
+#[tauri::command]
+async fn get_local_server_status() -> Result<LocalServerStatus, String> {
+    let state = local_server_state().lock().await;
+    Ok(LocalServerStatus {
+        active: state.active,
+        port: LOCAL_DIRECT_PORT,
     })
 }
 
@@ -2180,6 +2408,12 @@ struct AppConfig {
     // Filename template settings
     #[serde(default = "default_filename_template")]
     default_filename_template: String,
+
+    // Local direct connection settings (Interface 7)
+    #[serde(default)]
+    enable_local_direct: bool,
+    #[serde(default)]
+    local_direct_extension_id: String,
 }
 
 // Default value functions for serde
@@ -2488,12 +2722,14 @@ impl Default for AppConfig {
             metadata_refresh_interval_hours: default_metadata_refresh_interval_hours(),
             video_cache_count: default_video_cache_count(),
             default_filename_template: default_filename_template(),
+            enable_local_direct: false,
+            local_direct_extension_id: String::new(),
         }
     }
 }
 
 /// Current config version for all managed JSON files and records.db.
-const CURRENT_CONFIG_VERSION: u32 = 3;
+const CURRENT_CONFIG_VERSION: u32 = 4;
 
 /// Versioned wrapper for array-based JSON files (presets, bookmarks, history).
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -2632,6 +2868,16 @@ fn run_app_config_migration_on_value(
         if !obj.contains_key("default_filename_template") {
             obj.insert("default_filename_template".to_string(),
                 serde_json::json!("[{type}] [{channel_name}] [{date}] {title}"));
+        }
+    }
+
+    // v3 → v4: add local direct connection settings (Interface 7)
+    if file_version < 4 {
+        if !obj.contains_key("enable_local_direct") {
+            obj.insert("enable_local_direct".to_string(), serde_json::json!(false));
+        }
+        if !obj.contains_key("local_direct_extension_id") {
+            obj.insert("local_direct_extension_id".to_string(), serde_json::json!(""));
         }
     }
 
@@ -7670,7 +7916,11 @@ pub fn run() {
                     let config = load_config(auto_app.clone()).unwrap_or_default();
                     if config.auto_start_monitoring {
                         let _ = start_twitch_pubsub(auto_app.clone()).await;
-                        let _ = start_youtube_polling(auto_app).await;
+                        let _ = start_youtube_polling(auto_app.clone()).await;
+                    }
+                    // Auto-start local direct connection server if enabled (Interface 7)
+                    if config.enable_local_direct {
+                        let _ = start_local_server(auto_app).await;
                     }
                 });
             }
@@ -7771,7 +8021,10 @@ pub fn run() {
             sanitize_filename,
             resolve_output_filename,
             escape_filename_for_ytdlp,
-            update_tray_language
+            update_tray_language,
+            start_local_server,
+            stop_local_server,
+            get_local_server_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

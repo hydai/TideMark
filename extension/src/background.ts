@@ -3,6 +3,7 @@
  */
 
 import { initSyncState, isLoggedIn, startSyncPolling, pullRemoteChanges } from './sync';
+import { startProbing } from './direct-connect';
 
 // Listen for extension installation
 chrome.runtime.onInstalled.addListener(async () => {
@@ -20,6 +21,9 @@ chrome.runtime.onInstalled.addListener(async () => {
 
   // Initialize sync state
   await initSyncState();
+
+  // Start local direct connection probing (Interface 7)
+  startProbing();
 });
 
 // Listen for extension startup (browser restart)
@@ -28,6 +32,9 @@ chrome.runtime.onStartup.addListener(async () => {
 
   // Initialize sync state
   await initSyncState();
+
+  // Start local direct connection probing (Interface 7)
+  startProbing();
 
   // Resume sync polling if user is logged in
   const loggedIn = await isLoggedIn();

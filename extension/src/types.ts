@@ -114,6 +114,15 @@ export interface SyncQueueItem {
 }
 
 /**
+ * Buffered item for local direct connection (Interface 7)
+ */
+export interface DirectBufferItem {
+  endpoint: string; // '/records', '/folders', '/channel-bookmarks'
+  body: any;
+  timestamp: string;
+}
+
+/**
  * Sync State stored in Chrome Storage
  */
 export interface SyncState {
@@ -122,6 +131,7 @@ export interface SyncState {
   lastSyncedAt: string;
   queue: SyncQueueItem[];
   status: SyncStatus;
+  localDirectBuffer?: DirectBufferItem[];
 }
 
 /**
@@ -182,3 +192,6 @@ export const UNCATEGORIZED_NAME = '未分類';
 export const EXPORT_VERSION = '1.0';
 export const CLOUD_SYNC_API_URL = 'http://localhost:8787'; // TODO: Make configurable
 export const SYNC_POLL_INTERVAL = 4000; // 4 seconds
+export const LOCAL_DIRECT_URL = 'http://localhost:21483';
+export const LOCAL_DIRECT_PROBE_INTERVAL = 10000; // 10 seconds
+export const LOCAL_DIRECT_BUFFER_MAX = 100; // FIFO eviction when full

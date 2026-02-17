@@ -14,7 +14,8 @@
     "https://youtu.be/*",
     "https://www.twitch.tv/*",
     "https://gql.twitch.tv/*",
-    "http://localhost:8787/*"
+    "http://localhost:8787/*",
+    "http://localhost:21483/*"
   ],
   "action": {
     "default_popup": "popup.html",

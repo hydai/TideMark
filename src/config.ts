@@ -54,10 +54,14 @@ export interface AppConfig {
 
   // Filename template settings
   default_filename_template: string;
+
+  // Local direct connection settings (Interface 7)
+  enable_local_direct: boolean;
+  local_direct_extension_id: string;
 }
 
 const defaultConfig: AppConfig = {
-  config_version: 3,
+  config_version: 4,
   default_download_folder: '~/Tidemark/Downloads',
   default_subtitle_folder: '~/Tidemark/Downloads',
   launch_on_startup: false,
@@ -93,6 +97,8 @@ const defaultConfig: AppConfig = {
   metadata_refresh_interval_hours: 24,
   video_cache_count: 5,
   default_filename_template: '[{type}] [{channel_name}] [{date}] {title}',
+  enable_local_direct: false,
+  local_direct_extension_id: '',
 };
 
 export interface MigrationResult {

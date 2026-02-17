@@ -17,6 +17,7 @@ import {
   type SyncUser,
   type SyncStatus,
 } from './types';
+import { tryDirectPush } from './direct-connect';
 
 /**
  * Initialize sync state in storage
@@ -253,9 +254,57 @@ function apiToChannelBookmark(apiBookmark: APIChannelBookmark): ChannelBookmark 
 }
 
 /**
+ * Convert local Record to desktop format (snake_case fields matching Rust struct)
+ */
+function recordToDesktop(record: Record): any {
+  return {
+    id: record.id,
+    timestamp: record.timestamp,
+    live_time: record.liveTime,
+    title: record.title,
+    topic: record.topic,
+    folder_id: record.folderId || '',
+    channel_url: record.channelUrl,
+    platform: record.platform,
+    sort_order: record.sortOrder || 0,
+  };
+}
+
+/**
+ * Convert local Folder to desktop format (snake_case fields matching Rust struct)
+ */
+function folderToDesktop(folder: Folder): any {
+  return {
+    id: folder.id,
+    name: folder.name,
+    created: folder.created,
+    sort_order: 0,
+  };
+}
+
+/**
+ * Convert local ChannelBookmark to desktop format (already snake_case)
+ */
+function channelBookmarkToDesktop(bookmark: ChannelBookmark): any {
+  return {
+    id: bookmark.id,
+    channel_id: bookmark.channel_id,
+    channel_name: bookmark.channel_name,
+    platform: bookmark.platform,
+    notes: bookmark.notes,
+    sort_order: bookmark.sort_order,
+    created_at: bookmark.created_at,
+    updated_at: bookmark.updated_at,
+  };
+}
+
+/**
  * Push a record to the cloud
  */
 export async function pushRecord(record: Record): Promise<void> {
+  // Try local direct connection first (Interface 7)
+  await tryDirectPush('/records', recordToDesktop(record));
+
   const state = await getSyncState();
   if (!state.jwt || !state.user) {
     // Not logged in, queue for later
@@ -345,6 +394,9 @@ export async function deleteRecordRemote(recordId: string): Promise<void> {
  * Push a folder to the cloud
  */
 export async function pushFolder(folder: Folder, sortOrder: number): Promise<void> {
+  // Try local direct connection first (Interface 7)
+  await tryDirectPush('/folders', folderToDesktop(folder));
+
   const state = await getSyncState();
   if (!state.jwt || !state.user) {
     await queueSync({
@@ -432,6 +484,9 @@ export async function deleteFolderRemote(folderId: string): Promise<void> {
  * Push a channel bookmark to the cloud
  */
 export async function pushChannelBookmark(bookmark: ChannelBookmark): Promise<void> {
+  // Try local direct connection first (Interface 7)
+  await tryDirectPush('/channel-bookmarks', channelBookmarkToDesktop(bookmark));
+
   const state = await getSyncState();
   if (!state.jwt || !state.user) {
     await queueSync({

@@ -88,6 +88,10 @@ function renderSettingsUI(container: HTMLElement) {
   const channelBookmarksSection = createChannelBookmarksSection();
   page.appendChild(channelBookmarksSection);
 
+  // Local direct connection section (Interface 7)
+  const localDirectSection = createLocalDirectSection();
+  page.appendChild(localDirectSection);
+
   // GPU acceleration section
   const gpuSection = createGpuSection();
   page.appendChild(gpuSection);
@@ -111,6 +115,7 @@ function renderSettingsUI(container: HTMLElement) {
   attachAsrApiKeysEventListeners(container);
   attachScheduledDownloadsEventListeners(container);
   attachChannelBookmarksEventListeners(container);
+  attachLocalDirectEventListeners(container);
   attachGpuEventListeners(container);
   attachAuthEventListeners(container);
   attachAboutEventListeners(container);
@@ -750,6 +755,85 @@ function createChannelBookmarksSection(): HTMLElement {
     20
   );
   section.appendChild(videoCacheGroup);
+
+  return section;
+}
+
+function createLocalDirectSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'settings-section';
+
+  const sectionTitle = document.createElement('h2');
+  sectionTitle.className = 'section-title';
+  sectionTitle.textContent = t('settings.localDirect.title');
+  section.appendChild(sectionTitle);
+
+  // Enable local direct connection
+  const enableGroup = createToggleGroup(
+    'enable-local-direct',
+    t('settings.localDirect.enable'),
+    t('settings.localDirect.enableDesc'),
+    currentConfig?.enable_local_direct || false
+  );
+  section.appendChild(enableGroup);
+
+  // Extension ID input
+  const extIdGroup = document.createElement('div');
+  extIdGroup.className = 'setting-item';
+
+  const extIdLabelDiv = document.createElement('div');
+  extIdLabelDiv.className = 'setting-label-group';
+  const extIdLabel = document.createElement('label');
+  extIdLabel.className = 'setting-label';
+  extIdLabel.textContent = t('settings.localDirect.extensionId');
+  extIdLabelDiv.appendChild(extIdLabel);
+  const extIdDesc = document.createElement('p');
+  extIdDesc.className = 'setting-description-inline';
+  extIdDesc.textContent = t('settings.localDirect.extensionIdDesc');
+  extIdLabelDiv.appendChild(extIdDesc);
+  extIdGroup.appendChild(extIdLabelDiv);
+
+  const extIdInput = document.createElement('input');
+  extIdInput.type = 'text';
+  extIdInput.id = 'local-direct-extension-id';
+  extIdInput.className = 'setting-input';
+  extIdInput.placeholder = t('settings.localDirect.extensionIdPlaceholder');
+  extIdInput.value = currentConfig?.local_direct_extension_id || '';
+  extIdGroup.appendChild(extIdInput);
+
+  section.appendChild(extIdGroup);
+
+  // Server status display
+  const statusGroup = document.createElement('div');
+  statusGroup.className = 'setting-item';
+
+  const statusLabelDiv = document.createElement('div');
+  statusLabelDiv.className = 'setting-label-group';
+  const statusLabel = document.createElement('label');
+  statusLabel.className = 'setting-label';
+  statusLabel.textContent = t('settings.localDirect.status');
+  statusLabelDiv.appendChild(statusLabel);
+  statusGroup.appendChild(statusLabelDiv);
+
+  const statusValue = document.createElement('span');
+  statusValue.id = 'local-direct-status';
+  statusValue.className = 'setting-status';
+  statusValue.textContent = t('settings.localDirect.statusInactive');
+  statusGroup.appendChild(statusValue);
+
+  section.appendChild(statusGroup);
+
+  // Start/Stop button
+  const btnGroup = document.createElement('div');
+  btnGroup.className = 'setting-item';
+
+  const startBtn = document.createElement('button');
+  startBtn.id = 'local-direct-toggle-btn';
+  startBtn.className = 'btn btn-primary';
+  startBtn.textContent = t('settings.localDirect.startServer');
+  btnGroup.appendChild(startBtn);
+
+  section.appendChild(btnGroup);
 
   return section;
 }
@@ -1417,6 +1501,88 @@ function attachChannelBookmarksEventListeners(container: HTMLElement) {
 
   // Video cache count
   attachNumberInputListener(container, 'video-cache-count', 'video_cache_count');
+}
+
+function attachLocalDirectEventListeners(container: HTMLElement) {
+  // Enable toggle
+  const enableToggle = container.querySelector('#enable-local-direct');
+  enableToggle?.addEventListener('click', async () => {
+    const toggleLabel = enableToggle.querySelector('.toggle-label');
+    const currentValue = enableToggle.getAttribute('data-value') === 'true';
+    const newValue = !currentValue;
+    if (toggleLabel) {
+      toggleLabel.textContent = newValue ? '開啟' : '關閉';
+    }
+    enableToggle.classList.toggle('active');
+    enableToggle.setAttribute('data-value', newValue ? 'true' : 'false');
+    await ConfigManager.set('enable_local_direct', newValue);
+
+    // Auto start/stop server
+    if (newValue) {
+      try {
+        await invoke('start_local_server');
+      } catch (e) {
+        console.error('Failed to start local server:', e);
+      }
+    } else {
+      try {
+        await invoke('stop_local_server');
+      } catch (e) {
+        console.error('Failed to stop local server:', e);
+      }
+    }
+    updateLocalDirectStatus(container);
+  });
+
+  // Extension ID input
+  const extIdInput = container.querySelector('#local-direct-extension-id') as HTMLInputElement;
+  let extIdDebounce: ReturnType<typeof setTimeout> | null = null;
+  extIdInput?.addEventListener('input', () => {
+    if (extIdDebounce) clearTimeout(extIdDebounce);
+    extIdDebounce = setTimeout(async () => {
+      await ConfigManager.set('local_direct_extension_id', extIdInput.value.trim());
+    }, 500);
+  });
+
+  // Start/Stop button
+  const toggleBtn = container.querySelector('#local-direct-toggle-btn');
+  toggleBtn?.addEventListener('click', async () => {
+    try {
+      const status = await invoke<{ active: boolean; port: number }>('get_local_server_status');
+      if (status.active) {
+        await invoke('stop_local_server');
+      } else {
+        await invoke('start_local_server');
+      }
+    } catch (e) {
+      console.error('Local server toggle error:', e);
+    }
+    // Small delay to let server start/stop
+    setTimeout(() => updateLocalDirectStatus(container), 300);
+  });
+
+  // Initial status check
+  updateLocalDirectStatus(container);
+}
+
+async function updateLocalDirectStatus(container: HTMLElement) {
+  const statusEl = container.querySelector('#local-direct-status');
+  const toggleBtn = container.querySelector('#local-direct-toggle-btn');
+  if (!statusEl || !toggleBtn) return;
+
+  try {
+    const status = await invoke<{ active: boolean; port: number }>('get_local_server_status');
+    if (status.active) {
+      statusEl.textContent = t('settings.localDirect.statusActive', { port: status.port });
+      (toggleBtn as HTMLButtonElement).textContent = t('settings.localDirect.stopServer');
+    } else {
+      statusEl.textContent = t('settings.localDirect.statusInactive');
+      (toggleBtn as HTMLButtonElement).textContent = t('settings.localDirect.startServer');
+    }
+  } catch {
+    statusEl.textContent = t('settings.localDirect.statusInactive');
+    (toggleBtn as HTMLButtonElement).textContent = t('settings.localDirect.startServer');
+  }
 }
 
 function attachGpuEventListeners(container: HTMLElement) {

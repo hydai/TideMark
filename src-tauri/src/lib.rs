@@ -209,10 +209,12 @@ async fn run_pubsub_connection(
                                         break 'session true;
                                     }
                                     Some(Ok(Message::Text(txt))) => {
+                                        let tasks_ref = app.state::<DownloadTasks>().inner().clone();
                                         handle_pubsub_message(
                                             &app,
                                             &txt,
                                             &channel_map,
+                                            &tasks_ref,
                                         );
                                     }
                                     Some(Ok(Message::Ping(data))) => {
@@ -283,6 +285,7 @@ fn handle_pubsub_message(
     app: &AppHandle,
     text: &str,
     channel_map: &HashMap<String, String>,
+    tasks: &DownloadTasks,
 ) {
     let msg: PubSubIncoming = match serde_json::from_str(text) {
         Ok(m) => m,
@@ -343,6 +346,25 @@ fn handle_pubsub_message(
                                 "paused": paused,
                             }),
                         );
+                        // Trigger auto-download for this Twitch channel.
+                        let stream_url = format!("https://www.twitch.tv/{}", channel_name.to_lowercase());
+                        // Use channel_id + timestamp as stream_id fallback for Twitch.
+                        let stream_id = format!("twitch_{}_{}", channel_id, now);
+                        let app2 = app.clone();
+                        let tasks2 = tasks.clone();
+                        let ch_id = channel_id.clone();
+                        let ch_name = channel_name.clone();
+                        tokio::spawn(async move {
+                            trigger_scheduled_download(
+                                app2,
+                                tasks2,
+                                ch_id,
+                                ch_name,
+                                "twitch".to_string(),
+                                stream_id,
+                                stream_url,
+                            ).await;
+                        });
                     }
                     "stream-down" => {
                         log::info!(
@@ -775,6 +797,24 @@ async fn run_youtube_polling(
                                 "paused": MONITORING_PAUSED.load(Ordering::SeqCst),
                             }),
                         );
+                        // Trigger auto-download for this YouTube channel.
+                        let stream_url = format!("https://www.youtube.com/watch?v={}", payload);
+                        let app2 = app.clone();
+                        let tasks2 = app.state::<DownloadTasks>().inner().clone();
+                        let ch_id2 = ch_id.clone();
+                        let ch_name2 = ch_name.clone();
+                        let video_id = payload.clone();
+                        tokio::spawn(async move {
+                            trigger_scheduled_download(
+                                app2,
+                                tasks2,
+                                ch_id2,
+                                ch_name2,
+                                "youtube".to_string(),
+                                video_id,
+                                stream_url,
+                            ).await;
+                        });
                     }
                     "rate_limit" => {
                         got_rate_limit = true;
@@ -910,6 +950,694 @@ async fn get_youtube_polling_status(app: AppHandle) -> Result<YouTubePollingStat
         polling_channels: st.polling_channels.clone(),
         interval_seconds: cfg.youtube_polling_interval,
     })
+}
+
+// ── Scheduled Download Trigger & Queue ───────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ScheduledDownloadTask {
+    pub id: String,
+    pub preset_id: String,
+    pub channel_name: String,
+    pub platform: String,
+    pub stream_id: String,
+    pub stream_url: String,
+    /// "queued" | "downloading" | "completed" | "failed" | "cancelled"
+    pub status: String,
+    pub triggered_at: String,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub file_path: Option<String>,
+    pub file_size: Option<u64>,
+    pub error_message: Option<String>,
+    /// Links to the actual DownloadTask managed in DownloadTasks state.
+    pub download_task_id: Option<String>,
+}
+
+struct ScheduledDownloadState {
+    /// stream_id -> trigger time (prevents duplicate triggers for same stream)
+    triggered_streams: HashMap<String, std::time::Instant>,
+    /// channel_id -> last trigger time (for cooldown)
+    last_trigger_per_channel: HashMap<String, std::time::Instant>,
+    /// All known scheduled download tasks (queue + history for this session)
+    queue: Vec<ScheduledDownloadTask>,
+}
+
+impl ScheduledDownloadState {
+    fn new() -> Self {
+        Self {
+            triggered_streams: HashMap::new(),
+            last_trigger_per_channel: HashMap::new(),
+            queue: Vec::new(),
+        }
+    }
+}
+
+static SCHEDULED_DOWNLOAD_STATE: std::sync::OnceLock<tokio::sync::Mutex<ScheduledDownloadState>> =
+    std::sync::OnceLock::new();
+
+fn scheduled_download_state() -> &'static tokio::sync::Mutex<ScheduledDownloadState> {
+    SCHEDULED_DOWNLOAD_STATE.get_or_init(|| {
+        tokio::sync::Mutex::new(ScheduledDownloadState::new())
+    })
+}
+
+/// Map a quality string (from preset) to a yt-dlp format selector.
+fn quality_to_format(quality: &str, content_type: &str) -> String {
+    if content_type == "audio_only" {
+        return "bestaudio".to_string();
+    }
+    match quality {
+        "best" => "bestvideo+bestaudio/best".to_string(),
+        "1080p" => "bestvideo[height<=1080]+bestaudio/best[height<=1080]".to_string(),
+        "720p"  => "bestvideo[height<=720]+bestaudio/best[height<=720]".to_string(),
+        "480p"  => "bestvideo[height<=480]+bestaudio/best[height<=480]".to_string(),
+        "360p"  => "bestvideo[height<=360]+bestaudio/best[height<=360]".to_string(),
+        _       => "bestvideo+bestaudio/best".to_string(),
+    }
+}
+
+/// Expand a filename template using stream metadata.
+fn expand_filename_template(template: &str, channel_name: &str, platform: &str) -> String {
+    let now = Utc::now();
+    let date_str = now.format("%Y%m%d").to_string();
+    let datetime_str = now.format("%Y%m%d_%H%M%S").to_string();
+    let stream_type = match platform {
+        "youtube" => "YouTube直播",
+        "twitch"  => "Twitch直播",
+        _         => "直播",
+    };
+    template
+        .replace("{channel_name}", channel_name)
+        .replace("{date}", &date_str)
+        .replace("{datetime}", &datetime_str)
+        .replace("{type}", stream_type)
+        .replace("{title}", &format!("{}_direct_stream", channel_name))
+}
+
+/// Check available disk space on the given path.
+/// Returns `Ok(available_bytes)` or `Err`.
+#[cfg(unix)]
+fn check_disk_space(path: &str) -> Result<u64, String> {
+    use std::ffi::CString;
+    use std::mem;
+    let cpath = CString::new(path)
+        .map_err(|e| format!("Invalid path for disk check: {}", e))?;
+    let mut stat: libc::statvfs = unsafe { mem::zeroed() };
+    let ret = unsafe { libc::statvfs(cpath.as_ptr(), &mut stat) };
+    if ret == 0 {
+        // available bytes = f_bavail * f_bsize
+        Ok(stat.f_bavail as u64 * stat.f_bsize as u64)
+    } else {
+        Err(format!("statvfs failed (code {})", ret))
+    }
+}
+
+#[cfg(not(unix))]
+fn check_disk_space(_path: &str) -> Result<u64, String> {
+    // On non-unix platforms (Windows), skip disk space check.
+    Ok(u64::MAX)
+}
+
+/// Minimum free disk space required before starting a scheduled download (500 MB).
+const MIN_FREE_BYTES: u64 = 500 * 1024 * 1024;
+
+/// Core trigger function: called when a stream-up event is received.
+/// Finds a matching preset, checks duplicates/cooldown, and enqueues a download.
+async fn trigger_scheduled_download(
+    app: AppHandle,
+    tasks: DownloadTasks,
+    channel_id: String,
+    channel_name: String,
+    platform: String,
+    stream_id: String,
+    stream_url: String,
+) {
+    // 1. Check MONITORING_PAUSED
+    if MONITORING_PAUSED.load(Ordering::SeqCst) {
+        log::info!("[Trigger] Monitoring paused; skipping trigger for {}", channel_name);
+        return;
+    }
+
+    // 2. Load config for cooldown and max_concurrent settings.
+    let config = match load_config(app.clone()) {
+        Ok(c) => c,
+        Err(e) => {
+            log::warn!("[Trigger] Failed to load config: {}", e);
+            return;
+        }
+    };
+
+    // 3. Find matching enabled preset.
+    let presets = match get_scheduled_presets(app.clone()) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("[Trigger] Failed to load presets: {}", e);
+            return;
+        }
+    };
+    let preset = match presets.into_iter().find(|p| {
+        p.platform == platform && p.channel_id == channel_id && p.enabled
+    }) {
+        Some(p) => p,
+        None => {
+            log::debug!("[Trigger] No enabled preset for channel {} ({})", channel_name, platform);
+            return;
+        }
+    };
+
+    // 4–5. Check anti-duplicate and cooldown.
+    {
+        let mut state = scheduled_download_state().lock().await;
+
+        // Prune stale entries (older than 24h) to prevent memory growth.
+        let one_day = std::time::Duration::from_secs(86400);
+        state.triggered_streams.retain(|_, t| t.elapsed() < one_day);
+        state.last_trigger_per_channel.retain(|_, t| t.elapsed() < one_day);
+
+        // Anti-duplicate: same stream_id already triggered?
+        if state.triggered_streams.contains_key(&stream_id) {
+            log::info!("[Trigger] Duplicate stream_id {}; skipping", stream_id);
+            return;
+        }
+
+        // Cooldown: last trigger for this channel too recent?
+        let cooldown = std::time::Duration::from_secs(config.trigger_cooldown as u64);
+        if let Some(last) = state.last_trigger_per_channel.get(&channel_id) {
+            if last.elapsed() < cooldown {
+                log::info!(
+                    "[Trigger] Channel {} within cooldown ({:?} remaining); skipping",
+                    channel_name,
+                    cooldown - last.elapsed()
+                );
+                return;
+            }
+        }
+
+        // Mark this stream as triggered.
+        state.triggered_streams.insert(stream_id.clone(), std::time::Instant::now());
+        state.last_trigger_per_channel.insert(channel_id.clone(), std::time::Instant::now());
+    }
+
+    // 6. Check disk space.
+    let output_dir = preset.output_dir.clone();
+    let expanded_dir = if output_dir.starts_with('~') {
+        if let Some(home) = std::env::var("HOME").ok()
+            .or_else(|| std::env::var("USERPROFILE").ok())
+        {
+            output_dir.replacen('~', &home, 1)
+        } else {
+            output_dir.clone()
+        }
+    } else {
+        output_dir.clone()
+    };
+    match check_disk_space(&expanded_dir) {
+        Ok(free) if free < MIN_FREE_BYTES => {
+            log::warn!("[Trigger] Insufficient disk space ({} bytes free) for {}", free, expanded_dir);
+            let _ = app.emit(
+                "scheduled-download-disk-full",
+                serde_json::json!({
+                    "channel_name": channel_name,
+                    "free_bytes": free,
+                    "required_bytes": MIN_FREE_BYTES,
+                }),
+            );
+            return;
+        }
+        Err(e) => {
+            log::warn!("[Trigger] Disk space check failed: {}; proceeding anyway", e);
+        }
+        _ => {}
+    }
+
+    // 7. Build task ID and ScheduledDownloadTask.
+    let task_id = Uuid::new_v4().to_string();
+    let now_str = Utc::now().to_rfc3339();
+    let sched_task = ScheduledDownloadTask {
+        id: task_id.clone(),
+        preset_id: preset.id.clone(),
+        channel_name: channel_name.clone(),
+        platform: platform.clone(),
+        stream_id: stream_id.clone(),
+        stream_url: stream_url.clone(),
+        status: "queued".to_string(),
+        triggered_at: now_str.clone(),
+        started_at: None,
+        completed_at: None,
+        file_path: None,
+        file_size: None,
+        error_message: None,
+        download_task_id: None,
+    };
+
+    // 8. Add to queue.
+    {
+        let mut state = scheduled_download_state().lock().await;
+        state.queue.push(sched_task.clone());
+    }
+
+    log::info!(
+        "[Trigger] Queued scheduled download for {} ({}) task_id={}",
+        channel_name,
+        platform,
+        task_id
+    );
+
+    // Emit triggered event.
+    let _ = app.emit(
+        "scheduled-download-triggered",
+        serde_json::json!({
+            "task_id": task_id,
+            "channel_name": channel_name,
+            "platform": platform,
+        }),
+    );
+
+    // 9. Update preset's last_triggered_at and trigger_count.
+    {
+        let preset_id = preset.id.clone();
+        let app2 = app.clone();
+        let now2 = now_str.clone();
+        // Run preset update in a separate task to avoid holding locks.
+        tokio::spawn(async move {
+            if let Ok(mut presets) = get_scheduled_presets(app2.clone()) {
+                if let Some(p) = presets.iter_mut().find(|p| p.id == preset_id) {
+                    p.last_triggered_at = Some(now2);
+                    p.trigger_count += 1;
+                    let _ = save_scheduled_preset(app2, p.clone());
+                }
+            }
+        });
+    }
+
+    // 10. Check queue capacity and try to start the download.
+    process_scheduled_queue(app, tasks);
+}
+
+/// Process the scheduled download queue: start queued tasks if under the
+/// `max_concurrent_downloads` limit.
+/// Spawn a background task that checks the queue and starts the next download
+/// if capacity allows. This is a plain function (not async) to avoid type cycles.
+fn process_scheduled_queue(app: AppHandle, tasks: DownloadTasks) {
+    tokio::spawn(process_scheduled_queue_inner(app, tasks));
+}
+
+async fn process_scheduled_queue_inner(app: AppHandle, tasks: DownloadTasks) {
+    let config = match load_config(app.clone()) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let max_concurrent = config.max_concurrent_downloads;
+
+    // Count currently active (recording/downloading) tasks.
+    let active_count = {
+        let tasks_guard = tasks.lock().unwrap();
+        tasks_guard.values().filter(|t| {
+            let s = &t.progress.status;
+            s == "downloading" || s == "recording" || s == "processing"
+        }).count()
+    };
+
+    if active_count >= max_concurrent {
+        log::debug!(
+            "[Queue] At capacity ({}/{}); not starting new scheduled download",
+            active_count,
+            max_concurrent
+        );
+        // Still emit queue update so the UI knows the position.
+        emit_queue_update(&app).await;
+        return;
+    }
+
+    // Find the next queued task.
+    let next_task = {
+        let state = scheduled_download_state().lock().await;
+        state.queue.iter()
+            .find(|t| t.status == "queued")
+            .cloned()
+    };
+
+    if let Some(task) = next_task {
+        start_scheduled_task(app, tasks, task).await;
+    } else {
+        emit_queue_update(&app).await;
+    }
+}
+
+/// Emit the current queue state to the frontend.
+async fn emit_queue_update(app: &AppHandle) {
+    let queue = {
+        let state = scheduled_download_state().lock().await;
+        state.queue.clone()
+    };
+    let _ = app.emit("scheduled-download-queue-update", serde_json::json!({ "queue": queue }));
+}
+
+/// Start an actual recording for a scheduled download task.
+async fn start_scheduled_task(
+    app: AppHandle,
+    tasks: DownloadTasks,
+    sched_task: ScheduledDownloadTask,
+) {
+    let task_id = sched_task.id.clone();
+    let stream_url = sched_task.stream_url.clone();
+    let channel_name = sched_task.channel_name.clone();
+    let platform = sched_task.platform.clone();
+
+    // Load the preset to get quality/output settings.
+    let preset = {
+        match get_scheduled_presets(app.clone()) {
+            Ok(presets) => presets.into_iter().find(|p| p.id == sched_task.preset_id),
+            Err(_) => None,
+        }
+    };
+
+    let preset = match preset {
+        Some(p) => p,
+        None => {
+            // Preset was deleted; fail this task.
+            mark_scheduled_task_failed(&app, &task_id, "找不到對應的預設").await;
+            // Process next queued item.
+            process_scheduled_queue(app.clone(), tasks.clone());
+            return;
+        }
+    };
+
+    // Mark as "downloading" (starting).
+    let now_str = Utc::now().to_rfc3339();
+    {
+        let mut state = scheduled_download_state().lock().await;
+        if let Some(t) = state.queue.iter_mut().find(|t| t.id == task_id) {
+            t.status = "downloading".to_string();
+            t.started_at = Some(now_str.clone());
+        }
+    }
+    emit_queue_update(&app).await;
+
+    // Build VideoInfo (minimal — is_live = true)
+    let expanded_dir = {
+        let d = &preset.output_dir;
+        if d.starts_with('~') {
+            if let Some(home) = std::env::var("HOME").ok()
+                .or_else(|| std::env::var("USERPROFILE").ok())
+            {
+                d.replacen('~', &home, 1)
+            } else {
+                d.clone()
+            }
+        } else {
+            d.clone()
+        }
+    };
+
+    let video_info = VideoInfo {
+        id: sched_task.stream_id.clone(),
+        title: format!("{} 直播", channel_name),
+        channel: channel_name.clone(),
+        thumbnail: String::new(),
+        duration: None,
+        platform: platform.clone(),
+        content_type: "stream".to_string(),
+        is_live: true,
+        qualities: vec![],
+    };
+
+    let format_id = quality_to_format(&preset.quality, &preset.content_type);
+    let filename = expand_filename_template(
+        &preset.filename_template,
+        &channel_name,
+        &platform,
+    );
+    let ext = match preset.container_format.as_str() {
+        "mp4" => "mp4",
+        "mkv" => "mkv",
+        _     => "ts",
+    };
+    let output_filename = format!("{}.{}", filename, ext);
+
+    let download_config = DownloadConfig {
+        url: stream_url.clone(),
+        video_info,
+        format_id,
+        content_type: preset.content_type.clone(),
+        video_codec: None,
+        audio_codec: None,
+        output_filename,
+        output_folder: expanded_dir,
+        container_format: preset.container_format.clone(),
+        time_range: None,
+    };
+
+    // Use the existing recording infrastructure by inserting a task directly
+    // and spawning execute_recording.
+    let dl_task_id = Uuid::new_v4().to_string();
+    let progress = DownloadProgress {
+        task_id: dl_task_id.clone(),
+        status: "recording".to_string(),
+        title: download_config.video_info.title.clone(),
+        percentage: 0.0,
+        speed: "0 B/s".to_string(),
+        eta: "直播錄製中...".to_string(),
+        downloaded_bytes: 0,
+        total_bytes: 0,
+        output_path: None,
+        error_message: None,
+        is_recording: Some(true),
+        recorded_duration: Some("00:00:00".to_string()),
+        bitrate: Some("N/A".to_string()),
+    };
+
+    let dl_task = DownloadTask {
+        config: download_config.clone(),
+        progress: progress.clone(),
+        process: None,
+        paused: false,
+    };
+
+    {
+        let mut tasks_guard = tasks.lock().unwrap();
+        tasks_guard.insert(dl_task_id.clone(), dl_task);
+    }
+    app.emit("download-progress", &progress).ok();
+
+    // Link the scheduled task to the DownloadTask.
+    {
+        let mut state = scheduled_download_state().lock().await;
+        if let Some(t) = state.queue.iter_mut().find(|t| t.id == task_id) {
+            t.download_task_id = Some(dl_task_id.clone());
+        }
+    }
+    emit_queue_update(&app).await;
+
+    // Spawn recording and monitor for completion.
+    let app2 = app.clone();
+    let tasks2 = tasks.clone();
+    let dl_task_id2 = dl_task_id.clone();
+    let sched_task_id = task_id.clone();
+    let app3 = app.clone();
+
+    tokio::spawn(async move {
+        // Run the recording.
+        execute_recording(app2.clone(), tasks2.clone(), dl_task_id2.clone()).await;
+
+        // After recording finishes, update scheduled task status.
+        let final_status = {
+            let tasks_guard = tasks2.lock().unwrap();
+            tasks_guard.get(&dl_task_id2)
+                .map(|t| (t.progress.status.clone(), t.progress.output_path.clone(), t.progress.error_message.clone()))
+        };
+
+        let completed_at = Utc::now().to_rfc3339();
+
+        if let Some((dl_status, output_path, error_msg)) = final_status {
+            let (new_status, error) = match dl_status.as_str() {
+                "completed" | "stream_interrupted" => ("completed", None),
+                "failed" | "cancelled" => ("failed", error_msg),
+                _ => ("completed", None),
+            };
+
+            // Get file size.
+            let file_size = output_path.as_ref().and_then(|p| {
+                std::fs::metadata(p).ok().map(|m| m.len())
+            });
+
+            {
+                let mut state = scheduled_download_state().lock().await;
+                if let Some(t) = state.queue.iter_mut().find(|t| t.id == sched_task_id) {
+                    t.status = new_status.to_string();
+                    t.completed_at = Some(completed_at.clone());
+                    t.file_path = output_path.clone();
+                    t.file_size = file_size;
+                    t.error_message = error.clone();
+                }
+            }
+
+            let channel_name2 = {
+                let state = scheduled_download_state().lock().await;
+                state.queue.iter()
+                    .find(|t| t.id == sched_task_id)
+                    .map(|t| t.channel_name.clone())
+                    .unwrap_or_default()
+            };
+
+            if new_status == "completed" {
+                let _ = app2.emit(
+                    "scheduled-download-complete",
+                    serde_json::json!({
+                        "task_id": sched_task_id,
+                        "channel_name": channel_name2,
+                        "file_size": file_size,
+                    }),
+                );
+            } else {
+                let _ = app2.emit(
+                    "scheduled-download-failed",
+                    serde_json::json!({
+                        "task_id": sched_task_id,
+                        "channel_name": channel_name2,
+                        "error": error.unwrap_or_else(|| "錄製失敗".to_string()),
+                    }),
+                );
+            }
+
+            emit_queue_update(&app2).await;
+        }
+
+        emit_queue_update(&app3).await;
+    });
+}
+
+/// Mark a scheduled task as failed and emit events.
+/// Does NOT process the queue — caller must do that.
+async fn mark_scheduled_task_failed(app: &AppHandle, task_id: &str, error: &str) {
+    let channel_name = {
+        let mut state = scheduled_download_state().lock().await;
+        let ch = state.queue.iter()
+            .find(|t| t.id == task_id)
+            .map(|t| t.channel_name.clone())
+            .unwrap_or_default();
+        if let Some(t) = state.queue.iter_mut().find(|t| t.id == task_id) {
+            t.status = "failed".to_string();
+            t.error_message = Some(error.to_string());
+            t.completed_at = Some(Utc::now().to_rfc3339());
+        }
+        ch
+    };
+    let _ = app.emit(
+        "scheduled-download-failed",
+        serde_json::json!({
+            "task_id": task_id,
+            "channel_name": channel_name,
+            "error": error,
+        }),
+    );
+    emit_queue_update(app).await;
+}
+
+// ── Tauri commands for scheduled download queue ───────────────────────────────
+
+#[tauri::command]
+async fn get_scheduled_download_queue() -> Result<Vec<ScheduledDownloadTask>, String> {
+    let state = scheduled_download_state().lock().await;
+    Ok(state.queue.clone())
+}
+
+#[tauri::command]
+async fn cancel_scheduled_download(
+    app: AppHandle,
+    task_id: String,
+    tasks: tauri::State<'_, DownloadTasks>,
+) -> Result<(), String> {
+    let dl_task_id = {
+        let mut state = scheduled_download_state().lock().await;
+        let task = state.queue.iter_mut().find(|t| t.id == task_id)
+            .ok_or_else(|| "找不到此排程任務".to_string())?;
+
+        if task.status == "completed" || task.status == "cancelled" {
+            return Err("此任務已結束，無法取消".to_string());
+        }
+
+        let dl_id = task.download_task_id.clone();
+        task.status = "cancelled".to_string();
+        task.completed_at = Some(Utc::now().to_rfc3339());
+        dl_id
+    };
+
+    // If there's an underlying DownloadTask, cancel it too (inline logic).
+    if let Some(dl_id) = dl_task_id {
+        let tasks_arc = tasks.inner().clone();
+        let config_opt = {
+            let mut tasks_guard = tasks_arc.lock().unwrap();
+            if let Some(task) = tasks_guard.get_mut(&dl_id) {
+                if let Some(ref mut child) = task.process {
+                    child.kill().ok();
+                }
+                task.progress.status = "cancelled".to_string();
+                app.emit("download-progress", &task.progress).ok();
+                Some(task.config.clone())
+            } else {
+                None
+            }
+        };
+        if let Some(cfg) = config_opt {
+            save_download_history(&app, &cfg, "", "cancelled", None).await;
+        }
+    }
+
+    emit_queue_update(&app).await;
+    Ok(())
+}
+
+#[tauri::command]
+async fn retry_scheduled_download(
+    app: AppHandle,
+    task_id: String,
+    tasks: tauri::State<'_, DownloadTasks>,
+) -> Result<(), String> {
+    let (new_task, tasks_clone) = {
+        let mut state = scheduled_download_state().lock().await;
+        let old = state.queue.iter_mut().find(|t| t.id == task_id)
+            .ok_or_else(|| "找不到此排程任務".to_string())?;
+
+        if old.status != "failed" && old.status != "cancelled" {
+            return Err("只能重試失敗或已取消的任務".to_string());
+        }
+
+        let new_id = Uuid::new_v4().to_string();
+        let new_task = ScheduledDownloadTask {
+            id: new_id,
+            preset_id: old.preset_id.clone(),
+            channel_name: old.channel_name.clone(),
+            platform: old.platform.clone(),
+            stream_id: old.stream_id.clone(),
+            stream_url: old.stream_url.clone(),
+            status: "queued".to_string(),
+            triggered_at: Utc::now().to_rfc3339(),
+            started_at: None,
+            completed_at: None,
+            file_path: None,
+            file_size: None,
+            error_message: None,
+            download_task_id: None,
+        };
+        state.queue.push(new_task.clone());
+        (new_task, tasks.inner().clone())
+    };
+
+    let _ = app.emit(
+        "scheduled-download-triggered",
+        serde_json::json!({
+            "task_id": new_task.id,
+            "channel_name": new_task.channel_name,
+            "platform": new_task.platform,
+        }),
+    );
+    emit_queue_update(&app).await;
+
+    process_scheduled_queue(app, tasks_clone);
+
+    Ok(())
 }
 
 // Download configuration structures
@@ -5089,7 +5817,10 @@ pub fn run() {
             get_twitch_pubsub_status,
             start_youtube_polling,
             stop_youtube_polling,
-            get_youtube_polling_status
+            get_youtube_polling_status,
+            get_scheduled_download_queue,
+            cancel_scheduled_download,
+            retry_scheduled_download
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

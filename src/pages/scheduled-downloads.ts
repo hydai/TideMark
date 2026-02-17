@@ -66,6 +66,67 @@ interface YouTubeChannelErrorEvent {
   error: string;
 }
 
+interface ScheduledDownloadTask {
+  id: string;
+  preset_id: string;
+  channel_name: string;
+  platform: string;
+  stream_id: string;
+  stream_url: string;
+  status: string; // "queued" | "downloading" | "completed" | "failed" | "cancelled"
+  triggered_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  file_path: string | null;
+  file_size: number | null;
+  error_message: string | null;
+  download_task_id: string | null;
+}
+
+interface ScheduledDownloadTriggeredEvent {
+  task_id: string;
+  channel_name: string;
+  platform: string;
+}
+
+interface ScheduledDownloadQueueUpdateEvent {
+  queue: ScheduledDownloadTask[];
+}
+
+interface ScheduledDownloadCompleteEvent {
+  task_id: string;
+  channel_name: string;
+  file_size: number | null;
+}
+
+interface ScheduledDownloadFailedEvent {
+  task_id: string;
+  channel_name: string;
+  error: string;
+}
+
+interface DownloadProgressEvent {
+  task_id: string;
+  status: string;
+  title: string;
+  percentage: number;
+  speed: string;
+  eta: string;
+  downloaded_bytes: number;
+  total_bytes: number;
+  output_path: string | null;
+  error_message: string | null;
+  is_recording: boolean | null;
+  recorded_duration: string | null;
+  bitrate: string | null;
+}
+
+interface DiskFullEvent {
+  channel_name: string;
+  free_bytes: number;
+  required_bytes: number;
+}
+
 const DEFAULT_FILENAME_TEMPLATE = '[{type}] [{channel_name}] [{date}] {title}';
 
 let presets: DownloadPreset[] = [];
@@ -85,6 +146,11 @@ let youtubePollingIntervalSecs = 90;
 // channel_id -> 'live' | 'offline'
 const liveStatusMap: Map<string, 'live' | 'offline'> = new Map();
 
+// Scheduled download queue state
+let scheduledQueue: ScheduledDownloadTask[] = [];
+// Map of download_task_id -> progress data for running scheduled downloads
+const scheduledProgressMap: Map<string, DownloadProgressEvent> = new Map();
+
 // Tauri event unlisten functions — cleaned up when page is unmounted
 const _unlisteners: UnlistenFn[] = [];
 
@@ -97,6 +163,7 @@ export async function renderScheduledDownloadsPage(container: HTMLElement) {
   }
 
   await loadPresets();
+  await loadScheduledQueue();
 
   // Load current Twitch PubSub status from backend.
   try {
@@ -130,6 +197,15 @@ async function loadPresets() {
   } catch (error) {
     console.error('Failed to load presets:', error);
     presets = [];
+  }
+}
+
+async function loadScheduledQueue() {
+  try {
+    scheduledQueue = await invoke<ScheduledDownloadTask[]>('get_scheduled_download_queue');
+  } catch (error) {
+    console.error('Failed to load scheduled queue:', error);
+    scheduledQueue = [];
   }
 }
 
@@ -171,7 +247,51 @@ async function setupPubSubListeners() {
     });
   });
 
-  _unlisteners.push(statusUn, streamUpUn, streamDownUn, ytPollingStatusUn, ytStreamLiveUn, ytChannelErrorUn);
+  // Scheduled download event listeners
+  const schedTriggeredUn = await listen<ScheduledDownloadTriggeredEvent>('scheduled-download-triggered', (event) => {
+    showToast(`排程下載已觸發：${event.payload.channel_name} (${event.payload.platform})`);
+  });
+
+  const schedQueueUpdateUn = await listen<ScheduledDownloadQueueUpdateEvent>('scheduled-download-queue-update', (event) => {
+    scheduledQueue = event.payload.queue;
+    refreshQueueUI();
+  });
+
+  const schedCompleteUn = await listen<ScheduledDownloadCompleteEvent>('scheduled-download-complete', (event) => {
+    const sizeMb = event.payload.file_size
+      ? (event.payload.file_size / (1024 * 1024)).toFixed(1)
+      : '?';
+    showToast(`排程下載完成：${event.payload.channel_name}（${sizeMb} MB）`);
+    refreshQueueUI();
+  });
+
+  const schedFailedUn = await listen<ScheduledDownloadFailedEvent>('scheduled-download-failed', (event) => {
+    showToast(`排程下載失敗：${event.payload.channel_name} — ${event.payload.error}`);
+    refreshQueueUI();
+  });
+
+  const diskFullUn = await listen<DiskFullEvent>('scheduled-download-disk-full', (event) => {
+    const freeMb = (event.payload.free_bytes / (1024 * 1024)).toFixed(0);
+    showToast(`磁碟空間不足 (剩餘 ${freeMb} MB)，已暫停排程下載：${event.payload.channel_name}`);
+  });
+
+  const dlProgressUn = await listen<DownloadProgressEvent>('download-progress', (event) => {
+    // Track progress for scheduled downloads (those with matching download_task_id).
+    const dl = event.payload;
+    // Find if any queued task has this download_task_id.
+    const sched = scheduledQueue.find(t => t.download_task_id === dl.task_id);
+    if (sched) {
+      scheduledProgressMap.set(dl.task_id, dl);
+      refreshQueueUI();
+    }
+  });
+
+  _unlisteners.push(
+    statusUn, streamUpUn, streamDownUn,
+    ytPollingStatusUn, ytStreamLiveUn, ytChannelErrorUn,
+    schedTriggeredUn, schedQueueUpdateUn, schedCompleteUn, schedFailedUn,
+    diskFullUn, dlProgressUn,
+  );
 }
 
 /** Update only the monitor status bar without re-rendering the full page. */
@@ -228,6 +348,14 @@ function buildYouTubeStatusLabel(): string {
   return 'YouTube: 已停止';
 }
 
+/** Refresh only the queue section without re-rendering the full page. */
+function refreshQueueUI() {
+  const queueArea = document.getElementById('download-queue-area');
+  if (!queueArea) return;
+  const newSection = createQueueSection();
+  queueArea.replaceWith(newSection);
+}
+
 /** Show a brief toast notification. */
 function showToast(message: string) {
   const toast = document.createElement('div');
@@ -279,7 +407,7 @@ function renderPage(container: HTMLElement) {
   const monitorSection = createMonitorStatusSection();
   page.appendChild(monitorSection);
 
-  const queueSection = createPlaceholderSection('下載佇列', 'download-queue-area');
+  const queueSection = createQueueSection();
   page.appendChild(queueSection);
 
   container.appendChild(page);
@@ -308,6 +436,222 @@ function createPlaceholderSection(titleText: string, id: string): HTMLElement {
   section.appendChild(heading);
 
   return section;
+}
+
+function createQueueSection(): HTMLElement {
+  const section = document.createElement('section');
+  section.className = 'sched-section queue-section';
+  section.id = 'download-queue-area';
+
+  const heading = document.createElement('h2');
+  heading.className = 'section-title';
+  heading.textContent = '下載佇列';
+  section.appendChild(heading);
+
+  if (scheduledQueue.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-message';
+    empty.textContent = '目前無排程下載任務。';
+    section.appendChild(empty);
+    return section;
+  }
+
+  // Separate tasks by status.
+  const running = scheduledQueue.filter(t => t.status === 'downloading');
+  const queued = scheduledQueue.filter(t => t.status === 'queued');
+  const completed = scheduledQueue.filter(t => t.status === 'completed');
+  const failed = scheduledQueue.filter(t => t.status === 'failed' || t.status === 'cancelled');
+
+  // Running downloads
+  if (running.length > 0) {
+    const runningHeader = document.createElement('h3');
+    runningHeader.className = 'queue-sub-title';
+    runningHeader.textContent = '下載中';
+    section.appendChild(runningHeader);
+    running.forEach(task => {
+      section.appendChild(createQueueTaskRow(task, 'running'));
+    });
+  }
+
+  // Queued downloads
+  if (queued.length > 0) {
+    const queuedHeader = document.createElement('h3');
+    queuedHeader.className = 'queue-sub-title';
+    queuedHeader.textContent = '等待中';
+    section.appendChild(queuedHeader);
+    queued.forEach((task, index) => {
+      section.appendChild(createQueueTaskRow(task, 'queued', index + 1));
+    });
+  }
+
+  // Completed downloads
+  if (completed.length > 0) {
+    const completedHeader = document.createElement('h3');
+    completedHeader.className = 'queue-sub-title';
+    completedHeader.textContent = '已完成';
+    section.appendChild(completedHeader);
+    completed.forEach(task => {
+      section.appendChild(createQueueTaskRow(task, 'completed'));
+    });
+  }
+
+  // Failed/Cancelled downloads
+  if (failed.length > 0) {
+    const failedHeader = document.createElement('h3');
+    failedHeader.className = 'queue-sub-title';
+    failedHeader.textContent = '失敗 / 已取消';
+    section.appendChild(failedHeader);
+    failed.forEach(task => {
+      section.appendChild(createQueueTaskRow(task, 'failed'));
+    });
+  }
+
+  return section;
+}
+
+function createQueueTaskRow(
+  task: ScheduledDownloadTask,
+  rowType: 'running' | 'queued' | 'completed' | 'failed',
+  queuePosition?: number,
+): HTMLElement {
+  const row = document.createElement('div');
+  row.className = `queue-task-row queue-task-${rowType}`;
+  row.dataset.taskId = task.id;
+
+  // Left side: channel info
+  const info = document.createElement('div');
+  info.className = 'queue-task-info';
+
+  const platformBadge = document.createElement('span');
+  platformBadge.className = `platform-badge ${task.platform}`;
+  platformBadge.textContent = task.platform === 'youtube' ? 'YT' : 'TW';
+  info.appendChild(platformBadge);
+
+  const channelName = document.createElement('span');
+  channelName.className = 'queue-task-channel';
+  channelName.textContent = task.channel_name;
+  info.appendChild(channelName);
+
+  row.appendChild(info);
+
+  // Middle: status-specific content
+  const statusArea = document.createElement('div');
+  statusArea.className = 'queue-task-status-area';
+
+  if (rowType === 'running') {
+    // Show progress bar and live stats.
+    const progress = task.download_task_id
+      ? scheduledProgressMap.get(task.download_task_id)
+      : null;
+
+    const progressBar = document.createElement('div');
+    progressBar.className = 'queue-progress-bar';
+    const fill = document.createElement('div');
+    fill.className = 'queue-progress-fill';
+    fill.style.width = `${progress?.percentage ?? 0}%`;
+    progressBar.appendChild(fill);
+    statusArea.appendChild(progressBar);
+
+    const stats = document.createElement('div');
+    stats.className = 'queue-task-stats';
+    if (progress?.is_recording) {
+      stats.textContent = `錄製中 ${progress.recorded_duration ?? '00:00:00'} | ${progress.bitrate ?? 'N/A'} | ${progress.speed}`;
+    } else if (progress) {
+      stats.textContent = `${progress.percentage.toFixed(1)}% | ${progress.speed} | ETA: ${progress.eta}`;
+    } else {
+      stats.textContent = '錄製中...';
+    }
+    statusArea.appendChild(stats);
+
+  } else if (rowType === 'queued') {
+    const pos = document.createElement('span');
+    pos.className = 'queue-position';
+    pos.textContent = `佇列第 ${queuePosition} 位`;
+    statusArea.appendChild(pos);
+
+    const triggeredAt = document.createElement('span');
+    triggeredAt.className = 'queue-task-time';
+    triggeredAt.textContent = `觸發於 ${formatTimestamp(task.triggered_at)}`;
+    statusArea.appendChild(triggeredAt);
+
+  } else if (rowType === 'completed') {
+    const completedAt = document.createElement('span');
+    completedAt.className = 'queue-task-time';
+    completedAt.textContent = task.completed_at ? `完成於 ${formatTimestamp(task.completed_at)}` : '已完成';
+    statusArea.appendChild(completedAt);
+
+    if (task.file_size) {
+      const sizeSpan = document.createElement('span');
+      sizeSpan.className = 'queue-task-size';
+      sizeSpan.textContent = `${(task.file_size / (1024 * 1024)).toFixed(1)} MB`;
+      statusArea.appendChild(sizeSpan);
+    }
+
+  } else if (rowType === 'failed') {
+    const errorSpan = document.createElement('span');
+    errorSpan.className = 'queue-task-error';
+    errorSpan.textContent = task.error_message ?? (task.status === 'cancelled' ? '已取消' : '失敗');
+    statusArea.appendChild(errorSpan);
+  }
+
+  row.appendChild(statusArea);
+
+  // Right side: action buttons
+  const actions = document.createElement('div');
+  actions.className = 'queue-task-actions';
+
+  if (rowType === 'running' || rowType === 'queued') {
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'action-btn delete-btn';
+    cancelBtn.textContent = '取消';
+    cancelBtn.addEventListener('click', async () => {
+      cancelBtn.disabled = true;
+      try {
+        await invoke('cancel_scheduled_download', { taskId: task.id });
+        showToast('已取消排程下載');
+      } catch (err) {
+        showToast(`取消失敗: ${err}`);
+        cancelBtn.disabled = false;
+      }
+    });
+    actions.appendChild(cancelBtn);
+  }
+
+  if (rowType === 'completed' && task.file_path) {
+    const openBtn = document.createElement('button');
+    openBtn.className = 'action-btn edit-btn';
+    openBtn.textContent = '開啟檔案';
+    openBtn.addEventListener('click', async () => {
+      if (task.file_path) {
+        try {
+          await invoke('open_file', { path: task.file_path });
+        } catch (err) {
+          console.error('Failed to open file:', err);
+        }
+      }
+    });
+    actions.appendChild(openBtn);
+  }
+
+  if (rowType === 'failed') {
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'action-btn edit-btn';
+    retryBtn.textContent = '重試';
+    retryBtn.addEventListener('click', async () => {
+      retryBtn.disabled = true;
+      try {
+        await invoke('retry_scheduled_download', { taskId: task.id });
+        showToast('已重新加入佇列');
+      } catch (err) {
+        showToast(`重試失敗: ${err}`);
+        retryBtn.disabled = false;
+      }
+    });
+    actions.appendChild(retryBtn);
+  }
+
+  row.appendChild(actions);
+  return row;
 }
 
 function createMonitorStatusSection(): HTMLElement {

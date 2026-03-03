@@ -29,7 +29,7 @@ tauri-plugin-notification = "2"
 regex = "1.10"
 reqwest = { version = "0.13", features = ["json", "multipart"] }
 tokio = { version = "1", features = ["full", "sync"] }
-tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
 futures-util = "0.3"
 uuid = { version = "1.11", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }

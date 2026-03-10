@@ -821,6 +821,13 @@ async fn local_server_upsert_bookmark(
 
 // ── YouTube RSS XML parsing ───────────────────────────────────────────────────
 
+fn decode_youtube_rss_text(text: std::borrow::Cow<'_, str>) -> String {
+    let text = text.into_owned();
+    quick_xml::escape::unescape(&text)
+        .map(|value| value.into_owned())
+        .unwrap_or(text)
+}
+
 /// Parse an Atom XML feed from YouTube and return the first `max_entries` video IDs.
 fn parse_youtube_rss(xml: &str, max_entries: usize) -> Vec<String> {
     use quick_xml::Reader;
@@ -830,12 +837,11 @@ fn parse_youtube_rss(xml: &str, max_entries: usize) -> Vec<String> {
     reader.config_mut().trim_text(true);
 
     let mut video_ids: Vec<String> = Vec::new();
-    let mut inside_video_id = false;
     let mut buf = Vec::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
+            Ok(Event::Start(ref e)) => {
                 // Match <yt:videoId>
                 let local = e.local_name();
                 if local.as_ref() == b"videoId" {
@@ -843,23 +849,15 @@ fn parse_youtube_rss(xml: &str, max_entries: usize) -> Vec<String> {
                     let name_bytes = e.name();
                     let name_str = std::str::from_utf8(name_bytes.as_ref()).unwrap_or("");
                     if name_str.starts_with("yt:") || name_str == "videoId" {
-                        inside_video_id = true;
-                    }
-                }
-            }
-            Ok(Event::Text(e)) => {
-                if inside_video_id {
-                    if let Ok(text) = e.unescape() {
-                        let id = text.trim().to_string();
-                        if !id.is_empty() && video_ids.len() < max_entries {
-                            video_ids.push(id);
+                        if let Ok(text) = reader.read_text(e.name()) {
+                            let text = decode_youtube_rss_text(text);
+                            let id = text.trim().to_string();
+                            if !id.is_empty() && video_ids.len() < max_entries {
+                                video_ids.push(id);
+                            }
                         }
                     }
-                    inside_video_id = false;
                 }
-            }
-            Ok(Event::End(_)) => {
-                inside_video_id = false;
             }
             Ok(Event::Eof) => break,
             Err(e) => {
@@ -7151,11 +7149,6 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
     let mut cur_thumbnail: Option<String> = None;
     let mut cur_views: Option<u64> = None;
 
-    // Tag tracking flags
-    let mut inside_video_id = false;
-    let mut inside_title = false;
-    let mut inside_published = false;
-
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
@@ -7174,13 +7167,22 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
                         cur_views = None;
                     }
                     "title" if in_entry => {
-                        inside_title = true;
+                        if let Ok(text) = reader.read_text(e.name()) {
+                            let text = decode_youtube_rss_text(text);
+                            cur_title = text.trim().to_string();
+                        }
                     }
                     "published" if in_entry => {
-                        inside_published = true;
+                        if let Ok(text) = reader.read_text(e.name()) {
+                            let text = decode_youtube_rss_text(text);
+                            cur_published = text.trim().to_string();
+                        }
                     }
                     "videoId" if in_entry && name_str.starts_with("yt:") => {
-                        inside_video_id = true;
+                        if let Ok(text) = reader.read_text(e.name()) {
+                            let text = decode_youtube_rss_text(text);
+                            cur_video_id = text.trim().to_string();
+                        }
                     }
                     "thumbnail" if in_entry => {
                         for attr in e.attributes().flatten() {
@@ -7234,21 +7236,6 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
                     }
                 }
             }
-            Ok(Event::Text(e)) => {
-                if let Ok(text) = e.unescape() {
-                    let t = text.trim().to_string();
-                    if inside_video_id {
-                        cur_video_id = t;
-                        inside_video_id = false;
-                    } else if inside_title && in_entry {
-                        cur_title = t;
-                        inside_title = false;
-                    } else if inside_published && in_entry {
-                        cur_published = t;
-                        inside_published = false;
-                    }
-                }
-            }
             Ok(Event::End(ref e)) => {
                 let local = e.local_name();
                 let local_str = std::str::from_utf8(local.as_ref()).unwrap_or("");
@@ -7275,13 +7262,7 @@ fn parse_youtube_rss_full(xml: &str, max_entries: usize) -> Vec<ChannelVideo> {
                             });
                         }
                         in_entry = false;
-                        inside_video_id = false;
-                        inside_title = false;
-                        inside_published = false;
                     }
-                    "title" => { inside_title = false; }
-                    "published" => { inside_published = false; }
-                    "videoId" => { inside_video_id = false; }
                     _ => {}
                 }
             }
@@ -7451,6 +7432,52 @@ async fn fetch_channel_videos(
             Ok(videos)
         }
         _ => Err(format!("Unknown platform: {}", platform)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_youtube_rss, parse_youtube_rss_full};
+
+    const SAMPLE_YOUTUBE_RSS: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns:yt="http://www.youtube.com/xml/schemas/2015" xmlns:media="http://search.yahoo.com/mrss/">
+  <entry>
+    <yt:videoId>video-1</yt:videoId>
+    <title>第一個影片 &amp; 測試</title>
+    <published>2026-03-09T12:00:00+00:00</published>
+    <media:thumbnail url="https://example.com/thumb1.jpg" />
+    <media:community>
+      <media:statistics views="42" />
+    </media:community>
+  </entry>
+  <entry>
+    <yt:videoId>video-2</yt:videoId>
+    <title>第二個影片</title>
+    <published>2026-03-08T12:00:00+00:00</published>
+  </entry>
+</feed>"#;
+
+    #[test]
+    fn parse_youtube_rss_reads_video_ids_after_quick_xml_upgrade() {
+        assert_eq!(
+            parse_youtube_rss(SAMPLE_YOUTUBE_RSS, 1),
+            vec!["video-1".to_string()]
+        );
+    }
+
+    #[test]
+    fn parse_youtube_rss_full_unescapes_text_and_extracts_metadata() {
+        let videos = parse_youtube_rss_full(SAMPLE_YOUTUBE_RSS, 2);
+
+        assert_eq!(videos.len(), 2);
+        assert_eq!(videos[0].video_id, "video-1");
+        assert_eq!(videos[0].title, "第一個影片 & 測試");
+        assert_eq!(videos[0].published_at, "2026-03-09T12:00:00+00:00");
+        assert_eq!(
+            videos[0].thumbnail_url.as_deref(),
+            Some("https://example.com/thumb1.jpg")
+        );
+        assert_eq!(videos[0].view_count, Some(42));
     }
 }
 

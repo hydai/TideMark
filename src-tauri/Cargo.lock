@@ -84,7 +84,7 @@ dependencies = [
  "futures-util",
  "libc",
  "log",
- "quick-xml 0.37.5",
+ "quick-xml 0.38.4",
  "regex",
  "reqwest",
  "serde",

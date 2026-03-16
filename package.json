@@ -15,10 +15,10 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@tauri-apps/cli": "^2.10.1",
-    "@vitejs/plugin-basic-ssl": "^2.1.4",
+    "@vitejs/plugin-basic-ssl": "^2.2.0",
     "playwright": "^1.58.2",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^8.0.0"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
